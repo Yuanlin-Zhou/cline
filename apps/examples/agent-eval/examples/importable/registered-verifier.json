@@ -1,0 +1,41 @@
+{
+	"version": 1,
+	"defaults": {
+		"tools": "full",
+		"maxIterations": 10,
+		"timeoutMs": 120000
+	},
+	"cases": [
+		{
+			"id": "summary-json",
+			"replayMode": "full-task",
+			"tags": ["判分示例", "注册验证器"],
+			"description": "需要先通过 examples/grading/verifiers.json 注册 summary-v1 验证器。",
+			"history": [],
+			"prompt": "在工作区创建 summary.json，内容为对象，total 为数字 12，items 为 [1, 2, 3]。",
+			"grading": {
+				"version": 1,
+				"rules": [
+					{
+						"id": "exists",
+						"kind": "file.exists",
+						"path": "summary.json"
+					},
+					{
+						"id": "total",
+						"kind": "file.json",
+						"path": "summary.json",
+						"pointer": "/total",
+						"op": "equals",
+						"expected": 12
+					},
+					{
+						"id": "acceptance",
+						"kind": "script",
+						"verifierId": "summary-v1"
+					}
+				]
+			}
+		}
+	]
+}

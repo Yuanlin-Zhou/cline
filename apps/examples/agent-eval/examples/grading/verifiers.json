@@ -1,0 +1,11 @@
+[
+  {
+    "id": "summary-v1",
+    "label": "统计 JSON 完整验收",
+    "version": "1",
+    "command": "{runtime}",
+    "args": ["{verifierDir}/verify-summary.ts"],
+    "files": ["verify-summary.ts"],
+    "timeoutMs": 10000
+  }
+]

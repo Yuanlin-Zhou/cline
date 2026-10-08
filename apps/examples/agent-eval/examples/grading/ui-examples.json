@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "defaults": { "tools": "full", "maxIterations": 10, "timeoutMs": 120000 },
+  "cases": [
+    {
+      "id": "grading-json-pass", "description": "JSON 汇总正确 · 预期通过：文件存在、数值相等、数组包含", "tags": ["判分示例", "预期通过"],
+      "replayMode": "full-task", "history": [], "prompt": "在工作区创建 summary.json，内容为 {\"total\":12,\"items\":[1,2,3]}。完成后简短说明。",
+      "grading": { "version": 1, "rules": [
+        { "id": "exists", "label": "汇总文件已生成", "kind": "file.exists", "path": "summary.json" },
+        { "id": "total", "label": "总数为 12", "kind": "file.json", "path": "summary.json", "pointer": "/total", "op": "equals", "expected": 12 },
+        { "id": "items", "label": "列表包含数字 2", "kind": "file.json", "path": "summary.json", "pointer": "/items", "op": "contains", "expected": 2 }
+      ] }
+    },
+    {
+      "id": "grading-text-pass", "description": "文本与禁止产物 · 预期通过：包含、排除、正则、文件不存在", "tags": ["判分示例", "预期通过"],
+      "replayMode": "full-task", "history": [], "prompt": "创建 guide.txt，内容为两行：第一行 Bun，第二行 bun install。不要创建 temporary.txt，也不要在文件中加入 npm。",
+      "grading": { "version": 1, "rules": [
+        { "id": "contains", "label": "包含 Bun", "kind": "file.text", "path": "guide.txt", "op": "contains", "expected": "Bun" },
+        { "id": "excludes", "label": "不含 npm", "kind": "file.text", "path": "guide.txt", "op": "notContains", "expected": "npm" },
+        { "id": "pattern", "label": "安装命令匹配", "kind": "file.text", "path": "guide.txt", "op": "matches", "expected": "bun\\s+install" },
+        { "id": "absent", "label": "未生成临时文件", "kind": "file.absent", "path": "temporary.txt" }
+      ] }
+    },
+    {
+      "id": "grading-tolerance-pass", "description": "数值容差 · 预期通过：0.3333 与 1/3 的误差小于 0.001", "tags": ["判分示例", "预期通过"],
+      "replayMode": "full-task", "history": [], "prompt": "在工作区创建 ratio.json，内容为 {\"ratio\":0.3333}。",
+      "grading": { "version": 1, "rules": [ { "id": "ratio", "label": "比例在允许误差内", "kind": "file.json", "path": "ratio.json", "pointer": "/ratio", "op": "approx", "expected": 0.3333333333333333, "absTolerance": 0.001 } ] }
+    },
+    {
+      "id": "grading-missing-fail", "description": "只回复完成 · 预期失败：回复不代表产物存在", "tags": ["判分示例", "预期失败"],
+      "replayMode": "full-task", "history": [], "prompt": "这是一个用于验证缺少产物判分的负例。请只回复“已完成”，不要使用工具，不要创建任何文件。",
+      "grading": { "version": 1, "rules": [ { "id": "exists", "label": "必须生成汇总文件", "kind": "file.exists", "path": "summary.json" } ] }
+    },
+    {
+      "id": "grading-value-fail", "description": "JSON 值不符 · 预期失败：实际 10，要求 12", "tags": ["判分示例", "预期失败"],
+      "replayMode": "full-task", "history": [], "prompt": "这是判分负例测试。请创建 summary.json，严格写入 {\"total\":10}，不要改为其他数值。",
+      "grading": { "version": 1, "rules": [ { "id": "total", "label": "总数必须为 12", "kind": "file.json", "path": "summary.json", "pointer": "/total", "op": "equals", "expected": 12 } ] }
+    },
+    {
+      "id": "grading-behavior-optional", "description": "可选行为诊断 · 文件预期通过，行为显示证据不足", "tags": ["判分示例", "行为诊断"],
+      "replayMode": "full-task", "history": [], "prompt": "创建 note.txt，内容为 Bun，然后读取该文件核对内容。",
+      "grading": { "version": 1, "rules": [
+        { "id": "text", "label": "文件内容正确", "kind": "file.text", "path": "note.txt", "op": "contains", "expected": "Bun" },
+        { "id": "read", "label": "读取工具调用（当前不支持）", "kind": "tool.count", "required": false, "match": { "name": "read_files", "phase": "started" }, "min": 1 }
+      ] }
+    }
+  ]
+}

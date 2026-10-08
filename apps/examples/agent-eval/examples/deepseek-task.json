@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "defaults": {
+    "providerId": "openai-compatible",
+    "modelId": "deepseek-v4-flash",
+    "baseUrl": "https://api.deepseek.com",
+    "apiKeyEnv": "DEEPSEEK_API_KEY",
+    "tools": "full",
+    "maxIterations": 30,
+    "timeoutMs": 600000
+  },
+  "cases": [
+    {
+      "id": "build-and-test-slugify",
+      "replayMode": "full-task",
+      "prompt": "在当前工作目录实现一个 TypeScript slugify 函数：将英文标题转成小写，将连续空白和连字符合并为一个连字符，移除其他标点，并去除首尾连字符。使用 Bun 编写测试，覆盖正常输入、空字符串和连续标点。实际运行测试；如果失败，修复后重新运行，直到测试通过。最后总结创建的文件、测试结果和使用方法。不需要向我提问。",
+      "assertions": {
+        "finishReason": "completed"
+      }
+    }
+  ]
+}

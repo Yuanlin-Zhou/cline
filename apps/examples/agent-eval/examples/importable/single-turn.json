@@ -1,0 +1,173 @@
+{
+	"version": 1,
+	"defaults": {
+		"tools": "none",
+		"maxIterations": 1,
+		"timeoutMs": 180000
+	},
+	"cases": [
+		{
+			"id": "remember-package-manager",
+			"replayMode": "single-turn",
+			"tags": ["单轮回答", "历史上下文"],
+			"description": "最终回答应遵循之前对话中提供的仓库信息。",
+			"history": [
+				{
+					"role": "user",
+					"content": "This repository always uses Bun as its package manager."
+				},
+				{
+					"role": "assistant",
+					"content": "Understood. I will use Bun for repository commands."
+				}
+			],
+			"prompt": "Which package manager should be used here? Answer in one sentence.",
+			"timeoutMs": 120000,
+			"assertions": {
+				"contains": ["Bun"],
+				"notContains": ["npm"]
+			}
+		},
+		{
+			"id": "deepseek-history-test",
+			"replayMode": "single-turn",
+			"tags": ["单轮回答", "历史上下文"],
+			"description": "验证模型能根据历史信息给出 Bun 安装命令。",
+			"history": [
+				{
+					"role": "user",
+					"content": "项目使用 Bun 作为包管理器，后续请使用中文回答。"
+				},
+				{
+					"role": "assistant",
+					"content": "好的，我会使用 Bun，并用中文回答。"
+				}
+			],
+			"prompt": "请告诉我安装项目依赖应该执行什么命令。",
+			"assertions": {
+				"contains": ["bun install"],
+				"finishReason": "completed"
+			}
+		},
+		{
+			"id": "deepseek-chinese-summary",
+			"replayMode": "single-turn",
+			"tags": ["单轮回答", "语言要求"],
+			"description": "验证模型遵循简洁中文的历史要求。",
+			"history": [
+				{
+					"role": "user",
+					"content": "请始终使用简洁的中文回答。"
+				},
+				{
+					"role": "assistant",
+					"content": "好的，我会使用简洁的中文回答。"
+				}
+			],
+			"prompt": "请用一句中文解释什么是 API。",
+			"assertions": {
+				"matches": ["API"],
+				"finishReason": "completed"
+			}
+		},
+		{
+			"id": "deepseek-bun-command",
+			"replayMode": "single-turn",
+			"tags": ["单轮回答", "命令"],
+			"description": "检查 Bun 脚本命令并排除 npm 命令。",
+			"history": [],
+			"prompt": "在一个使用 Bun 的 JavaScript 项目中，如何运行 package.json 中名为 test 的脚本？只给出命令并简短说明。",
+			"assertions": {
+				"contains": ["bun run test"],
+				"notContains": ["npm test"],
+				"finishReason": "completed"
+			}
+		},
+		{
+			"id": "deepseek-json-reasoning",
+			"replayMode": "single-turn",
+			"tags": ["单轮回答", "计算"],
+			"description": "检查简单计算的算式与结果。",
+			"history": [],
+			"prompt": "下面有三个数字：12、7、5。请计算它们的总和，并用中文给出算式和结果。",
+			"assertions": {
+				"contains": ["24"],
+				"matches": ["12\\s*[+]\\s*7\\s*[+]\\s*5"],
+				"finishReason": "completed"
+			}
+		},
+		{
+			"id": "deepseek-structured-answer",
+			"replayMode": "single-turn",
+			"tags": ["单轮回答", "格式"],
+			"description": "验证回答使用 Markdown 无序列表。",
+			"history": [
+				{
+					"role": "user",
+					"content": "回答时请使用 Markdown。"
+				},
+				{
+					"role": "assistant",
+					"content": "好的，我会使用 Markdown 格式回答。"
+				}
+			],
+			"prompt": "请列出开始一个软件项目时最重要的三个步骤，使用 Markdown 无序列表。",
+			"assertions": {
+				"contains": ["-"],
+				"finishReason": "completed"
+			}
+		},
+		{
+			"id": "history-bun-install",
+			"replayMode": "single-turn",
+			"tags": ["回归", "上下文"],
+			"description": "Web 导入页内置示例：验证模型遵循历史上下文。",
+			"history": [
+				{
+					"role": "user",
+					"content": "项目使用 Bun，请用中文回答。"
+				},
+				{
+					"role": "assistant",
+					"content": "好的。"
+				}
+			],
+			"prompt": "安装项目依赖应该执行什么命令？",
+			"assertions": {
+				"contains": ["bun install"],
+				"finishReason": "completed"
+			}
+		},
+		{
+			"id": "multi-turn-project-requirements",
+			"replayMode": "single-turn",
+			"tags": ["单轮回答", "多轮上下文"],
+			"description": "由 multi-turn.ts 场景转换而来；历史消息作为已完成上下文注入，不会重新执行前两轮。",
+			"history": [
+				{
+					"role": "user",
+					"content": "项目名称是星河，使用 Bun 管理依赖。请记住这些信息。"
+				},
+				{
+					"role": "assistant",
+					"content": "好的，我会记住项目名称是星河，并使用 Bun 管理依赖。"
+				},
+				{
+					"role": "user",
+					"content": "现在新增要求：后端使用 TypeScript。请汇总目前的技术要求。"
+				},
+				{
+					"role": "assistant",
+					"content": "目前的要求是：项目名称为星河，使用 Bun 管理依赖，后端使用 TypeScript。"
+				}
+			],
+			"prompt": "根据之前的要求，告诉我项目名称，以及安装依赖的命令。",
+			"systemPrompt": "请用中文回答，遵守对话中已经确定的要求。",
+			"assertions": {
+				"contains": ["星河", "bun install"],
+				"notContains": ["npm install"],
+				"finishReason": "completed"
+			}
+		}
+	]
+}

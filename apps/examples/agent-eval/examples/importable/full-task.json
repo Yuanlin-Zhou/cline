@@ -1,0 +1,72 @@
+{
+	"version": 1,
+	"defaults": {
+		"tools": "full",
+		"maxIterations": 12,
+		"timeoutMs": 300000
+	},
+	"cases": [
+		{
+			"id": "deepseek-full-create-readme",
+			"replayMode": "full-task",
+			"tags": ["完整任务", "文件创建"],
+			"description": "创建一个简短的项目说明文件并验证内容。",
+			"history": [],
+			"prompt": "请在当前工作区创建 README.md。文件需要包含标题“Agent Eval Demo”和一个包含三条项目说明的 Markdown 无序列表。创建后读取文件确认内容正确，最后用中文总结创建的文件和验证结果。",
+			"assertions": {
+				"contains": ["README.md", "Agent Eval Demo"],
+				"finishReason": "completed"
+			}
+		},
+		{
+			"id": "deepseek-full-write-json",
+			"replayMode": "full-task",
+			"tags": ["完整任务", "结构化数据"],
+			"description": "创建 JSON 配置文件并检查其结构。",
+			"history": [],
+			"prompt": "请在当前工作区创建 config.json，写入合法 JSON：包含 name 字段值为 agent-eval，enabled 字段为 true，以及 features 数组，数组中包含 eval 和 replay。然后读取并检查该文件确实是合法 JSON，最后用中文报告检查结果。",
+			"assertions": {
+				"contains": ["config.json", "agent-eval"],
+				"finishReason": "completed"
+			}
+		},
+		{
+			"id": "deepseek-full-project-check",
+			"replayMode": "full-task",
+			"tags": ["完整任务", "检查与总结"],
+			"description": "检查工作区并输出可执行的项目总结。",
+			"history": [],
+			"prompt": "请检查当前工作区的文件结构，找出最多五个重要文件或目录。不要修改任何文件。然后用中文输出一个 Markdown 总结，必须包含“工作区检查完成”、检查到的项目名称或路径，以及后续建议。",
+			"assertions": {
+				"contains": ["工作区检查完成"],
+				"finishReason": "completed"
+			}
+		},
+		{
+			"id": "build-and-test-slugify",
+			"replayMode": "full-task",
+			"tags": ["完整任务", "编码", "测试"],
+			"description": "实现 TypeScript slugify 函数并使用 Bun 运行测试。",
+			"history": [],
+			"prompt": "在当前工作目录实现一个 TypeScript slugify 函数：将英文标题转成小写，将连续空白和连字符合并为一个连字符，移除其他标点，并去除首尾连字符。使用 Bun 编写测试，覆盖正常输入、空字符串和连续标点。实际运行测试；如果失败，修复后重新运行，直到测试通过。最后总结创建的文件、测试结果和使用方法。不需要向我提问。",
+			"maxIterations": 30,
+			"timeoutMs": 600000,
+			"assertions": {
+				"finishReason": "completed"
+			}
+		},
+		{
+			"id": "build-slugify",
+			"replayMode": "full-task",
+			"tags": ["回归", "完整任务", "编码"],
+			"description": "Web 导入页内置示例：实现函数并运行测试。",
+			"history": [],
+			"prompt": "实现 TypeScript slugify 函数，编写并使用 Bun 运行测试，失败后修复，最后总结结果。",
+			"maxIterations": 30,
+			"timeoutMs": 600000,
+			"assertions": {
+				"finishReason": "completed"
+			}
+		}
+	]
+}
