@@ -6,6 +6,8 @@ import { parseEvalSuite } from "../schema.js";
 import type { EvalCase, EvalDefaults, EvalSuite } from "../types.js";
 import type { Module, Run, RunDetail, RunItem, SavedCase } from "./types.js";
 
+import { parseTransfer, TransferError, type TransferRequest, type TransferPreview } from "./transfer.js";
+
 const now = () => new Date().toISOString();
 const cleanTags = (tags: unknown): string[] => (Array.isArray(tags) ? tags : []).filter(tag => typeof tag === "string" && tag.trim()).map(tag => (tag as string).trim()).slice(0, 20);
 export class EvalStore {
@@ -74,6 +76,61 @@ export class EvalStore {
 		const definition = structuredClone(source.definition); definition.id = `${base}-copy${suffix}`; definition.description = definition.description ? `${definition.description}（副本）` : "副本";
 		return this.createCase(source.moduleId, structuredClone(source.defaults), definition);
 	}
+	private planTransfer(request: TransferRequest): TransferPreview {
+		const target = this.get<Module>("module", request.targetModuleId);
+		if (!target) throw new TransferError("目标模块不存在", 404);
+		if (target.archived) throw new TransferError(`目标模块「${target.name}」已归档`);
+		const names = new Set(this.activeCases().filter(c => c.moduleId === target.id).map(c => c.definition.id));
+		const items: TransferPreview["items"] = [];
+		for (const input of request.items) {
+			const source = this.get<SavedCase>("case", input.id);
+			if (!source) throw new TransferError("源案例不存在", 404);
+			const module = this.get<Module>("module", source.moduleId);
+			if (!module) throw new TransferError("源模块不存在", 404);
+			if (source.archived || module.archived) throw new TransferError(`源案例「${source.definition.id}」或模块「${module.name}」已归档`);
+			if (source.revision !== input.revision) throw new TransferError(`案例「${source.definition.id}」版本已变化，请重新选择并预览`);
+			const unchanged = request.operation === "move" && source.moduleId === target.id;
+			const base = source.definition.id;
+			const sameModuleCopy = request.operation === "copy" && source.moduleId === target.id;
+			const conflict = !unchanged && !sameModuleCopy && names.has(base);
+			let proposed = base;
+			if (sameModuleCopy || (conflict && request.conflictPolicy === "rename")) {
+				let suffix = 1;
+				while (names.has(`${base}-${request.operation}${suffix}`)) suffix++;
+				proposed = `${base}-${request.operation}${suffix}`;
+			}
+			names.add(proposed);
+			items.push({ id: source.id, revision: source.revision, originalDefinitionId: base, proposedDefinitionId: proposed, sourceModuleName: module.name, targetModuleName: target.name, result: unchanged ? "unchanged" : request.operation, conflict });
+		}
+		return { items, summary: { copied: items.filter(i => i.result === "copy").length, moved: items.filter(i => i.result === "move").length, unchanged: items.filter(i => i.result === "unchanged").length, conflicts: items.filter(i => i.conflict).length }, canApply: request.conflictPolicy === "rename" || !items.some(item => item.conflict) };
+	}
+	previewTransfer(input: unknown): TransferPreview {
+		const request = parseTransfer(input);
+		return this.db.transaction(() => this.planTransfer(request))();
+	}
+	transferCases(input: unknown) {
+		const request = parseTransfer(input, true);
+		return this.db.transaction(() => {
+			const plan = this.planTransfer(request);
+			if (!plan.canApply) throw new TransferError("目标模块存在同名案例，请调整冲突策略");
+			if (plan.items.some((item, index) => item.proposedDefinitionId !== request.items[index].expectedDefinitionId)) throw new TransferError("预览已变化，请重新预览并确认");
+			const cases: SavedCase[] = [];
+			let copied = 0; let moved = 0; let unchanged = 0;
+			for (const item of plan.items) {
+				const source = this.require<SavedCase>("case", item.id);
+				if (item.result === "unchanged") { cases.push(source); unchanged++; continue; }
+				const next = structuredClone(source);
+				next.moduleId = request.targetModuleId;
+				next.definition.id = item.proposedDefinitionId;
+				next.updatedAt = now();
+				if (request.operation === "copy") { next.id = randomUUID(); next.revision = 1; copied++; }
+				else { next.revision++; moved++; }
+				this.put("case", next.id, next); cases.push(next);
+			}
+			return { cases, copied, moved, unchanged };
+		}).immediate();
+	}
+
 	deleteCase(id: string) {
 		this.require<SavedCase>("case", id);
 		// Executions own their snapshots, so deleting a case preserves queued work and history.

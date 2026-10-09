@@ -4,6 +4,14 @@ A small JSON-in/JSON-out evaluator that runs the local workspace version of `Cli
 
 This uses the SDK instead of spawning and scraping the terminal CLI. `initialMessages` preserves the supplied conversation history exactly, while each case still gets an isolated Cline session.
 
+## Copying and moving cases between modules
+
+In the Web UI, use **复制** or **移动** on a saved case, or select multiple cases and use **复制所选 / 移动所选**. Saved case details also provide **复制到… / 移动到…**; save any draft changes first. Batch operations include selected cases hidden by the current filters.
+
+Choose an active target module and review the preview before confirming. Copies retain all configuration and get a new identity with no execution history. Moves retain their identity and history, increase the revision, and change module ownership. Existing runs and historical reruns keep their original snapshots. Same-module copies use `-copyN`; cross-module collisions either stop the entire operation or use `-copyN` / `-moveN`. No existing case is overwritten.
+
+A stale preview requires another review and confirmation. If a network interruption leaves the result uncertain, refresh and check the target module before copying again. The APIs are `POST /api/cases/transfer/preview` and `POST /api/cases/transfer`; see [the specification](../../../specs/005-agent-eval-cross-module-case-transfer.md) for request fields and concurrency rules.
+
 ## Custom model request headers
 
 Use `defaults.headers` for non-secret header values and `defaults.headersEnv` for server-side environment variable references. Cases can override either source by header name (case-insensitive). The same configuration works in CLI suite files, JSON/JSONL imports and the Web UI. See [examples/custom-headers.json](examples/custom-headers.json) for a complete example; replace its sample gateway URL and model before running it.

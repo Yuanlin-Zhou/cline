@@ -1,3 +1,4 @@
+import type { TransferPreview } from "../transfer.js";
 import { headerEditor, readHeaderEditor } from "./header-editor.js";
 import type {
 	EvalAssertions,
@@ -237,7 +238,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 	}
 	if (!res.ok) {
 		const message = data && typeof data === "object" && "error" in (data as Record<string, unknown>) ? String((data as { error: unknown }).error) : `请求失败 (${res.status})`;
-		throw new Error(message);
+		throw Object.assign(new Error(message), { status: res.status });
 	}
 	return data as T;
 }
@@ -269,6 +270,83 @@ function openModal(options: { title: string; body: HTMLElement; wide?: boolean; 
 	 overlay.addEventListener("close", () => overlay.remove());
 	overlay.showModal();
 	return close;
+}
+
+function openCaseTransfer(operation: "copy" | "move", sources: SavedCase[], state: StateResponse, onSuccess: (cases: SavedCase[]) => void = () => render(), hiddenCount = 0): void {
+	const label = operation === "copy" ? "复制" : "移动";
+	const modules = state.modules.filter(m => operation === "copy" || sources.some(c => c.moduleId !== m.id));
+	if (!modules.length) { toast("请先创建其他模块作为移动目标", "error"); return; }
+	const target = select("transfer-target", (operation === "move" ? [["", "请选择目标模块"] as [string, string], ...modules.map(m => [m.id, `${m.name}（${state.cases.filter(c => c.moduleId === m.id).length} 个案例）`] as [string, string])] : modules.map(m => [m.id, `${m.name}（${state.cases.filter(c => c.moduleId === m.id).length} 个案例）`] as [string, string])), operation === "move" ? "" : modules.find(m => m.id === sources[0].moduleId)?.id ?? modules[0].id) as HTMLSelectElement;
+	const policy = select("transfer-policy", [["rename", "自动重命名"], ["abort", "遇到同名案例时中止"]], operation === "copy" ? "rename" : "abort") as HTMLSelectElement;
+	const previewArea = h("div", { class: "TransferPreview" });
+	const errorBox = h("div", { role: "alert" });
+	const submit = h("button", { class: "btn btn-primary", disabled: true }, `确认${label}`) as HTMLButtonElement;
+	let selected = sources;
+	let preview: TransferPreview | undefined;
+	let generation = 0;
+	let submitting = false;
+	let closed = false;
+	let uncertain = false;
+	const request = () => ({ operation, targetModuleId: target.value, conflictPolicy: policy.value, items: selected.map(c => ({ id: c.id, revision: c.revision })) });
+	async function refreshPreview(refreshSources = false) {
+		const current = ++generation;
+		preview = undefined; submit.disabled = true;
+		if (!target.value) { previewArea.textContent = "请选择目标模块以查看预览。"; errorBox.replaceChildren(); return; }
+		previewArea.textContent = "正在预览…";
+		errorBox.replaceChildren();
+		try {
+			if (refreshSources) {
+				const latest = await api<StateResponse>("/api/state");
+				if (current !== generation || closed) return;
+				selected = selected.map(c => latest.cases.find(item => item.id === c.id) ?? c);
+			}
+			const next = await api<TransferPreview>("/api/cases/transfer/preview", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(request()) });
+			if (current !== generation || closed) return;
+			preview = next;
+			submit.textContent = `确认${label} ${next.items.length} 个案例`;
+			previewArea.replaceChildren(h("p", { class: "muted small" }, `${next.items.length} 个案例 → ${next.items[0].targetModuleName}。历史执行记录和快照保持不变。`),
+				h("div", { class: "TableWrap" }, h("table", { class: "Table" },
+					h("thead", {}, h("tr", {}, ...["来源模块", "原案例 ID", "目标案例 ID", "处理结果"].map(t => h("th", {}, t)))),
+					h("tbody", {}, ...next.items.map(item => h("tr", {}, h("td", {}, item.sourceModuleName), h("td", {}, item.originalDefinitionId), h("td", {}, item.proposedDefinitionId), h("td", {}, item.result === "unchanged" ? "保持原样" : item.conflict && !next.canApply ? "同名冲突" : item.originalDefinitionId !== item.proposedDefinitionId ? "重命名后" + label : label)))))));
+			if (!next.canApply) errorBox.append(flash("目标模块存在同名案例，请选择自动重命名或其他模块。", "warning"));
+			submit.disabled = !next.canApply || submitting || uncertain;
+		} catch (error) {
+			if (current !== generation || closed) return;
+			previewArea.replaceChildren(); errorBox.replaceChildren(flash(error instanceof Error ? error.message : String(error)));
+		}
+	}
+	const body = h("div", { class: "CaseTransfer" }, h("p", {}, `将${label} ${sources.length} 个已保存案例。${hiddenCount ? `其中 ${hiddenCount} 个已选案例被当前筛选隐藏，仍会一并处理。` : ""}`),
+		field("目标模块", target), field("同名处理", policy), previewArea, errorBox);
+	const closeModal = openModal({ title: `${label}案例到模块`, body, wide: true, actions: close => [
+		h("button", { class: "btn", onclick: () => { if (!submitting) { closed = true; generation++; close(); } } }, "取消"),
+		h("button", { class: "btn", onclick: () => { if (!submitting && !uncertain) void refreshPreview(true); } }, "刷新预览"), submit,
+	] });
+	const dialog = body.closest("dialog")!;
+	dialog.addEventListener("cancel", e => { if (submitting) e.preventDefault(); });
+	dialog.addEventListener("close", () => { closed = true; generation++; });
+	dialog.addEventListener("click", e => { if (submitting && e.target === dialog) e.stopImmediatePropagation(); }, true);
+	target.onchange = policy.onchange = () => { if (!submitting && !uncertain) void refreshPreview(); };
+	submit.onclick = async () => {
+		if (!preview?.canApply || submitting || uncertain) return;
+		submitting = true; submit.disabled = true; target.disabled = policy.disabled = true;
+		try {
+			const result = await api<{ cases: SavedCase[]; copied: number; moved: number; unchanged: number }>("/api/cases/transfer", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ ...request(), items: preview.items.map(item => ({ id: item.id, revision: item.revision, expectedDefinitionId: item.proposedDefinitionId })) }) });
+			closed = true; closeModal();
+			toast(`已复制 ${result.copied} 个，移动 ${result.moved} 个，保持原样 ${result.unchanged} 个`);
+			onSuccess(result.cases);
+			const link = h("a", { class: "toast", href: `#/cases/${target.value}` }, "查看目标模块");
+			document.getElementById("toast-root")!.append(link); setTimeout(() => link.remove(), 8000);
+		} catch (error) {
+			const status = (error as { status?: number }).status;
+			if (status === 409) { submitting = false; await refreshPreview(); errorBox.append(flash("提交前数据已变化。请刷新预览，检查最新结果后再次确认。", "warning")); }
+			else {
+				uncertain = !status;
+				errorBox.replaceChildren(flash(uncertain ? "网络中断，无法确认提交结果。请关闭弹窗并刷新目标模块核对，避免重复复制。" : String(error)));
+				submit.disabled = true;
+			}
+		} finally { submitting = false; target.disabled = policy.disabled = uncertain; }
+	};
+	void refreshPreview();
 }
 
 function confirmModal(title: string, message: string, confirmLabel: string, onConfirm: () => void | Promise<void>): void {
@@ -541,7 +619,8 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
 	const selectionInfo = h("span", { class: "muted small" });
 	const runSelectedBtn = h("button", { class: "btn btn-primary", onclick: () => openNewRun([...selection], []) }, "评测所选案例") as HTMLButtonElement;
 	const batchCount = h("span", {});
-	const batchBar = h("div", { class: "BatchBar", hidden: true }, batchCount, h("div", { class: "flex-center gap-2" }, h("button", { class: "btn btn-outline", onclick: () => { selection.clear(); renderTable(); } }, "取消选择"), runSelectedBtn));
+	const transferSelected = (operation: "copy" | "move") => openCaseTransfer(operation, s.cases.filter(c => selection.has(c.id)), s, () => { selection.clear(); render(); }, [...selection].filter(id => !visible.some(c => c.id === id)).length);
+	const batchBar = h("div", { class: "BatchBar", hidden: true }, batchCount, h("div", { class: "flex-center gap-2 wrap" }, h("button", { class: "btn", onclick: () => transferSelected("copy") }, "复制所选"), h("button", { class: "btn", onclick: () => transferSelected("move") }, "移动所选"), h("button", { class: "btn btn-outline", onclick: () => { selection.clear(); renderTable(); } }, "取消选择"), runSelectedBtn));
 
 	const toolbar = h("div", { class: "flex-between mt-3 mb-2 gap-2 wrap" },
 		h("div", { class: "case-filters flex-center gap-2 grow wrap" }, searchBox, replayFilter, resultFilter, selectionInfo),
@@ -620,14 +699,9 @@ function caseRow(c: SavedCase, moduleId: string, selection: Set<string>, rerende
 		h("button", { class: "btn btn-sm", onclick: () => navigate(`#/case/${c.id}`) }, "查看"),
 		h("button", {
 			class: "btn btn-sm",
-			onclick: async () => {
-				try {
-					await api(`/api/cases/${c.id}/duplicate`, { method: "POST", headers: JSON_HEADERS });
-					toast("已复制案例");
-					render();
-				} catch (error) { toast(error instanceof Error ? error.message : String(error), "error"); }
-			},
+			onclick: () => openCaseTransfer("copy", [c], s, () => { selection.delete(c.id); render(); }),
 		}, "复制"),
+		h("button", { class: "btn btn-sm", disabled: !s.modules.some(m => m.id !== c.moduleId), title: "移动到其他模块；需要至少两个有效模块", onclick: () => openCaseTransfer("move", [c], s, () => { selection.delete(c.id); render(); }) }, "移动"),
 		h("button", {
 			class: "btn btn-sm",
 			onclick: () => confirmModal("归档案例", `确定归档案例「${c.definition.id}」吗？归档后不再参与评测，可随时恢复。`, "归档", async () => {
@@ -965,7 +1039,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 		h("div", { class: "page-actions" },
 			h("button", { class: "btn", onclick: () => navigate(`#/cases/${module.id}`) }, "返回"),
 			h("button", { class: "btn", onclick: () => saveCase() }, "保存"),
-			...(existing ? [h("button", { class: "btn btn-danger", onclick: () => deleteCase(existing, () => navigate(`#/cases/${module.id}`)) }, "删除")] : []),
+			...(existing ? [h("button", { class: "btn", onclick: () => transferSaved("copy") }, "复制到…"), h("button", { class: "btn", disabled: !s.modules.some(m => m.id !== existing.moduleId), onclick: () => transferSaved("move") }, "移动到…"), h("button", { class: "btn btn-danger", onclick: () => deleteCase(existing, () => navigate(`#/cases/${module.id}`)) }, "删除")] : []),
 			h("button", { class: "btn btn-primary", id: "case-run", onclick: () => runDraft(replayMode) }, `运行${replayLabel(replayMode)}`),
 		),
 	);
@@ -1169,6 +1243,14 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 	};
 
 	const readDefaultsFromForm = (): EvalDefaults => readConfig("f", true);
+	const savedForm = JSON.stringify({ definition: readDefinitionFromForm(), defaults: readDefaultsFromForm() });
+	function transferSaved(operation: "copy" | "move") {
+		if (!existing) return;
+		try {
+			if (JSON.stringify({ definition: readDefinitionFromForm(), defaults: readDefaultsFromForm() }) !== savedForm) { toast("有未保存的修改，请先保存案例后再复制或移动。", "error"); return; }
+		} catch { toast("请先保存有效的案例配置。", "error"); return; }
+		openCaseTransfer(operation, [existing], s, cases => { if (operation === "move") render(); else navigate(`#/case/${cases[0].id}`); });
+	}
 	const validateCaseForm = (): boolean => {
 		for (const error of app.querySelectorAll(".field-error")) error.remove();
 		for (const control of app.querySelectorAll("[aria-invalid]")) control.removeAttribute("aria-invalid");

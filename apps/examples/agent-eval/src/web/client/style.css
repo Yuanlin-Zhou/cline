@@ -560,3 +560,14 @@ button, input, select, textarea, a, summary { scroll-margin: 20px; }
 .RepeatOutputs > .Box { min-width: 0; margin: 0; }
 .RepeatCase > summary { justify-content: flex-start; gap: 8px; }
 .RepeatOutput { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 480px; overflow: auto; margin: 0; font-size: 13px; }
+
+/* Case transfer keeps long business identifiers inside the preview scroll area. */
+.Modal:has(.CaseTransfer) { max-width: 840px; }
+.CaseTransfer { min-width: 0; }
+.TransferPreview { margin-top: 16px; }
+.TransferPreview .Table td { overflow-wrap: anywhere; min-width: 100px; }
+.Modal:has(.CaseTransfer) .Modal-footer { flex-wrap: wrap; }
+@media (max-width: 480px) {
+  .Modal-overlay:has(.CaseTransfer) { padding: 20px 8px; }
+  .Modal:has(.CaseTransfer) .Modal-footer .btn { flex: 1; min-height: 44px; }
+}

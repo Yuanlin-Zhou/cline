@@ -1,3 +1,4 @@
+import { TransferError } from "./transfer.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEvalSuite } from "../schema.js";
@@ -90,6 +91,9 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					for (const cwd of [suite.defaults.cwd, suite.cases[0].cwd]) if (cwd && !path.isAbsolute(cwd)) throw new Error("fixture 目录须为绝对路径");
 					return json(store.createCase(body.moduleId, suite.defaults, suite.cases[0]), 201);
 				}
+				if (route === "/api/cases/transfer/preview" && request.method === "POST") return json(store.previewTransfer(await request.json()));
+				if (route === "/api/cases/transfer" && request.method === "POST") return json(store.transferCases(await request.json()));
+
 				const caseActionMatch = route.match(/^\/api\/cases\/([^/]+)\/(duplicate|archive|unarchive)$/);
 				if (caseActionMatch && method === "POST") {
 					const [, id, action] = caseActionMatch;
@@ -152,7 +156,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					}
 				}
 				return json({ error: "接口不存在" }, 404);
-			} catch (error) { return json({ error: error instanceof Error ? error.message : String(error) }, 400); }
+			} catch (error) { return json({ error: error instanceof Error ? error.message : String(error) }, error instanceof TransferError ? error.status : 400); }
 		},
 	});
 	return { server, store, queue };
