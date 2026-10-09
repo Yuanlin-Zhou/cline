@@ -39,6 +39,8 @@ export const IMPORT_FIELDS: Array<[string, string, string, string]> = [
 	["maxIterations", "正整数 · 多轮可选", "Agent 迭代上限；单轮固定一次", "30"],
 	["timeoutMs", "正整数 · 可选", "整个案例的超时，单位毫秒", "300000（5 分钟）"],
 	["systemPrompt", "string · 可选", "系统提示词，未配置时使用默认提示词", "请用中文回答"],
+	["headers", "object · 可选", "非敏感模型请求头；按名称覆盖 defaults，支持执行标识模板", '{"x-session-id":"{{sessionId}}","x-message-id":"{{evaluationId}}"}'],
+	["headersEnv", "object · 可选", "请求头→服务端环境变量名；Authorization 必须用此方式，不填写密钥值", '{"Authorization":"EVAL_AUTHORIZATION"}'],
 	["assertions.contains / notContains", "string[] · 可选", "输出必须包含所有 contains 项，不能包含任何 notContains 项", '["bun install"]'],
 	["assertions.matches", "string[] · 可选", "输出必须匹配所有正则；JSON 中反斜杠需转义", '["Bun|bun"]'],
 	["assertions.finishReason", "string · 可选", "期望结束原因；未提供时按正常完成判定", "completed / max_iterations / aborted / mistake_limit / error"],

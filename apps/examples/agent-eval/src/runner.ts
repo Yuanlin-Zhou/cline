@@ -1,3 +1,4 @@
+import { resolveHeaders } from "./headers.js";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { runIsolated } from "./grading/run.js";
@@ -79,6 +80,7 @@ async function runCase(input: {
 	}, timeoutMs);
 
 	try {
+		const headers = resolveHeaders(defaults, caseDefinition, { sessionId, caseId: caseDefinition.id, evaluationId: randomUUID() });
 		const cwd = overrides.cwd
 			? path.resolve(overrides.cwd)
 			: resolveWorkspace(caseDefinition.cwd ?? defaults.cwd, suiteDirectory);
@@ -96,6 +98,7 @@ async function runCase(input: {
 				modelId: overrides.modelId ?? defaults.modelId,
 				apiKey: resolveApiKey(overrides.apiKeyEnv ?? defaults.apiKeyEnv),
 				baseUrl: defaults.baseUrl,
+				...(headers ? { headers } : {}),
 				cwd,
 				workspaceRoot: cwd,
 				mode: toolMode === "full" ? "yolo" : "act",

@@ -4,6 +4,28 @@ A small JSON-in/JSON-out evaluator that runs the local workspace version of `Cli
 
 This uses the SDK instead of spawning and scraping the terminal CLI. `initialMessages` preserves the supplied conversation history exactly, while each case still gets an isolated Cline session.
 
+## Custom model request headers
+
+Use `defaults.headers` for non-secret header values and `defaults.headersEnv` for server-side environment variable references. Cases can override either source by header name (case-insensitive). The same configuration works in CLI suite files, JSON/JSONL imports and the Web UI. See [examples/custom-headers.json](examples/custom-headers.json) for a complete example; replace its sample gateway URL and model before running it.
+
+```json
+{
+  "headers": {
+    "x-session-id": "{{sessionId}}",
+    "x-message-id": "{{evaluationId}}"
+  },
+  "headersEnv": { "Authorization": "EVAL_AUTHORIZATION" }
+}
+```
+
+Set `EVAL_AUTHORIZATION` securely in the environment of the CLI or Web server **before startup**, to the complete header value including any required `Bearer ` prefix. Workers inherit this environment. Do not paste credentials into suite files or the browser: credential headers such as `Authorization` and `x-api-key` require `headersEnv`. Missing/empty variables fail the case before a model request. Values are resolved only at execution time; stored configurations and snapshots retain the variable names.
+
+In **运行配置** and **案例配置**, add rows under **自定义模型请求头**, choosing **固定值** or **环境变量**. The separate **案例请求头覆盖** section takes precedence over default rows, including when changing the value source. Removing a case override restores inheritance; empty objects do not delete inherited headers. An empty literal value is supported.
+
+Literal values support `{{sessionId}}` (the SDK session ID shown in result details), `{{caseId}}` and `{{evaluationId}}` (a new UUID per case execution, including repeats and reruns). A full-task's successive model calls reuse these values. Thus `x-message-id: {{evaluationId}}` identifies an evaluation execution, **not each HTTP request or retry**. Environment variable values are not templated.
+
+OpenAI-compatible endpoints support explicit `Authorization` overriding the API key header; other providers keep their SDK authentication behavior. `apiKeyEnv` remains available. Transport headers such as `Host`, `Content-Type` and `Content-Length`, invalid names/values, unknown templates and duplicate names within one layer are rejected. No CLI `--header` flags or request-body/query parameters are added.
+
 ## Replay modes and web workflow
 
 - `single-turn` (also used when `replayMode` is omitted): one model response with tools disabled, regardless of inherited tool or iteration settings.

@@ -38,6 +38,32 @@ function fixture() {
 }
 
 describe("runEvalSuite", () => {
+	test("passes resolved headers with execution identities and preserves provider errors", async () => {
+		const runtime = fixture();
+		const previous = process.env.EVAL_HEADER_TEST_AUTH;
+		process.env.EVAL_HEADER_TEST_AUTH = "Bearer fake-header-secret";
+		try {
+			const suite = parseEvalSuite({ defaults: { headers: { "x-session-id": "{{sessionId}}", "x-message-id": "{{evaluationId}}" }, headersEnv: { Authorization: "EVAL_HEADER_TEST_AUTH" } }, cases: [{ id: "one", prompt: "hi" }, { id: "two", prompt: "hi", headers: { "x-tag": "case" } }] });
+			runtime.start.mockRejectedValueOnce(new Error("gateway rejected Bearer fake-header-secret"));
+			const report = await runEvalSuite({ suite, suitePath: path.resolve("suite.json"), overrides: { stream: false } });
+			const configs = runtime.start.mock.calls.map(call => (call[0] as { config: { sessionId: string; headers: Record<string, string> } }).config);
+			expect(configs[0].headers["x-session-id"]).toBe(report.cases[0].sessionId);
+			expect(configs[0].headers.authorization).toBe("Bearer fake-header-secret");
+			expect(configs[0].headers["x-message-id"]).not.toBe(configs[1].headers["x-message-id"]);
+			expect(configs[1].headers["x-tag"]).toBe("case");
+			expect(report.cases[0].error).toBe("gateway rejected Bearer fake-header-secret");
+			expect(JSON.stringify(suite)).not.toContain("fake-header-secret");
+		} finally { if (previous === undefined) delete process.env.EVAL_HEADER_TEST_AUTH; else process.env.EVAL_HEADER_TEST_AUTH = previous; }
+	});
+
+	test("missing header variable fails the case before any model request", async () => {
+		const runtime = fixture();
+		const report = await runEvalSuite({ suite: parseEvalSuite({ defaults: { headersEnv: { authorization: "EVAL_HEADER_NEVER_DEFINED" } }, cases: [{ id: "a", prompt: "hi" }] }), suitePath: path.resolve("suite.json"), overrides: { stream: false } });
+		expect(report.cases[0].status).toBe("error");
+		expect(report.cases[0].error).toContain("EVAL_HEADER_NEVER_DEFINED");
+		expect(runtime.start).not.toHaveBeenCalled();
+	});
+
 	test("single-turn disables inherited and overridden tools and limits execution to one response", async () => {
 		const runtime = fixture();
 		await runEvalSuite({

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "defaults": {
+    "providerId": "openai-compatible",
+    "modelId": "company-model",
+    "baseUrl": "https://gateway.example.com/v1",
+    "headers": {
+      "x-session-id": "{{sessionId}}",
+      "x-message-id": "{{evaluationId}}"
+    },
+    "headersEnv": { "Authorization": "EVAL_AUTHORIZATION" }
+  },
+  "cases": [
+    {
+      "id": "custom-headers",
+      "replayMode": "single-turn",
+      "prompt": "请用一句话回答：你可以做什么？",
+      "headers": { "x-business-tag": "regression" }
+    }
+  ]
+}

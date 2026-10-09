@@ -1,3 +1,4 @@
+import { headerEditor, readHeaderEditor } from "./header-editor.js";
 import type {
 	EvalAssertions,
 	EvalCase,
@@ -381,6 +382,7 @@ function appendConfigFields(parent: HTMLElement, prefix: string, initial: EvalDe
 	fg("模型 Model", input(`${prefix}-model`, initial.modelId));
 	fg("密钥环境变量", input(`${prefix}-keyenv`, initial.apiKeyEnv), "从该环境变量读取 API Key，例如 DEEPSEEK_API_KEY");
 	fg("Base URL", input(`${prefix}-baseurl`, initial.baseUrl), "自定义 OpenAI 兼容端点时填写");
+	section.append(headerEditor(`${prefix}-headers`, initial));
 	if (modelOnly) return;
 	section = h("section", { class: "ConfigSection" }, h("div", { class: "section-title" }, "执行参数"));
 	grid.append(section);
@@ -397,6 +399,7 @@ function readConfig(prefix: string, withCwd: boolean): EvalDefaults {
 		return v || undefined;
 	};
 	const defaults: EvalDefaults = {
+		...readHeaderEditor(`${prefix}-headers`),
 		providerId: optional(`${prefix}-provider`) ?? "cline",
 		modelId: optional(`${prefix}-model`) ?? "anthropic/claude-sonnet-4.6",
 		tools: (val(`${prefix}-tools`) || "read-only") as ToolMode,
@@ -1040,6 +1043,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 	appendConfigFields(credBody, "f", defaults, false, true);
 	credBody.append(field("超时（毫秒）", input("f-timeout", defaults.timeoutMs ?? 300000, "number"), "正整数，例如 300000 表示 5 分钟。"),
 		field("系统提示词", textarea("f-sysprompt", defaults.systemPrompt, false), "可选，例如：请用中文回答。留空使用默认提示词。"));
+	credBody.append(headerEditor("f-case-headers", definition, "案例请求头覆盖（留空继承默认值）"));
 	credBox.append(credBody);
 
 	const assertBox = h("div", { class: "Box mt-3" });
@@ -1132,6 +1136,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 			prompt: val("f-prompt"),
 			assertions,
 			grading: taskGrading.read(replayMode),
+			...readHeaderEditor("f-case-headers"),
 			cwd: val("f-cwd").trim() || undefined,
 			tools: val("f-tools") as ToolMode,
 			maxIterations: replayMode === "single-turn" && (!Number.isInteger(Number(val("f-maxiter"))) || Number(val("f-maxiter")) <= 0) ? defaults.maxIterations ?? 10 : Number(val("f-maxiter")),

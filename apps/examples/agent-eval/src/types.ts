@@ -1,3 +1,4 @@
+import type { HeaderConfig } from "./headers.js";
 import type { GradingConfig, Grade, EvidenceManifest } from "./grading/types.js";
 
 export type EvalMessage = {
@@ -19,7 +20,7 @@ export type EvalAssertions = {
 		| "error";
 };
 
-export type EvalDefaults = {
+export type EvalDefaults = HeaderConfig & {
 	providerId: string;
 	modelId: string;
 	apiKeyEnv?: string;
@@ -31,7 +32,7 @@ export type EvalDefaults = {
 	tools?: ToolMode;
 };
 
-export type EvalCase = {
+export type EvalCase = HeaderConfig & {
 	id: string;
 	replayMode?: "single-turn" | "full-task";
 	tags?: string[];

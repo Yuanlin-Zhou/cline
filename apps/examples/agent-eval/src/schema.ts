@@ -1,3 +1,4 @@
+import { parseHeaderConfig } from "./headers.js";
 import { parseGrading } from "./grading/schema.js";
 import type {
 	EvalAssertions,
@@ -114,6 +115,7 @@ function parseDefaults(value: unknown): EvalDefaults {
 	}
 	const defaults = value ?? {};
 	return {
+		...parseHeaderConfig(defaults, "defaults"),
 		providerId:
 			readOptionalString(defaults.providerId, "defaults.providerId") ??
 			DEFAULT_PROVIDER_ID,
@@ -159,6 +161,7 @@ function parseCase(value: unknown, index: number): EvalCase {
 	}
 
 	return {
+		...parseHeaderConfig(value, path),
 		id,
 		replayMode: value.replayMode as EvalCase["replayMode"],
 		tags: parseStringArray(value.tags, `${path}.tags`),
