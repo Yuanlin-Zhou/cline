@@ -341,7 +341,7 @@ function openCaseTransfer(operation: "copy" | "move", sources: SavedCase[], stat
 			const status = (error as { status?: number }).status;
 			if (status === 409) { submitting = false; await refreshPreview(); errorBox.append(flash("提交前数据已变化。请刷新预览，检查最新结果后再次确认。", "warning")); }
 			else {
-				uncertain = !status;
+				uncertain = !status || status === 503;
 				errorBox.replaceChildren(flash(uncertain ? "网络中断，无法确认提交结果。请关闭弹窗并刷新目标模块核对，避免重复复制。" : String(error)));
 				submit.disabled = true;
 			}
@@ -430,7 +430,9 @@ function flash(text: string, kind: "error" | "warning" | "success" | "info" = "e
 	return h("div", { class: `flash flash-${kind}` }, text);
 }
 
+let renderEpoch = 0;
 function render(): void {
+	renderEpoch++;
 	stopPolling();
 	const route = parseRoute();
 	const app = document.getElementById("app")!;
@@ -508,14 +510,17 @@ const splitLines = (text: string): string[] => text.split(/\r?\n/).map((line) =>
 /* ----------------------------- View: cases (modules + list) ----------------------------- */
 
 async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
+	const epoch = renderEpoch;
 	app.append(loading());
 	let s: StateResponse;
 	try {
 		s = await getState();
 	} catch (error) {
-		app.replaceChildren(flash(error instanceof Error ? error.message : String(error)));
+		if (epoch !== renderEpoch) return;
+		app.replaceChildren(h("div", {}, flash(error instanceof Error ? error.message : String(error)), h("button", { class: "btn mt-3", onclick: render }, "重试加载")));
 		return;
 	}
+	if (epoch !== renderEpoch) return;
 	state = s;
 	const selected = moduleId ? s.modules.find((m) => m.id === moduleId) : undefined;
 	const cases = selected ? s.cases.filter((c) => c.moduleId === selected.id) : s.cases;
@@ -967,14 +972,22 @@ function fieldDocs(): HTMLElement {
 }
 
 async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: string): Promise<void> {
+	const epoch = renderEpoch;
 	app.append(loading());
 	let s: StateResponse;
 	try {
-		s = await getState();
+		const [snapshot, item] = await Promise.all([getState(), id ? api<SavedCase>(`/api/cases/${id}`) : Promise.resolve(undefined)]);
+		s = snapshot;
+		if (item) {
+			s.cases = [...s.cases.filter(c => c.id !== item.id), item];
+			if (!s.modules.some(m => m.id === item.moduleId)) s.modules.push(await api<Module>(`/api/modules/${item.moduleId}`));
+		}
 	} catch (error) {
-		app.replaceChildren(flash(error instanceof Error ? error.message : String(error)));
+		if (epoch !== renderEpoch) return;
+		app.replaceChildren(h("div", {}, flash(error instanceof Error ? error.message : String(error)), h("button", { class: "btn mt-3", onclick: render }, "重试加载")));
 		return;
 	}
+	if (epoch !== renderEpoch) return;
 	state = s;
 
 	const existing = id ? s.cases.find((c) => c.id === id) : undefined;
@@ -1690,7 +1703,7 @@ async function renderRuns(app: HTMLElement): Promise<void> {
 	app.append(loading());
 	let s: StateResponse;
 	try {
-		s = await getState();
+		s = { modules: [], cases: [], latest: {}, settings: {} as EvalDefaults, runs: await api<StateResponse["runs"]>("/api/runs") };
 	} catch (error) {
 		app.replaceChildren(flash(error instanceof Error ? error.message : String(error)));
 		return;
@@ -2078,7 +2091,7 @@ async function renderSettings(app: HTMLElement): Promise<void> {
 	app.append(loading());
 	let s: StateResponse;
 	try {
-		s = await getState();
+		s = { modules: [], cases: [], runs: [], latest: {}, settings: await api<EvalDefaults>("/api/settings") };
 	} catch (error) {
 		app.replaceChildren(flash(error instanceof Error ? error.message : String(error)));
 		return;

@@ -16,7 +16,7 @@ test("real SDK worker → fixed evidence → grading → HTTP/CLI exports, witho
 		if (body.includes("SLOW_GRADING")) await Bun.sleep(1500);
 		return new Response('data: {"id":"test","choices":[{"index":0,"delta":{"role":"assistant","content":"Done"},"finish_reason":null}]}\n\ndata: {"id":"test","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1}}\n\ndata: [DONE]\n\n', { headers: { "Content-Type": "text/event-stream" } });
 	} });
-	const app = await createEvalServer({ directory: path.join(directory, "data"), port: 0 });
+	const app = await createEvalServer({ storage: "sqlite", directory: path.join(directory, "data"), port: 0 });
 	const base = `http://127.0.0.1:${app.server.port}`;
 	const post = async (route: string, body: unknown) => fetch(base + route, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 	const defaults = { providerId: "openai-compatible", modelId: "gpt-4o-mini", baseUrl: `http://127.0.0.1:${mock.port}/v1`, apiKeyEnv: "CLINE_GRADING_TEST_KEY", cwd: fixture, tools: "none", maxIterations: 1, timeoutMs: 10000 };

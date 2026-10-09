@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import { CatalogError, SqliteCatalog, type CatalogRepository } from "./catalog.js";
+import { MongoCatalog, mongoConfig, type MongoConfig } from "./mongo-catalog.js";
 import { TransferError } from "./transfer.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,8 +20,15 @@ const client = fileURLToPath(new URL("client/", import.meta.url));
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const csvCell = (value: unknown) => `"${String(value ?? "").replace(/^[=+@\-\t\r]/, "'$&").replaceAll('"', '""')}"`;
 
-export async function createEvalServer(options: { directory?: string; port?: number; execute?: Executor } = {}) {
-	const store = new EvalStore(path.resolve(options.directory ?? process.env.EVAL_DATA_DIR ?? path.join(root, ".eval-data")));
+export async function createEvalServer(options: { directory?: string; port?: number; execute?: Executor; storage?: "sqlite" | "mongodb"; mongo?: MongoConfig; catalog?: CatalogRepository } = {}) {
+	const storage = options.storage ?? (options.mongo ? "mongodb" : process.env.EVAL_CASE_STORAGE ?? "sqlite");
+	if (!["sqlite", "mongodb"].includes(storage)) throw new CatalogError("EVAL_CASE_STORAGE 须为 sqlite 或 mongodb");
+	const connected = options.catalog ?? (storage === "mongodb" ? await MongoCatalog.connect(options.mongo ?? mongoConfig()) : undefined);
+	let store: EvalStore;
+	try { store = new EvalStore(path.resolve(options.directory ?? process.env.EVAL_DATA_DIR ?? path.join(root, ".eval-data")), { seedModules: storage !== "mongodb" }); }
+	catch (error) { await connected?.close(); throw error; }
+	const catalog = connected ?? new SqliteCatalog(store);
+	try {
 	const queue = new EvalQueue(store, options.execute);
 	const verifiers = await loadVerifiers();
 	store.validateCase = definition => preflight(definition, verifiers);
@@ -45,10 +55,10 @@ export async function createEvalServer(options: { directory?: string; port?: num
 				if (method !== "GET" && !request.headers.get("content-type")?.startsWith("application/json")) return json({ error: "请求须为 application/json" }, 415);
 				if (route === "/api/state" && method === "GET") {
 					const allItems = store.list<import("./types.js").RunItem>("item");
-					const cases = store.activeCases();
+					const { cases, modules } = await catalog.snapshot();
 					const activeIds = new Set(cases.map(c => c.id));
 					const latest = Object.fromEntries(allItems.filter(i => activeIds.has(i.snapshot.id) && !["queued", "running", "cancelled"].includes(i.status)).map(i => [i.snapshot.id, { status: i.status, runId: i.runId, revision: i.snapshot.revision, modelId: i.snapshot.defaults.modelId, sessionId: i.result?.sessionId, durationMs: i.result?.durationMs, endedAt: i.endedAt }]));
-					return json({ modules: store.activeModules(), cases, settings: store.settings(), runs: store.list<Run>("run").reverse().map(run => ({ ...run, summary: summarize(allItems.filter(i => i.runId === run.id)) })), latest });
+					return json({ modules, cases, settings: store.settings(), runs: store.list<Run>("run").reverse().map(run => ({ ...run, summary: summarize(allItems.filter(i => i.runId === run.id)) })), latest });
 				}
 				if (route === "/api/verifiers" && method === "GET") return json({ verifiers: verifiers.map(publicVerifier), capabilities: CAPABILITIES });
 				const evidenceMatch = route.match(/^\/api\/runs\/([^/]+)\/items\/([^/]+)\/(grading|evidence)(?:\/([^/]+))?$/);
@@ -62,13 +72,16 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					const bytes = await readEvidence(path.join(store.directory, "runs", runId, itemId), ref);
 					return json({ id: ref.id, label: ref.label, text: bytes.includes(0) ? "二进制文件，无法文本预览" : bytes.toString("utf8"), sha256: ref.sha256 });
 				}
-				if (route === "/api/modules" && method === "POST") { const body = await request.json(); return json(store.createModule(body.name, body.description, body.tags), 201); }
+				if (route === "/api/modules" && method === "POST") { const body = await request.json(); return json(await catalog.createModule(body.name, body.description, body.tags), 201); }
+				if (route === "/api/modules" && method === "GET") return json((await catalog.snapshot()).modules);
+
 				const moduleMatch = route.match(/^\/api\/modules\/([^/]+)(?:\/(archive|unarchive))?$/);
 				if (moduleMatch) {
 					const [, id, action] = moduleMatch;
-					if (action === "archive" && method === "POST") { store.archiveModule(id); return json({ archived: true }); }
-					if (action === "unarchive" && method === "POST") { store.setArchived("module", id, false); return json({ archived: false }); }
-					if (method === "PUT") return json(store.updateModule(id, await request.json()));
+					if (method === "GET" && !action) { const module = await catalog.getModule(id); if (!module) throw new CatalogError("模块不存在", 404); return json(module); }
+					if (action === "archive" && method === "POST") { await catalog.archiveModule(id); return json({ archived: true }); }
+					if (action === "unarchive" && method === "POST") { await catalog.setArchived("module", id, false); return json({ archived: false }); }
+					if (method === "PUT") return json(await catalog.updateModule(id, await request.json()));
 					return json({ error: "接口不存在" }, 404);
 				}
 				if (route === "/api/settings" && method === "PUT") {
@@ -77,52 +90,62 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					store.put("settings", "default", settings); return json(settings);
 				}
 				if (["/api/import/preview", "/api/import"].includes(route) && method === "POST") {
-					const body = await request.json(); store.require("module", body.moduleId);
+					const body = await request.json();
+					if (!await catalog.getModule(body.moduleId)) throw new CatalogError("模块不存在", 404);
 					if (typeof body.content !== "string") throw new Error("缺少导入内容");
 					const suite = store.parseImport(body.content, body.format, body.replayMode);
 					for (const cwd of [suite.defaults.cwd, ...suite.cases.map(c => c.cwd)]) if (cwd && !path.isAbsolute(cwd)) throw new Error("上传文件的相对 cwd 无法确定，请改为服务端 fixture 绝对路径或删除 cwd 使用空工作区");
-					if (route.endsWith("preview")) { const existing = store.activeCases().filter(c => c.moduleId === body.moduleId); return json({ suite, cases: suite.cases.map(c => ({ id: c.id, description: c.description, replayMode: c.replayMode, duplicate: existing.some(e => e.definition.id === c.id) })) }); }
-					return json(store.importCases(body.moduleId, suite, body.policy));
+					if (route.endsWith("preview")) { const existing = (await catalog.snapshot()).cases.filter(c => c.moduleId === body.moduleId); return json({ suite, cases: suite.cases.map(c => ({ id: c.id, description: c.description, replayMode: c.replayMode, duplicate: existing.some(e => e.definition.id === c.id) })) }); }
+					return json(await catalog.importCases(body.moduleId, suite, body.policy));
 				}
 				if (route === "/api/cases" && method === "POST") {
 					const body = await request.json();
 					if (!body.moduleId) throw new Error("缺少目标模块");
 					const suite = parseEvalSuite({ defaults: body.defaults, cases: [body.definition] });
 					for (const cwd of [suite.defaults.cwd, suite.cases[0].cwd]) if (cwd && !path.isAbsolute(cwd)) throw new Error("fixture 目录须为绝对路径");
-					return json(store.createCase(body.moduleId, suite.defaults, suite.cases[0]), 201);
+					return json(await catalog.createCase(body.moduleId, suite.defaults, suite.cases[0]), 201);
 				}
-				if (route === "/api/cases/transfer/preview" && request.method === "POST") return json(store.previewTransfer(await request.json()));
-				if (route === "/api/cases/transfer" && request.method === "POST") return json(store.transferCases(await request.json()));
+				if (route === "/api/cases/transfer/preview" && request.method === "POST") return json(await catalog.previewTransfer(await request.json()));
+				if (route === "/api/cases/transfer" && request.method === "POST") return json(await catalog.transferCases(await request.json()));
 
 				const caseActionMatch = route.match(/^\/api\/cases\/([^/]+)\/(duplicate|archive|unarchive)$/);
 				if (caseActionMatch && method === "POST") {
 					const [, id, action] = caseActionMatch;
-					if (action === "duplicate") return json(store.duplicateCase(id), 201);
-					if (action === "archive") { store.setArchived("case", id, true); return json({ archived: true }); }
-					store.setArchived("case", id, false); return json({ archived: false });
+					if (action === "duplicate") return json(await catalog.duplicateCase(id), 201);
+					if (action === "archive") { await catalog.setArchived("case", id, true); return json({ archived: true }); }
+					await catalog.setArchived("case", id, false); return json({ archived: false });
 				}
 				const caseRunsMatch = route.match(/^\/api\/cases\/([^/]+)\/runs$/);
 				if (caseRunsMatch && method === "GET") {
-					const target = store.require<SavedCase>("case", caseRunsMatch[1]);
+					const targetId = caseRunsMatch[1];
 					const allItems = store.list<RunItem>("item");
+					if (!allItems.some(i => i.snapshot.id === targetId) && !await catalog.getCase(targetId)) throw new CatalogError("案例不存在或已删除", 404);
 					return json(store.list<Run>("run").reverse().map(run => {
-						const items = allItems.filter(i => i.runId === run.id && i.snapshot.id === target.id);
+						const items = allItems.filter(i => i.runId === run.id && i.snapshot.id === targetId);
 						return { ...run, summary: summarize(items), items: items.map(i => ({ id: i.id, round: i.round ?? 1, status: i.status, revision: i.snapshot.revision, modelId: i.snapshot.defaults.modelId, sessionId: i.result?.sessionId, durationMs: i.result?.durationMs, endedAt: i.endedAt })) };
 					}).filter(run => run.items.length > 0));
 				}
 				const caseMatch = route.match(/^\/api\/cases\/([^/]+)$/);
+				if (caseMatch && method === "GET") {
+					const item = await catalog.getCase(caseMatch[1]); if (!item) throw new CatalogError("案例不存在或已删除", 404);
+					return json(item);
+				}
 				if (caseMatch && method === "DELETE") {
-					if (!store.get<SavedCase>("case", caseMatch[1])) return json({ error: "案例不存在或已删除" }, 404);
-					store.deleteCase(caseMatch[1]); return json({ deleted: true });
+					if (!await catalog.getCase(caseMatch[1])) return json({ error: "案例不存在或已删除" }, 404);
+					await catalog.deleteCase(caseMatch[1]); return json({ deleted: true });
 				}
 				if (caseMatch && method === "PUT") {
-					const previous = store.require<SavedCase>("case", caseMatch[1]); const body = await request.json();
-					if (body.revision !== previous.revision) return json({ error: "案例已被其他页面修改，请刷新后重试" }, 409);
+					const body = await request.json();
 					const suite = parseEvalSuite({ defaults: body.defaults, cases: [body.definition] });
-					if (store.activeCases().some(c => c.id !== previous.id && c.moduleId === previous.moduleId && c.definition.id === suite.cases[0].id)) throw new Error("同模块已有相同案例 ID");
 					for (const cwd of [suite.defaults.cwd, suite.cases[0].cwd]) if (cwd && !path.isAbsolute(cwd)) throw new Error("fixture 目录须为绝对路径");
-					const updated = { ...previous, definition: suite.cases[0], defaults: suite.defaults, revision: previous.revision + 1, updatedAt: new Date().toISOString() }; store.put("case", updated.id, updated); return json(updated);
+					return json(await catalog.updateCase(caseMatch[1], body.revision, suite.defaults, suite.cases[0]));
 				}
+				if (route === "/api/runs" && method === "GET") {
+					const items = store.list<RunItem>("item");
+					return json(store.list<Run>("run").reverse().map(run => ({ ...run, summary: summarize(items.filter(i => i.runId === run.id)) })));
+				}
+				if (route === "/api/settings" && method === "GET") return json(store.settings());
+
 				if (route === "/api/runs" && method === "POST") {
 					const body = await request.json();
 					if (body.defaults) {
@@ -130,12 +153,26 @@ export async function createEvalServer(options: { directory?: string; port?: num
 						if (parsed.cwd && !path.isAbsolute(parsed.cwd)) throw new Error("fixture 目录须为绝对路径");
 					}
 					if (Array.isArray(body.draft)) for (const draft of body.draft) {
-						store.require("module", draft.moduleId);
+						const module = await catalog.getModule(draft.moduleId);
+						if (!module || module.archived) throw new CatalogError("草稿目标模块不存在或已归档", 409);
 						const suite = parseEvalSuite({ defaults: draft.defaults, cases: [draft.definition] });
 						for (const cwd of [suite.defaults.cwd, suite.cases[0].cwd]) if (cwd && !path.isAbsolute(cwd)) throw new Error("fixture 目录须为绝对路径");
 						draft.definition = suite.cases[0]; draft.defaults = suite.defaults;
 					}
-					const run = store.createRun(body); queue.kick(); return json(run, 202);
+					let sources;
+					if (body.draft?.length) {
+						sources = [];
+						for (const draft of body.draft) {
+							const module = await catalog.getModule(draft.moduleId);
+							if (!module || module.archived) throw new CatalogError("草稿目标模块不存在或已归档", 409);
+							sources.push({ snapshot: { id: randomUUID(), moduleId: draft.moduleId, revision: 0, definition: draft.definition, defaults: draft.defaults, updatedAt: new Date().toISOString() }, moduleName: module.name });
+						}
+					} else if (!body.parentRunId) {
+						const snapshot = await catalog.snapshot();
+						if (body.caseIds?.some((id: string) => !snapshot.cases.some(c => c.id === id)) || body.moduleIds?.some((id: string) => !snapshot.modules.some(m => m.id === id))) throw new CatalogError("选中的案例或模块不存在或已归档", 404);
+						sources = snapshot.cases.filter(c => body.caseIds?.includes(c.id) || body.moduleIds?.includes(c.moduleId)).map(c => ({ snapshot: c, moduleName: snapshot.modules.find(m => m.id === c.moduleId)!.name }));
+					}
+					const run = store.createRun(body, sources); queue.kick(); return json(run, 202);
 				}
 				const runMatch = route.match(/^\/api\/runs\/([^/]+)(?:\/(cancel|export|artifacts))?$/);
 				if (runMatch) {
@@ -156,12 +193,19 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					}
 				}
 				return json({ error: "接口不存在" }, 404);
-			} catch (error) { return json({ error: error instanceof Error ? error.message : String(error) }, error instanceof TransferError ? error.status : 400); }
+			} catch (error) { return json({ error: error instanceof Error ? error.message : String(error) }, error instanceof TransferError || error instanceof CatalogError ? error.status : 400); }
 		},
 	});
-	return { server, store, queue };
+	let closing: Promise<void> | undefined;
+	const close = () => closing ??= (async () => {
+		for (const run of store.list<Run>("run")) if (["queued", "running"].includes(run.status)) queue.cancel(run.id);
+		await server.stop(true); await queue.idle(); await catalog.close(); store.db.close();
+	})();
+	return { server, store, queue, catalog, close };
+	} catch (error) { await catalog.close(); store.db.close(); throw error; }
 }
 if (import.meta.main) {
 	const app = await createEvalServer();
+	for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => { void app.close().then(() => process.exit(0)); });
 	console.log(`Agent Eval → http://127.0.0.1:${app.server.port}\nData: ${app.store.directory}`);
 }

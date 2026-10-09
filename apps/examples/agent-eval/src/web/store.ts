@@ -6,21 +6,24 @@ import { parseEvalSuite } from "../schema.js";
 import type { EvalCase, EvalDefaults, EvalSuite } from "../types.js";
 import type { Module, Run, RunDetail, RunItem, SavedCase } from "./types.js";
 
-import { parseTransfer, TransferError, type TransferRequest, type TransferPreview } from "./transfer.js";
+import { planTransfer, parseTransfer, TransferError, type TransferRequest, type TransferPreview } from "./transfer.js";
+
+export type RunInput = { caseIds?: string[]; moduleIds?: string[]; name?: string; note?: string; concurrency?: number; repeatCount?: number; useSettings?: boolean; replayMode?: string; parentRunId?: string; rerunScope?: "all" | "failed"; defaults?: EvalDefaults; draft?: Array<{ moduleId: string; definition: EvalCase; defaults: EvalDefaults }> };
+export type RunSource = { snapshot: SavedCase; moduleName: string };
 
 const now = () => new Date().toISOString();
 const cleanTags = (tags: unknown): string[] => (Array.isArray(tags) ? tags : []).filter(tag => typeof tag === "string" && tag.trim()).map(tag => (tag as string).trim()).slice(0, 20);
 export class EvalStore {
 	validateCase?: (definition: EvalCase) => void;
 	readonly db: Database;
-	constructor(readonly directory: string) {
+	constructor(readonly directory: string, options: { seedModules?: boolean } = {}) {
 		mkdirSync(directory, { recursive: true });
 		this.db = new Database(path.join(directory, "eval.sqlite"));
 		this.db.exec(`PRAGMA journal_mode=WAL;
 			CREATE TABLE IF NOT EXISTS records (kind TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(kind,id));`);
 		if (!this.get<EvalDefaults>("settings", "default")) {
 			this.put("settings", "default", parseEvalSuite({ cases: [{ id: "default", prompt: "default" }] }).defaults);
-			for (const [name, description] of [["read_file", "文件读取、路径处理与边界行为"], ["write_file", "文件创建、内容修改与写入验证"], ["execute_command", "命令执行与错误处理"], ["task_completion", "完整任务执行与最终结果验证"]]) this.createModule(name, description);
+			if (options.seedModules !== false) for (const [name, description] of [["read_file", "文件读取、路径处理与边界行为"], ["write_file", "文件创建、内容修改与写入验证"], ["execute_command", "命令执行与错误处理"], ["task_completion", "完整任务执行与最终结果验证"]]) this.createModule(name, description);
 		}
 		this.db.transaction(() => {
 			for (const run of this.list<Run>("run")) if (["queued", "running"].includes(run.status)) {
@@ -77,32 +80,7 @@ export class EvalStore {
 		return this.createCase(source.moduleId, structuredClone(source.defaults), definition);
 	}
 	private planTransfer(request: TransferRequest): TransferPreview {
-		const target = this.get<Module>("module", request.targetModuleId);
-		if (!target) throw new TransferError("目标模块不存在", 404);
-		if (target.archived) throw new TransferError(`目标模块「${target.name}」已归档`);
-		const names = new Set(this.activeCases().filter(c => c.moduleId === target.id).map(c => c.definition.id));
-		const items: TransferPreview["items"] = [];
-		for (const input of request.items) {
-			const source = this.get<SavedCase>("case", input.id);
-			if (!source) throw new TransferError("源案例不存在", 404);
-			const module = this.get<Module>("module", source.moduleId);
-			if (!module) throw new TransferError("源模块不存在", 404);
-			if (source.archived || module.archived) throw new TransferError(`源案例「${source.definition.id}」或模块「${module.name}」已归档`);
-			if (source.revision !== input.revision) throw new TransferError(`案例「${source.definition.id}」版本已变化，请重新选择并预览`);
-			const unchanged = request.operation === "move" && source.moduleId === target.id;
-			const base = source.definition.id;
-			const sameModuleCopy = request.operation === "copy" && source.moduleId === target.id;
-			const conflict = !unchanged && !sameModuleCopy && names.has(base);
-			let proposed = base;
-			if (sameModuleCopy || (conflict && request.conflictPolicy === "rename")) {
-				let suffix = 1;
-				while (names.has(`${base}-${request.operation}${suffix}`)) suffix++;
-				proposed = `${base}-${request.operation}${suffix}`;
-			}
-			names.add(proposed);
-			items.push({ id: source.id, revision: source.revision, originalDefinitionId: base, proposedDefinitionId: proposed, sourceModuleName: module.name, targetModuleName: target.name, result: unchanged ? "unchanged" : request.operation, conflict });
-		}
-		return { items, summary: { copied: items.filter(i => i.result === "copy").length, moved: items.filter(i => i.result === "move").length, unchanged: items.filter(i => i.result === "unchanged").length, conflicts: items.filter(i => i.conflict).length }, canApply: request.conflictPolicy === "rename" || !items.some(item => item.conflict) };
+		return planTransfer(request, this.list<Module>("module"), this.list<SavedCase>("case"));
 	}
 	previewTransfer(input: unknown): TransferPreview {
 		const request = parseTransfer(input);
@@ -170,15 +148,16 @@ export class EvalStore {
 	}
 	items(runId: string) { return this.list<RunItem>("item").filter(item => item.runId === runId); }
 	detail(id: string): RunDetail { return { ...this.require<Run>("run", id), items: this.items(id) }; }
-	createRun(input: { caseIds?: string[]; moduleIds?: string[]; name?: string; note?: string; concurrency?: number; repeatCount?: number; useSettings?: boolean; replayMode?: string; parentRunId?: string; rerunScope?: "all" | "failed"; defaults?: EvalDefaults; draft?: Array<{ moduleId: string; definition: EvalCase; defaults: EvalDefaults }> }): Run {
+	createRun(input: RunInput, resolvedSources?: RunSource[]): Run {
 		const concurrency = input.concurrency ?? 1;
 		if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("并发数须为 1–4");
 		const repeatCount = input.repeatCount === undefined ? 1 : input.repeatCount;
 		if (!Number.isInteger(repeatCount) || repeatCount < 1 || repeatCount > 100) throw new Error("重复轮数须为 1–100 的整数");
 		if (input.rerunScope !== undefined && !["all", "failed"].includes(input.rerunScope)) throw new Error("重跑范围无效");
 		if (input.replayMode && !["single-turn", "full-task"].includes(input.replayMode)) throw new Error("回放方式无效");
-		let sources: Array<{ snapshot: SavedCase; moduleName: string }>;
-		if (input.draft?.length) {
+		let sources: RunSource[];
+		if (resolvedSources) sources = resolvedSources;
+		else if (input.draft?.length) {
 			sources = input.draft.map(draft => ({ snapshot: { id: randomUUID(), moduleId: draft.moduleId, revision: 0, definition: { ...draft.definition, replayMode: input.replayMode as "single-turn" | "full-task" }, defaults: draft.defaults, updatedAt: now() }, moduleName: this.require<Module>("module", draft.moduleId).name }));
 		} else if (input.parentRunId) {
 			const items = this.detail(input.parentRunId).items.filter(i => input.rerunScope === "all" || ["failed", "error", "cancelled", "inconclusive"].includes(i.status));

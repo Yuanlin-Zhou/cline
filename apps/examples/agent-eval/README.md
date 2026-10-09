@@ -4,6 +4,12 @@ A small JSON-in/JSON-out evaluator that runs the local workspace version of `Cli
 
 This uses the SDK instead of spawning and scraping the terminal CLI. `initialMessages` preserves the supplied conversation history exactly, while each case still gets an isolated Cline session.
 
+## MongoDB case and module storage
+
+Set `EVAL_CASE_STORAGE=mongodb` to read and edit cases directly in MongoDB, including cases created by an external generator. Single-turn and full-task cases, tags, copies and moves use the same MongoDB catalog; evaluation history and immutable execution snapshots remain in SQLite. Prepare collections/indexes explicitly and use a replica set for transactions. Existing deployments default to SQLite and are never migrated automatically.
+
+See [MongoDB setup, document contract and migration](docs/mongodb.md), [the sample document](docs/mongodb-case.example.json), and [Spec 008](../../../specs/008-agent-eval-mongodb-cases.md).
+
 ## Editing tags in the Web UI
 
 Case and module forms show selected tags as removable chips. Click **＋ 新增标签**, enter one name, then click **添加** or press Enter. Click **选择已有标签** to search and select multiple existing tags, then **完成选择** to close the panel. Use × to remove a tag from the current form. Changes take effect when you save the case or module.

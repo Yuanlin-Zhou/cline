@@ -34,7 +34,7 @@ const mock = Bun.serve({
 	},
 });
 
-const app = await createEvalServer({ directory: dataDir, port: 0 });
+const app = await createEvalServer({ storage: "sqlite", directory: dataDir, port: 0 });
 const base = `http://127.0.0.1:${app.server.port}`;
 
 let failures = 0;

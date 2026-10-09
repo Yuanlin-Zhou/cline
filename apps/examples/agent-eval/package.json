@@ -16,10 +16,14 @@
 		"package": "bun run build && bun run scripts/package.ts",
 		"test": "bun test",
 		"smoke:release": "bun scripts/smoke-release.ts",
-		"start": "node dist/index.js"
+		"start": "node dist/index.js",
+		"mongo:prepare": "bun run scripts/mongo-prepare.ts",
+		"mongo:migrate": "bun run scripts/mongo-migrate.ts",
+		"test:mongo": "bun test src/web/mongo.integration.test.ts"
 	},
 	"dependencies": {
-		"@cline/sdk": "workspace:*"
+		"@cline/sdk": "workspace:*",
+		"mongodb": "6.21.0"
 	},
 	"devDependencies": {
 		"@types/bun": "^1.3.13",

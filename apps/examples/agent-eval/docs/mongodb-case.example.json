@@ -1,0 +1,33 @@
+{
+  "_id": "replace-with-case-uuid",
+  "schemaVersion": 1,
+  "moduleId": "replace-with-module-uuid-from-api",
+  "revision": 1,
+  "archived": false,
+  "createdAt": { "$date": "2026-10-09T00:00:00.000Z" },
+  "updatedAt": { "$date": "2026-10-09T00:00:00.000Z" },
+  "definition": {
+    "id": "history-bun-install",
+    "replayMode": "single-turn",
+    "description": "验证模型遵循历史上下文",
+    "tags": ["回归", "上下文"],
+    "history": [
+      { "role": "user", "content": "项目使用 Bun，请用中文回答。" },
+      { "role": "assistant", "content": "好的。" }
+    ],
+    "prompt": "安装项目依赖应该执行什么命令？",
+    "assertions": { "contains": ["bun install"], "finishReason": "completed" },
+    "headers": { "x-session-id": "{{sessionId}}" },
+    "headersEnv": { "authorization": "EVAL_AUTHORIZATION" }
+  },
+  "defaults": {
+    "providerId": "openai-compatible",
+    "modelId": "your-model",
+    "baseUrl": "https://gateway.example/v1",
+    "apiKeyEnv": "EVAL_API_KEY",
+    "timeoutMs": 180000,
+    "maxIterations": 10,
+    "tools": "read-only"
+  },
+  "provenance": { "source": "external-generator", "sourceId": "external-case-42" }
+}

@@ -69,7 +69,7 @@ test("same module copy gets a suffix even with abort policy; no-op move writes n
 
 test("transfer HTTP routes report input, stale revision, and missing module errors", async () => {
 	const { createEvalServer } = await import("./server.js");
-	const app = await createEvalServer({ directory: path.join(directory, "http"), port: 0 });
+	const app = await createEvalServer({ storage: "sqlite", directory: path.join(directory, "http"), port: 0 });
 	try {
 		const [source, target] = app.store.activeModules();
 		const c = app.store.createCase(source.id, app.store.settings(), { id: "api-case", prompt: "hello", history: [] });

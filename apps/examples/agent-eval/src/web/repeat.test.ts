@@ -118,7 +118,7 @@ describe("repeated batches", () => {
 
 	test("HTTP creation, report exports and round identifiers work end to end", async () => {
 		const c = seed();
-		const app = await createEvalServer({ directory, port: 0, execute: async item => result(item, item.round === 2 ? "Use npm" : "Use Bun", item.round === 2 ? "failed" : "passed") });
+		const app = await createEvalServer({ storage: "sqlite", directory, port: 0, execute: async item => result(item, item.round === 2 ? "Use npm" : "Use Bun", item.round === 2 ? "failed" : "passed") });
 		const base = `http://127.0.0.1:${app.server.port}`;
 		try {
 			const post = (repeatCount: unknown) => fetch(`${base}/api/runs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ caseIds: [c.id], repeatCount }) });
@@ -144,7 +144,7 @@ describe("repeated batches", () => {
 
 	test("deleting a case preserves submitted executions, exports and snapshot reruns", async () => {
 		const c = seed(); const other = seed("keep-me");
-		const app = await createEvalServer({ directory, port: 0, execute: async item => result(item) });
+		const app = await createEvalServer({ storage: "sqlite", directory, port: 0, execute: async item => result(item) });
 		const base = `http://127.0.0.1:${app.server.port}`;
 		try {
 			const run = app.store.createRun({ caseIds: [c.id], repeatCount: 2 });
