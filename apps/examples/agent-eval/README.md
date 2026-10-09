@@ -4,6 +4,12 @@ A small JSON-in/JSON-out evaluator that runs the local workspace version of `Cli
 
 This uses the SDK instead of spawning and scraping the terminal CLI. `initialMessages` preserves the supplied conversation history exactly, while each case still gets an isolated Cline session.
 
+## Editing tags in the Web UI
+
+Case and module forms show selected tags as removable chips. Click **＋ 新增标签**, enter one name, then click **添加** or press Enter. Click **选择已有标签** to search and select multiple existing tags, then **完成选择** to close the panel. Use × to remove a tag from the current form. Changes take effect when you save the case or module.
+
+Cases reuse tags from active cases across active modules; modules reuse tags from active modules. A new tag becomes available elsewhere after saving. Names containing commas remain a single tag. Duplicate names are rejected, and modules allow up to 20 tags. Removing a tag affects only the current item. See [the specification](../../../specs/007-agent-eval-tag-editor.md).
+
 ## Copying and moving cases between modules
 
 In the Web UI, select cases and use **复制所选 / 移动所选**, or open a saved case through its name or row and use **复制到… / 移动到…** in the details. Save any draft changes first. List rows show only **运行 / 删除** actions. Batch operations include selected cases hidden by the current filters.

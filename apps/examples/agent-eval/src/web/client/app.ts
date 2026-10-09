@@ -1,3 +1,4 @@
+import { tagEditor } from "./tag-editor.js";
 import type { TransferPreview } from "../transfer.js";
 import { headerEditor, readHeaderEditor } from "./header-editor.js";
 import type {
@@ -734,11 +735,12 @@ async function runCases(caseIds: string[], moduleIds: string[], name?: string): 
 }
 
 function openModuleModal(module?: Module): void {
+	const tagsEditor = tagEditor({ id: "m-tags", initial: module?.tags, limit: 20, loadCandidates: async () => (await api<StateResponse>("/api/state")).modules.flatMap(m => m.tags ?? []) });
 	const body = h("div", {});
 	body.append(
 		field("名称", input("m-name", module?.name)),
 		field("描述", textarea("m-desc", module?.description, false), "模块所覆盖的被测能力"),
-		field("标签", input("m-tags", (module?.tags ?? []).join(", ")), "逗号分隔，用于辅助分类"),
+		field("标签", tagsEditor.element, "新增或选择已有标签，保存后生效。最多 20 个。"),
 	);
 	openModal({
 		title: module ? "编辑模块" : "新建模块",
@@ -749,7 +751,7 @@ function openModuleModal(module?: Module): void {
 				class: "btn btn-primary",
 				onclick: async () => {
 					try {
-						const tags = splitLines(val("m-tags").split(",").join("\n"));
+						const tags = tagsEditor.read();
 						if (module) {
 							await api(`/api/modules/${module.id}`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ name: val("m-name"), description: val("m-desc"), tags }) });
 						} else {
@@ -1042,15 +1044,14 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 	const right = h("section", { class: "grow" });
 
 	// ---- left: input form ----
+	const tagsEditor = tagEditor({ id: "f-tags", initial: definition.tags, candidates: s.cases.filter(c => s.modules.some(m => m.id === c.moduleId)).flatMap(c => c.definition.tags ?? []) });
 	const form = h("div", { class: "Box" });
 	const formBody = h("div", { class: "Box-body" });
 	formBody.append(
 		h("div", { class: "section-title" }, h("span", {}, "基本信息")),
 		field("案例 ID *", input("f-id", isNew ? "" : definition.id), "模块内唯一，例如 history-bun-install"),
 		field("描述", input("f-desc", definition.description ?? ""), "可选，例如：验证模型遵循历史上下文"),
-		h("div", { class: "form-row" },
-			field("标签", input("f-tags", (definition.tags ?? []).join(", ")), "可选，逗号分隔，例如：回归, 上下文"),
-		),
+		field("标签", tagsEditor.element, "新增或选择已有标签，保存后生效。"),
 	);
 
 	const historyBox = h("details", { class: "Box mt-3", open: definition.history.length > 0 });
@@ -1199,7 +1200,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 		const result: EvalCase = {
 			id: val("f-id").trim(),
 			replayMode,
-			tags: splitLines(val("f-tags").split(",").join("\n")),
+			tags: tagsEditor.read(),
 			description: val("f-desc").trim() || undefined,
 			history,
 			prompt: val("f-prompt"),
