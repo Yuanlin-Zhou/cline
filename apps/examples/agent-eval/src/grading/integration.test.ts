@@ -32,6 +32,10 @@ test("real SDK worker → fixed evidence → grading → HTTP/CLI exports, witho
 		const run = await (await fetch(`${base}/api/runs/${id}`)).json() as RunDetail;
 		expect(run.items.map(i => i.status)).toEqual(["passed", "passed"]);
 		for (const item of run.items) {
+			expect(item.sessionId).toBe(item.result?.sessionId); expect(item.lastActivityAt).toBeTruthy();
+			expect(item.activities?.some(a => a.type === "iteration")).toBe(true);
+			const conversation = await (await fetch(`${base}/api/runs/${id}/items/${item.id}/conversation`)).json() as { status: string; messages: Array<{ role: string; blocks: Array<{ text: string }> }> };
+			expect(conversation.status).toBe("ready"); expect(conversation.messages.some(m => m.role === "assistant" && m.blocks.some(b => b.text === "Done"))).toBe(true);
 			expect(item.result?.grading?.results.map(r => r.status)).toEqual(["pass", "insufficient"]);
 			expect(item.result?.execution?.status).toBe("completed"); expect(item.result?.sessionId).toBeTruthy();
 			const ref = item.result!.grading!.results[0].evidenceRefs[0];
@@ -69,7 +73,9 @@ test("real SDK worker → fixed evidence → grading → HTTP/CLI exports, witho
 			try { observed = (await readFile(path.join(directory, "data", "runs", slowRun.id, item.id, "evidence/events.jsonl"), "utf8")).includes("session.started"); } catch {}
 			if (observed) break; await Bun.sleep(20);
 		}
-		expect(observed).toBe(true); await post(`/api/runs/${slowRun.id}/cancel`, {}); await app.queue.idle();
+		expect(observed).toBe(true);
+		const live = app.store.detail(slowRun.id).items[0]; expect(live.sessionId).toBeTruthy(); expect(live.status).toBe("running");
+		await post(`/api/runs/${slowRun.id}/cancel`, {}); await app.queue.idle();
 		const cancelled = app.store.detail(slowRun.id).items[0]; expect(cancelled.status).toBe("cancelled"); expect(cancelled.result?.grading?.status).toBe("cancelled"); expect(cancelled.result?.evidence?.refs.length).toBeGreaterThan(0);
 	} finally {
 		await app.queue.idle(); app.server.stop(true); app.store.db.close(); mock.stop(true);

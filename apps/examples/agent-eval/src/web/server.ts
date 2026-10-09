@@ -15,6 +15,7 @@ import { MongoVerifiers, SqliteVerifiers, publicUploaded, type VerifierRepositor
 import { preflight } from "../grading/engine.js";
 import { CAPABILITIES, readEvidence } from "../grading/evidence.js";
 import { gradingSummary } from "../grading/summary.js";
+import { readConversation } from "./conversation.js";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
 const client = fileURLToPath(new URL("client/", import.meta.url));
@@ -67,6 +68,19 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					return json({ verifiers: [...configured.map(publicVerifier), ...uploaded.map(publicUploaded)], capabilities: CAPABILITIES });
 				}
 				if (route === "/api/verifiers" && method === "POST") return json(publicUploaded(await verifierRepository.create(await request.json())), 201);
+				const conversationMatch = route.match(/^\/api\/runs\/([^/]+)\/items\/([^/]+)\/conversation$/);
+				if (conversationMatch && method === "GET") {
+					const [, runId, itemId] = conversationMatch;
+					const item = store.detail(runId).items.find(i => i.id === itemId);
+					if (!item) return json({ error: "执行记录不存在" }, 404);
+					const offset = Number(url.searchParams.get("offset") ?? 0); const limit = Number(url.searchParams.get("limit") ?? 50);
+					if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 100) return json({ error: "会话分页参数无效" }, 400);
+					const configured = await loadVerifiers();
+					const secrets = [item.snapshot.defaults.apiKeyEnv, ...configured.flatMap(v => v.env)].filter((key): key is string => Boolean(key)).map(key => process.env[key] ?? "");
+					const conversation = await readConversation(path.join(store.directory, "runs", runId, itemId), item, { offset, limit, download: url.searchParams.has("download"), secrets });
+					if (url.searchParams.has("download")) return new Response(JSON.stringify(conversation, null, 2), { headers: { "Content-Type": "application/json; charset=utf-8", "Content-Disposition": `attachment; filename="conversation-${item.id}.json"` } });
+					return json(conversation);
+				}
 				const evidenceMatch = route.match(/^\/api\/runs\/([^/]+)\/items\/([^/]+)\/(grading|evidence)(?:\/([^/]+))?$/);
 				if (evidenceMatch && method === "GET") {
 					const [, runId, itemId, kind, evidenceId] = evidenceMatch;

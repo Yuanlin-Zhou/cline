@@ -3,15 +3,15 @@ import { runIsolated } from "../grading/run.js";
 import type { EvalCaseResult } from "../types.js";
 import { EvalStore } from "./store.js";
 import type { Run, RunItem } from "./types.js";
+import type { ExecutionUpdate } from "./activity.js";
 
 
-export type Executor = (item: RunItem, onText: (text: string) => void, signal: AbortSignal) => Promise<EvalCaseResult>;
+export type Executor = (item: RunItem, onText: (text: string) => void, signal: AbortSignal, onUpdate?: (update: ExecutionUpdate) => void) => Promise<EvalCaseResult>;
 export function makeExecutor(store: EvalStore): Executor {
-	return async (item, onText, signal) => runIsolated({
+	return async (item, onText, signal, onUpdate) => runIsolated({
 		definition: item.snapshot.definition, defaults: item.snapshot.defaults, verifierSnapshots: item.verifierSnapshots ?? [],
 		directory: path.join(store.directory, "runs", item.runId, item.id), itemId: item.id, signal, onText,
-		onWorkspace: workspace => { item.workspace = workspace; store.put("item", item.id, item); },
-		onPhase: phase => { item.phase = phase; store.put("item", item.id, item); },
+		onUpdate,
 	});
 }
 export class EvalQueue {
@@ -42,11 +42,27 @@ export class EvalQueue {
 						while (!controller.signal.aborted) {
 							const item = pending[next++]; if (!item) break;
 							item.status = "running"; item.startedAt = new Date().toISOString(); this.store.put("item", item.id, item);
+							let timer: ReturnType<typeof setTimeout> | undefined;
+							const flush = () => { clearTimeout(timer); timer = undefined; this.store.put("item", item.id, item); };
+							const schedule = () => { timer ??= setTimeout(flush, 250); };
+							const update = (value: ExecutionUpdate) => {
+								if (value.workspace) item.workspace = value.workspace;
+								if (value.phase) item.phase = value.phase;
+								if (value.sessionId) item.sessionId = value.sessionId;
+								if (value.activity) {
+									item.activity = value.activity; item.lastActivityAt = value.activity.at;
+									const recent = item.activities ??= []; const last = recent.at(-1);
+									if (last?.type === value.activity.type && last?.iteration === value.activity.iteration && last?.toolName === value.activity.toolName) recent[recent.length - 1] = value.activity;
+									else recent.push(value.activity);
+									item.activities = recent.slice(-30);
+								}
+								if (value.phase || value.workspace || value.sessionId) flush(); else schedule();
+							};
 							try {
-								const result = await this.execute(item, text => { item.text = (item.text + text).slice(-200000); this.store.put("item", item.id, item); }, controller.signal);
+								const result = await this.execute(item, text => { item.text = (item.text + text).slice(-200000); item.lastActivityAt = new Date().toISOString(); schedule(); }, controller.signal, update);
 								item.result = result; item.status = controller.signal.aborted ? "cancelled" : result.status;
 							} catch (error) { item.status = controller.signal.aborted ? "cancelled" : "error"; item.error = error instanceof Error ? error.message : String(error); }
-							item.endedAt = new Date().toISOString(); this.store.put("item", item.id, item);
+							item.endedAt = new Date().toISOString(); flush();
 						}
 					}));
 				}

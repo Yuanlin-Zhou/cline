@@ -198,3 +198,11 @@ Per-case settings override `defaults`; CLI flags override both. Run `bun run eva
 ## Report contents
 
 Each case records the final text, finish reason, duration, iteration count, token/cost usage, compact tool-call records, assertion results, and Cline session ID. The report summary aggregates pass/fail counts, duration, tokens, and cost.
+
+## 执行状态与会话记录
+
+单案例调试和批次详情会显示当前阶段、运行耗时、最近收到的活动以及页面同步状态。文本暂时不变不代表执行停止；工具通知与验证阶段可以继续推进。
+
+“结果与断言”优先展示判分和最终回复，实时文本预览默认折叠。“会话记录”按消息查看本次执行保存的用户输入、模型回复、工具请求与结果，可刷新、分页和下载 JSON。SDK 保存的是会话上下文，压缩后可能不含全部早期消息；缺失、清理或写入中的文件会有明确提示。工具诊断不能作为工具实际执行的判分证据。错误、取消和中断时仍保留已有输出。
+
+会话默认跟随最新保存的消息；点击“最早消息”或“下一页”后暂停跟随，便于查阅早期内容，点击“最新消息”恢复。

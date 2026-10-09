@@ -12,8 +12,9 @@ import type { UploadedVerifier } from "./uploaded-verifiers.js";
 import { manifest, redact, redactValue, saveEvidence, snapshot } from "./evidence.js";
 import { killTree } from "./process.js";
 import type { EvidenceEvent } from "./types.js";
+import type { ExecutionUpdate } from "../web/activity.js";
 
-export async function runIsolated(input: { definition: EvalCase; defaults: EvalDefaults; directory: string; verifierSnapshots?: UploadedVerifier[]; itemId?: string; signal?: AbortSignal; onText?: (text: string) => void; onWorkspace?: (workspace: string) => void; onPhase?: (phase: "executing" | "verifying") => void }): Promise<EvalCaseResult> {
+export async function runIsolated(input: { definition: EvalCase; defaults: EvalDefaults; directory: string; verifierSnapshots?: UploadedVerifier[]; itemId?: string; signal?: AbortSignal; onText?: (text: string) => void; onWorkspace?: (workspace: string) => void; onPhase?: (phase: "executing" | "verifying") => void; onUpdate?: (update: ExecutionUpdate) => void }): Promise<EvalCaseResult> {
 	const { definition, defaults, directory, signal } = input; const started = Date.now();
 	await mkdir(directory, { recursive: true });
 	const snapshots = input.verifierSnapshots ?? await loadCliVerifierSnapshots(definition, path.resolve(directory, "../../.."));
@@ -33,13 +34,15 @@ export async function runIsolated(input: { definition: EvalCase; defaults: EvalD
 	};
 	const workspace = await prepareWorkspace(directory, source);
 	input.onWorkspace?.(workspace);
+	input.onUpdate?.({ workspace });
 	if (definition.grading) await snapshot(workspace, directory, "baseline", evidence, secrets);
 	signal?.throwIfAborted(); input.onPhase?.("executing");
+	input.onUpdate?.({ phase: "executing" });
 	// Only the parent owns grading. The worker receives the ordinary execution input.
 	const suite = { version: 1, defaults: { ...defaults, cwd: workspace }, cases: [{ ...definition, grading: undefined, assertions: definition.grading ? undefined : definition.assertions, cwd: workspace }] };
 	const suitePath = path.join(directory, "suite.json"); await writeFile(suitePath, JSON.stringify(suite));
 	const worker = fileURLToPath(new URL(import.meta.url.endsWith(".ts") ? "../web/worker.ts" : "../web/worker.js", import.meta.url));
-	const child = spawn(process.execPath, [worker, suitePath], { cwd: workspace, windowsHide: true, detached: process.platform !== "win32", stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, CLINE_DATA_DIR: path.join(directory, "session"), CLINE_SANDBOX: "1", CLINE_SANDBOX_DATA_DIR: path.join(directory, "session"), CLINE_LOG_ENABLED: "0" } });
+	const child = spawn(process.execPath, [worker, suitePath], { cwd: workspace, windowsHide: true, detached: process.platform !== "win32", stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, CLINE_DATA_DIR: path.join(directory, "session"), CLINE_SESSION_DATA_DIR: path.join(directory, "session", "sessions"), CLINE_SANDBOX: "1", CLINE_SANDBOX_DATA_DIR: path.join(directory, "session"), CLINE_LOG_ENABLED: "0" } });
 	const exited = new Promise<void>((resolve, reject) => { child.on("close", () => resolve()); child.on("error", reject); });
 	let killTimer: ReturnType<typeof setTimeout> | undefined; let killing: Promise<void> | undefined;
 	const kill = () => { if (child.pid) killing ??= killTree(child.pid).catch(error => { evidence.issues.push(String(error)); evidence.complete = false; child.kill("SIGKILL"); }); };
@@ -58,7 +61,8 @@ export async function runIsolated(input: { definition: EvalCase; defaults: EvalD
 				while ((index = buffer.indexOf("\n")) >= 0) {
 					const line = buffer.slice(0, index); buffer = buffer.slice(index + 1);
 					let event; try { event = redactValue(JSON.parse(line), secrets); } catch { diagnosticComplete = false; continue; }
-					if (event.type === "session") { sessionId = event.sessionId; emit("session.started"); }
+					if (event.type === "session") { sessionId = event.sessionId; emit("session.started"); input.onUpdate?.({ sessionId, activity: { type: "session", at: new Date().toISOString() } }); }
+					if (event.type === "activity") input.onUpdate?.({ activity: event.activity });
 					if (event.type === "text") { text = (text + String(event.text)).slice(-2000000); input.onText?.(String(event.text)); }
 					if (event.type === "result") result = event.result;
 					if (event.type === "error") failure = event.error;
@@ -89,6 +93,7 @@ export async function runIsolated(input: { definition: EvalCase; defaults: EvalD
 	await snapshot(workspace, directory, "artifacts", evidence, secrets);
 	await saveEvidence(directory, JSON.stringify(evidence, null, 2), "文件清单", evidence.refs);
 	input.onPhase?.("verifying");
+	input.onUpdate?.({ phase: "verifying", activity: { type: "phase", at: new Date().toISOString() } });
 	result.grading = await gradeCase({ definition, result, directory, evidence, events, verifiers, signal, secrets });
 	result.evidence = evidence; result.status = result.grading.verdict;
 	await writeFile(path.join(directory, "execution.json"), JSON.stringify(result, null, 2));

@@ -178,6 +178,7 @@ export async function runEvalSuite(input: {
 	onText?: (text: string) => void;
 	onSession?: (sessionId: string) => void;
 	onDiagnostic?: (event: unknown) => void;
+	onActivity?: (event: unknown) => void;
 	signal?: AbortSignal;
 }): Promise<EvalReport> {
 	const { suite, suitePath, overrides, onCaseStart, onCaseComplete } = input;
@@ -195,6 +196,7 @@ export async function runEvalSuite(input: {
 		},
 	});
 	const unsubscribe = cline.subscribe((event) => {
+		if (event.type === "agent_event") input.onActivity?.(event.payload.event);
 		if (event.type === "agent_event" && "contentType" in event.payload.event && event.payload.event.contentType === "tool") input.onDiagnostic?.(event);
 		if (
 			event.type === "agent_event" &&

@@ -10,6 +10,10 @@ export type RunItem = {
 	id: string; runId: string; verifierSnapshots?: import("../grading/uploaded-verifiers.js").UploadedVerifier[]; snapshot: SavedCase; moduleName: string;
 	status: ItemStatus; text: string; result?: EvalCaseResult; error?: string;
 	phase?: "executing" | "verifying";
+	sessionId?: string;
+	lastActivityAt?: string;
+	activity?: import("./activity.js").Activity;
+	activities?: import("./activity.js").Activity[];
 	workspace?: string; startedAt?: string; endedAt?: string;
 	/** One-based repetition index; legacy items belong to round 1. */
 	round?: number;

@@ -1,4 +1,5 @@
 import { tagEditor } from "./tag-editor.js";
+import { conversationView, executionStatus, showSyncStatus, syncStatus } from "./observability.js";
 import type { TransferPreview } from "../transfer.js";
 import { headerEditor, readHeaderEditor } from "./header-editor.js";
 import type {
@@ -229,7 +230,7 @@ function tagPills(tags?: string[]): HTMLElement[] {
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-	const res = await fetch(path, init);
+	const res = await fetch(path, { ...init, signal: init?.signal ?? (!init?.method || init.method === "GET" ? AbortSignal.timeout(10000) : undefined) });
 	const text = await res.text();
 	let data: unknown = null;
 	try {
@@ -1339,9 +1340,9 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 		activePoll = pollRun(runId, (detail) => {
 			const item = detail.items[0];
 			if (!item) return;
-			renderInlineResult(resultBody, item, mode);
+			renderInlineResult(resultBody, item);
 			statusEl.textContent = item.phase === "verifying" && item.status === "running" ? "验证中" : STATUS_META[item.status].label;
-			if (["completed", "cancelled", "interrupted"].includes(detail.status)) {
+			if (["completed", "cancelled", "interrupted"].includes(detail.status) && !detail.items.some(i => ["queued", "running"].includes(i.status))) {
 				stopBtn.disabled = true;
 				activePoll = undefined;
 				void loadHistory();
@@ -1395,47 +1396,13 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 	void loadHistory();
 }
 
-function renderInlineResult(container: HTMLElement, item: RunItem, mode: string): void {
-	const running = ["queued", "running"].includes(item.status);
-	if (running && container.dataset.item === item.id && container.dataset.status === item.status) {
-		const output = container.querySelector(".output");
-		if (output) output.textContent = item.text || "等待模型输出…";
-		return;
-	}
-	container.dataset.item = item.id; container.dataset.status = item.status;
-	container.replaceChildren();
-	const statusLine = h("div", { class: "result-status mb-2" },
-		statusBadge(item.status),
-		h("span", { class: "muted small" }, `回放方式：${replayLabel(mode)}`),
-		h("span", { class: "muted small" }, `模型：${item.snapshot.defaults.modelId}`),
-	);
-	container.append(statusLine, sessionIdLabel(item.result?.sessionId));
-
-	if (running) {
-		container.append(h("pre", { class: "output" }, item.text || ""));
-		return;
-	}
-
-	const result = item.result;
-	const error = item.error ?? result?.error;
-	if (error) container.append(flash(error, item.status === "error" ? "warning" : "error"));
-	if (result) renderAssertions(container, result);
-	if (result) container.append(gradingPanel(result, async id => api(`/api/runs/${item.runId}/items/${item.id}/evidence/${id}`)));
-	const text = item.status === "error" ? "" : result?.text ?? item.text;
-	container.append(h("pre", { class: "output" }, text || (item.error ?? "（无输出）")));
-
-	if (result) {
-		container.append(
-			h("div", { class: "metric-row mt-3" },
-				h("span", { class: "metric" }, "耗时 ", h("b", {}, fmtDuration(result.durationMs))),
-				h("span", { class: "metric" }, "迭代 ", h("b", {}, String(result.iterations))),
-				h("span", { class: "metric" }, "输入 Token ", h("b", {}, fmtTokens(result.usage.inputTokens))),
-				h("span", { class: "metric" }, "输出 Token ", h("b", {}, fmtTokens(result.usage.outputTokens))),
-				h("span", { class: "metric" }, "费用 ", h("b", {}, fmtCost(result.usage.totalCost))),
-			),
-		);
-		renderToolCalls(container, result.toolCalls);
-	}
+const inlineInspectors = new WeakMap<HTMLElement, { id: string; view: ReturnType<typeof createItemInspector> }>();
+function renderInlineResult(container: HTMLElement, item: RunItem): void {
+	const existing = inlineInspectors.get(container);
+	if (existing?.id === item.id && container.contains(existing.view.element)) { existing.view.update(item); return; }
+	const view = createItemInspector(item.runId, item);
+	inlineInspectors.set(container, { id: item.id, view });
+	container.replaceChildren(view.element);
 }
 
 function renderAssertions(container: HTMLElement, result: EvalCaseResult): void {
@@ -1480,12 +1447,13 @@ function pollRun(runId: string, onUpdate: (detail: RunDetailResponse) => void, o
 			const detail = await api<RunDetailResponse>(`/api/runs/${runId}`);
 			if (stopped) return;
 			onUpdate(detail);
-			if (["completed", "cancelled", "interrupted"].includes(detail.status)) {
+			showSyncStatus(runId);
+			if (["completed", "cancelled", "interrupted"].includes(detail.status) && !detail.items.some(i => ["queued", "running"].includes(i.status))) {
 				if (onDone) onDone();
 				return;
 			}
-		} catch {
-			// transient network error; keep polling
+		} catch (error) {
+			if (!stopped) showSyncStatus(runId, error instanceof Error ? error.message : String(error));
 		}
 		handle = window.setTimeout(tick, 1000);
 	};
@@ -1905,7 +1873,6 @@ async function renderRunDetail(app: HTMLElement, runId: string): Promise<void> {
 	const count = h("span", { class: "muted small" });
 	const rows = new Map<string, HTMLElement>();
 	let selectedId: string | undefined;
-	let selectedSignature = "";
 	let itemView: ReturnType<typeof createItemInspector> | undefined;
 	let inspectorItem: string | undefined;
 	let lastRunStatus = "";
@@ -1934,12 +1901,12 @@ async function renderRunDetail(app: HTMLElement, runId: string): Promise<void> {
 		const selected = detail.items.find(i => i.id === selectedId);
 		if (!selected) {
 			inspector.replaceChildren(h("div", { class: "empty" }, h("div", { class: "empty-title" }, "没有匹配的案例"), h("div", { class: "empty-desc" }, "调整结果、模块或搜索条件后重试。")));
-			inspectorItem = undefined; selectedSignature = ""; return;
+			inspectorItem = undefined; return;
 		}
 		if (inspectorItem !== selected.id) {
-			itemView = createItemInspector(runId, selected); inspector.replaceChildren(itemView.element); inspectorItem = selected.id; selectedSignature = JSON.stringify(selected);
-		} else if (selectedSignature !== JSON.stringify(selected)) {
-			selectedSignature = JSON.stringify(selected); itemView?.update(selected);
+			itemView = createItemInspector(runId, selected); inspector.replaceChildren(itemView.element); inspectorItem = selected.id;
+		} else {
+			itemView?.update(selected);
 		}
 	};
 	const update = (run: RunDetailResponse) => {
@@ -1981,7 +1948,7 @@ async function renderRunDetail(app: HTMLElement, runId: string): Promise<void> {
 	app.append(h("div", { class: "crumbs" }, h("a", { href: "#/runs" }, "评测批次"), h("span", {}, "/"), h("span", {}, runId.slice(0, 8))), h("div", { class: "page-head flex-between wrap gap-3" }, h("div", {}, h("div", { class: "flex-center gap-2 wrap" }, title, status), h("p", { class: "page-desc" }, `创建于 ${fmtTime(detail.createdAt)} · ${detail.repeatCount ?? 1} 轮 · 并发 ${detail.concurrency}${detail.note ? ` · ${detail.note}` : ""}`)), actions), summary, panelTabs("run-detail", [["案例结果", results], ["多轮报告", repeatReport], ["模块统计", stats]]));
 	search.addEventListener("input", applyFilters); filter.addEventListener("change", applyFilters); moduleFilter.addEventListener("change", applyFilters); roundFilter.addEventListener("change", applyFilters);
 	update(detail);
-	if (["queued", "running"].includes(detail.status)) activePoll = pollRun(runId, update);
+	if (["queued", "running"].includes(detail.status) || detail.items.some(i => ["queued", "running"].includes(i.status))) activePoll = pollRun(runId, update);
 }
 
 function statusBar(summary: Summary): HTMLElement {
@@ -2022,11 +1989,17 @@ function createItemInspector(runId: string, initial: RunItem) {
 	const meta = h("div", { class: "muted small" });
 	const content = h("div", { class: "Inspector-content" });
 	const tabs = h("div", { class: "tab-bar", "aria-label": "案例详情视图" });
-	const element = h("div", {}, title, meta, tabs, content);
-	const labels = [["result", "结果与断言"], ["input", "输入快照"], ["tools", "工具轨迹"], ["artifacts", "文件产物"]];
+	const progress = h("div");
+	const sync = syncStatus(runId);
+	const element = h("div", {}, title, meta, progress, sync, tabs, content);
+	let conversation: ReturnType<typeof conversationView> | undefined;
+	const labels = [["result", "结果与断言"], ["conversation", "会话记录"], ["input", "输入快照"], ["tools", "工具诊断"], ["artifacts", "文件产物"]];
 	const setHeader = () => {
 		title.replaceChildren(h("span", {}, item.snapshot.definition.id), statusBadge(item.status));
-		meta.replaceChildren(h("span", {}, `v${item.snapshot.revision} · ${item.snapshot.defaults.modelId} · ${replayLabel(item.snapshot.definition.replayMode)}`), sessionIdLabel(item.result?.sessionId));
+		meta.replaceChildren(h("span", {}, `v${item.snapshot.revision} · ${item.snapshot.defaults.modelId} · ${replayLabel(item.snapshot.definition.replayMode)}`), sessionIdLabel(item.sessionId ?? item.result?.sessionId));
+		const expanded = progress.querySelector("details")?.open;
+		progress.replaceChildren(executionStatus(item));
+		const details = progress.querySelector("details"); if (details && expanded) details.open = true;
 	};
 	const renderTab = async () => {
 		const currentRevision = ++revision;
@@ -2038,11 +2011,18 @@ function createItemInspector(runId: string, initial: RunItem) {
 			if (reason) content.append(flash(reason, item.status === "error" ? "warning" : "error"));
 			if (result) renderAssertions(content, result);
 			if (result) content.append(gradingPanel(result, async id => api(`/api/runs/${runId}/items/${item.id}/evidence/${id}`)));
-			content.append(h("div", { class: "section-title mt-3" }, "模型输出"), h("pre", { class: "output", "data-live-output": true }, result?.text || item.text || (["queued", "running"].includes(item.status) ? "等待模型输出…" : "（无文本输出）")));
+			if (result && !["error", "cancelled"].includes(item.status)) content.append(h("div", { class: "section-title mt-3" }, "最终回复"), h("pre", { class: "output" }, result.text || "（无文本回复）"));
+			if (!result || ["error", "cancelled"].includes(item.status)) {
+				const preview = h("details", { class: "mt-3" }, h("summary", {}, ["queued", "running"].includes(item.status) ? "实时文本预览" : "已有输出（执行未完整结束）"), h("p", { class: "muted small" }, "这里只是文本片段；按消息查看过程请切换到会话记录。"), h("pre", { class: "output", "data-live-output": true }, item.text || result?.text || "暂无文本片段。"));
+				content.append(preview);
+			}
 			if (result) content.append(h("div", { class: "metric-row mt-3" }, ...[["耗时", fmtDuration(result.durationMs)], ["迭代", String(result.iterations)], ["输入 Token", fmtTokens(result.usage.inputTokens)], ["输出 Token", fmtTokens(result.usage.outputTokens)], ["费用", fmtCost(result.usage.totalCost)]].map(([label, value]) => h("span", { class: "metric" }, label + " ", h("b", {}, value)))));
+		} else if (tab === "conversation") {
+			conversation ??= conversationView(runId, item.id); content.append(conversation.element); conversation.refresh();
 		} else if (tab === "input") {
 			content.append(h("div", { class: "section-title" }, "输入快照"), h("pre", { class: "code" }, JSON.stringify(item.snapshot.definition, null, 2)), h("div", { class: "section-title mt-3" }, "最终生效配置"), h("pre", { class: "code" }, JSON.stringify({ ...item.snapshot.defaults, ...Object.fromEntries(Object.entries(item.snapshot.definition).filter(([key, value]) => ["timeoutMs", "systemPrompt", "cwd"].includes(key) && value !== undefined)), ...replayConfig(item.snapshot.definition, item.snapshot.defaults), cwd: item.workspace ?? item.snapshot.definition.cwd ?? item.snapshot.defaults.cwd }, null, 2)));
 		} else if (tab === "tools") {
+			content.append(h("p", { class: "muted small" }, "这里展示 SDK 保存的工具诊断；请求与结果通知不证明工具实际执行。运行中的通知可在最近活动和会话记录中查看。"));
 			if (!result?.toolCalls.length) content.append(h("div", { class: "empty" }, ["queued", "running"].includes(item.status) ? "执行结束后展示已记录的工具轨迹。" : "本次执行没有工具调用。"));
 			else renderToolCalls(content, result.toolCalls);
 		} else {
@@ -2073,6 +2053,9 @@ function createItemInspector(runId: string, initial: RunItem) {
 	setHeader(); void renderTab();
 	return { element, update(next: RunItem) {
 		const previous = item; item = next; setHeader();
+		if (tab === "conversation") { conversation?.refresh(previous.status !== next.status); return; }
+		// Completed results are immutable; other items in the batch may still be polling.
+		if (next.result && previous.status === next.status && previous.endedAt === next.endedAt) return;
 		// Streaming updates change the existing text node, preserving scroll and focus.
 		if (tab === "result" && previous.status === next.status && !next.result) {
 			const output = content.querySelector<HTMLElement>("[data-live-output]");

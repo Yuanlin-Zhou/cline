@@ -609,3 +609,13 @@ button, input, select, textarea, a, summary { scroll-margin: 20px; }
 .Grading-script-guide th { width: 36%; font-family: var(--font-mono); }
 .Grading-script-guide p { line-height: 1.6; margin: 10px 0; }
 .Grading-script-guide pre { max-height: 360px; overflow: auto; }
+/* Execution state stays separate from the final reply and saved conversation. */
+.ExecutionStatus { padding: 12px 16px; margin: 12px 0 6px; border: 1px solid var(--color-border-default); border-radius: var(--radius); }
+.ExecutionStatus > strong { margin-right: 16px; }
+.ExecutionStatus > div { margin-top: 6px; }
+.ExecutionStatus details { margin-top: 8px; }
+.SyncStatus { margin-bottom: 12px; }
+.SyncStatus-error { color: var(--color-danger-fg); }
+.ConversationMessage { margin: 12px 0; padding: 12px; border: 1px solid var(--color-border-default); border-radius: var(--radius); }
+.ConversationMessage > strong { display: block; margin-bottom: 8px; }
+.ConversationMessage details { margin: 8px 0; }
