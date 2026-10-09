@@ -377,12 +377,17 @@ function appendConfigFields(parent: HTMLElement, prefix: string, initial: EvalDe
 	if (!modelOnly) grid.append(section);
 	parent.append(grid);
 	const fg = (label: string, control: HTMLElement, hint?: string) => section.append(field(label, control, hint));
-	const pid = `${prefix}-provider`;
-	fg("Provider", input(pid, initial.providerId), "如 cline、openai-compatible、anthropic");
-	fg("模型 Model", input(`${prefix}-model`, initial.modelId));
-	fg("密钥环境变量", input(`${prefix}-keyenv`, initial.apiKeyEnv), "从该环境变量读取 API Key，例如 DEEPSEEK_API_KEY");
-	fg("Base URL", input(`${prefix}-baseurl`, initial.baseUrl), "自定义 OpenAI 兼容端点时填写");
-	section.append(headerEditor(`${prefix}-headers`, initial));
+	const connection = h("section", { class: "ModelConnection" });
+	if (modelOnly) connection.append(h("h3", { class: "ConfigGroup-title" }, "模型连接"));
+	const modelFields = h("div", { class: "ModelFields" },
+		field("Provider", input(`${prefix}-provider`, initial.providerId), "如 cline、openai-compatible、anthropic"),
+		field("模型 Model", input(`${prefix}-model`, initial.modelId)),
+	);
+	connection.append(modelFields,
+		field("密钥环境变量", input(`${prefix}-keyenv`, initial.apiKeyEnv), "从服务端环境变量读取 API Key，例如 DEEPSEEK_API_KEY"),
+		field("Base URL", input(`${prefix}-baseurl`, initial.baseUrl), "自定义 OpenAI 兼容端点时填写"),
+	);
+	section.append(connection, headerEditor(`${prefix}-headers`, initial, modelOnly ? "默认模型请求头" : "自定义模型请求头"));
 	if (modelOnly) return;
 	section = h("section", { class: "ConfigSection" }, h("div", { class: "section-title" }, "执行参数"));
 	grid.append(section);
@@ -1024,7 +1029,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 	));
 	form.append(formBody);
 
-	const envBox = h("div", { class: "Box mt-3" });
+	const envBox = h("div", { class: "Box mt-3 CaseConfig-environment" });
 	const envBody = h("div", { class: "Box-body" });
 	envBody.append(
 		h("div", { class: "section-title" }, h("span", {}, "环境与执行配置")),
@@ -1036,14 +1041,18 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 	);
 	envBox.append(envBody);
 
-	const credBox = h("details", { class: "Box mt-3" });
-	credBox.append(h("summary", { class: "Box-header" }, "高级配置：模型、超时与系统提示词"));
+	const credBox = h("details", { class: "Box mt-3 CaseConfig" });
+	credBox.append(h("summary", { class: "Box-header" }, h("span", {}, "模型与高级配置")));
 	const credBody = h("div", { class: "Box-body" });
-	credBody.append(h("p", { class: "form-hint" }, existing ? "已载入案例保存的配置。" : "已填入当前全局运行配置，可按需修改；保存后作为案例配置。"));
+	credBody.append(h("p", { class: "CaseConfig-origin" }, existing ? "已载入案例保存的配置。" : "已填入当前全局运行配置，可按需修改；保存后作为案例配置。"));
 	appendConfigFields(credBody, "f", defaults, false, true);
-	credBody.append(field("超时（毫秒）", input("f-timeout", defaults.timeoutMs ?? 300000, "number"), "正整数，例如 300000 表示 5 分钟。"),
-		field("系统提示词", textarea("f-sysprompt", defaults.systemPrompt, false), "可选，例如：请用中文回答。留空使用默认提示词。"));
-	credBody.append(headerEditor("f-case-headers", definition, "案例请求头覆盖（留空继承默认值）"));
+	credBody.append(headerEditor("f-case-headers", definition, "案例请求头覆盖"));
+	const advancedFields = h("section", { class: "CaseConfig-advanced" },
+		h("h3", { class: "ConfigGroup-title" }, "高级执行设置"),
+		h("div", { class: "CaseConfig-timeout" }, field("超时（毫秒）", input("f-timeout", defaults.timeoutMs ?? 300000, "number"), "正整数，例如 300000 表示 5 分钟。")),
+		field("系统提示词", textarea("f-sysprompt", defaults.systemPrompt, false), "可选，例如：请用中文回答。留空使用默认提示词。"),
+	);
+	credBody.append(advancedFields);
 	credBox.append(credBody);
 
 	const assertBox = h("div", { class: "Box mt-3" });

@@ -484,6 +484,47 @@ details[open] > summary::before { content: "▾ "; }
 .ConfigGrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
 .ConfigSection { min-width: 0; padding: 20px; border: 1px solid var(--color-border-default); background: var(--color-canvas-default); border-radius: var(--radius); }
 .ConfigSection .section-title { margin-bottom: 18px; font-size: 15px; }
+.ModelConnection { container-type: inline-size; container-name: model-connection; min-width: 0; }
+.ModelFields { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 16px; }
+.ModelConnection .form-control { min-width: 0; }
+.ConfigGroup-title { font-size: 14px; font-weight: 600; margin: 0 0 16px; }
+.CaseConfig > summary.Box-header { justify-content: flex-start; gap: 8px; list-style: none; }
+.CaseConfig > summary::-webkit-details-marker { display: none; }
+.CaseConfig > .Box-body { padding: 20px; }
+.CaseConfig-origin { color: var(--color-fg-muted); font-size: 12px; margin: 0 0 20px; }
+.CaseConfig .HeaderEditor, .CaseConfig-advanced { border-top: 1px solid var(--color-border-muted); margin-top: 24px; padding-top: 24px; }
+.CaseConfig-timeout { max-width: 300px; }
+.CaseConfig-advanced textarea { min-height: 120px; }
+.CaseConfig-environment .Box-body { padding: 20px; }
+@container model-connection (min-width: 480px) { .ModelFields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Shared model request header editor; adapts to its column, not the viewport. */
+.HeaderEditor { container-type: inline-size; container-name: header-editor; min-width: 0; margin-top: 20px; }
+.HeaderEditor [hidden] { display: none; }
+.HeaderEditor-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.HeaderEditor-title { font-size: 14px; font-weight: 600; line-height: 1.5; margin: 0; }
+.HeaderEditor-add { white-space: nowrap; flex-shrink: 0; }
+.HeaderEditor-description { font-size: 12px; line-height: 1.6; color: var(--color-fg-muted); margin: 8px 0 14px; }
+.HeaderEditor-rows { display: grid; gap: 12px; }
+.HeaderRow { display: grid; grid-template-columns: minmax(0, 1fr) 44px; grid-template-areas: "name remove" "source source" "value value"; align-items: end; gap: 12px; border: 1px solid var(--color-border-default); border-radius: var(--radius); background: var(--color-canvas-subtle); padding: 14px; }
+.HeaderRow-field { min-width: 0; }
+.HeaderRow-name { grid-area: name; }
+.HeaderRow-source { grid-area: source; }
+.HeaderRow-value { grid-area: value; }
+.HeaderRow-label { display: block; color: var(--color-fg-muted); font-size: 12px; font-weight: 500; line-height: 18px; margin-bottom: 6px; }
+.HeaderRow .form-control { min-width: 0; padding: 7px 10px; }
+.HeaderRow-mono { font-family: var(--font-mono); font-size: 13px; }
+.HeaderRow-remove { grid-area: remove; width: 36px; height: 36px; border: 1px solid transparent; border-radius: var(--radius); background: transparent; color: var(--color-fg-muted); font-size: 22px; line-height: 1; cursor: pointer; }
+.HeaderRow-remove:hover { color: var(--color-danger-fg); background: var(--color-canvas-default); border-color: var(--color-border-default); }
+.HeaderRow-remove:focus-visible { outline: 2px solid var(--color-accent-emphasis); outline-offset: 2px; }
+.HeaderEditor-empty { display: grid; gap: 4px; padding: 20px 16px; border: 1px dashed var(--color-border-default); border-radius: var(--radius); text-align: center; font-size: 13px; color: var(--color-fg-muted); }
+.HeaderEditor-empty span + span { font-size: 12px; }
+.HeaderEditor-help { margin-top: 12px; color: var(--color-fg-muted); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.HeaderEditor-help p { margin: 4px 0; }
+.HeaderEditor-help code { display: inline-block; font-family: var(--font-mono); font-size: 11px; padding: 0 5px; border-radius: 4px; background: var(--color-canvas-subtle); }
+@container header-editor (min-width: 420px) { .HeaderRow { grid-template-columns: 140px minmax(0, 1fr) 44px; grid-template-areas: "name name remove" "source value value"; } }
+@container header-editor (min-width: 680px) { .HeaderRow { grid-template-columns: minmax(0, 1fr) 130px minmax(0, 1.4fr) 44px; grid-template-areas: "name source value remove"; } }
+@media (pointer: coarse) { .HeaderRow-remove { width: 44px; height: 44px; } }
 .Steps { padding: 6px 0; flex-wrap: wrap; }
 .WizardPage { max-width: 1040px; margin: 0 auto; }
 .WizardPage .form-check { padding: 8px 0; }
