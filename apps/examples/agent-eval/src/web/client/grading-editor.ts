@@ -1,10 +1,11 @@
 import { parseGrading, safeRelative } from "../../grading/schema.js";
 import type { GradingConfig } from "../../grading/types.js";
+import { replyTemplate, artifactTemplate, verifierFields, verifierProtocolHelp, verifierTimingHelp } from "../../grading/verifier-guide.js";
 import { comparisons, condition, guides, readExpected, valueType } from "./grading-help.js";
 
 type Draft = Record<string, unknown>;
 type Control = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
-type Verifier = { id: string; label: string; version: string; dependencies: string[] };
+type Verifier = { id: string; label: string; version: string; dependencies: string[]; source?: string };
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, text = "", cls = "") => { const node = document.createElement(tag); node.className = cls; node.textContent = text; return node; };
 const input = (value: unknown = "") => { const node = el("input", "", "form-control"); node.value = String(value); return node; };
 const select = (options: [string, string][], value = "") => { const node = el("select", "", "form-control"); for (const [key, name] of options) node.append(new Option(name, key)); node.value = value; return node; };
@@ -31,7 +32,7 @@ export function gradingEditor(initial?: GradingConfig) {
 	const attempt = (action: () => void) => { try { action(); error.textContent = ""; } catch (cause) { report(cause); } };
 	type Editor = { node: HTMLElement; read: () => Draft; dispose: () => void };
 	let editors: Editor[] = [];
-	let verifiers: Verifier[] = []; let verifierState: "loading" | "ready" | "error" = "loading"; let loading = false;
+	let verifiers: Verifier[] = []; let verifierState: "loading" | "ready" | "error" = "loading"; let loadTask: Promise<void> | undefined;
 	const verifierUpdates = new Set<() => void>();
 	const resultList = el("div"); const behaviorList = el("div"); const empty = el("p", "还没有结果规则。请选择检查目标，再按示例填写。", "Grading-empty");
 	const count = el("span", "0", "Label Label--neutral");
@@ -63,7 +64,11 @@ export function gradingEditor(initial?: GradingConfig) {
 		const clear = () => { for (const [control, issue] of messages) { control.removeAttribute("aria-invalid"); issue.textContent = ""; } };
 		const validate = (control: Control, task: () => void) => {
 			const run = () => { try { task(); } catch (cause) { invalid(control, cause instanceof Error ? cause.message : String(cause)); } };
-			validators.push(run); control.addEventListener("blur", () => { try { run(); } catch { /* Field message is visible. */ } });
+			validators.push(run); control.addEventListener("blur", event => {
+				// Avoid moving the upload target between pointer-down and click. Validate on leaving the card or saving.
+				if (event instanceof FocusEvent && event.relatedTarget instanceof Node && card.contains(event.relatedTarget)) return;
+				try { run(); } catch { /* Field message is visible. */ }
+			});
 		};
 		const meta = details("高级：规则标识与名称"); const metaRow = el("div", "", "form-row mt-3");
 		metaRow.append(field("规则 ID", id, "自动生成，一般无需修改。"), field("显示名称（可选）", name)); meta.append(metaRow);
@@ -133,13 +138,49 @@ export function gradingEditor(initial?: GradingConfig) {
 			const verifier = select([], ""); const status = el("p", "", "form-hint"); let current = String(rule.verifierId ?? "");
 			const update = () => {
 				verifier.replaceChildren(new Option(verifierState === "loading" ? "正在加载验收程序…" : "请选择已注册的验收程序", ""));
-				for (const v of verifiers) verifier.append(new Option(`${v.label} · ${v.version}`, v.id));
+				for (const v of verifiers) verifier.append(new Option(`${v.label} · ${v.version} · ${v.source === "uploaded" ? "用户上传" : "配置注册"}`, v.id));
 				if (current && !verifiers.some(v => v.id === current)) verifier.append(new Option(`${current}（未注册）`, current)); verifier.value = current;
-				status.textContent = verifierState === "loading" ? "正在读取服务端注册列表…" : verifierState === "error" ? "列表加载失败，请重试；已填写内容会保留。" : current && !verifiers.some(v => v.id === current) ? "此程序未注册，请联系维护者或选择其他程序。" : !verifiers.length ? "当前没有可用程序，请联系维护者注册，或选择文件 / JSON 检查。" : "请选择维护者已注册的程序，无需填写命令或脚本路径。";
+				status.textContent = verifierState === "loading" ? "正在读取服务端注册列表…" : verifierState === "error" ? "列表加载失败，请重试；已填写内容会保留。" : current && !verifiers.some(v => v.id === current) ? "此程序不可用，请上传脚本或选择其他程序。" : !verifiers.length ? "还没有验证脚本，可直接上传，或选择文件 / JSON 检查。" : "选择已有程序，或直接上传验证脚本；无需填写服务端命令或路径。";
 			};
 			verifier.onchange = () => { current = verifier.value; update(); }; verifierUpdates.add(update); dispose = () => { verifierUpdates.delete(update); }; update();
-			fields.append(field("已配置的验收程序", verifier), status, button("重新加载列表", () => { void loadVerifiers(); }));
-			validate(verifier, () => { if (verifierState !== "ready") throw new Error("请等待验收程序列表加载，或点击“重新加载列表”。"); if (!verifiers.some(v => v.id === verifier.value)) throw new Error("请选择已注册的验收程序；列表为空时请联系维护者，或改用文件 / JSON 检查。"); });
+			fields.append(field("验收程序 / 验证脚本", verifier), status, button("重新加载列表", () => { void loadVerifiers(); }));
+			if (kind === "script") {
+				const file = input(); file.type = "file"; file.accept = ".js,.mjs,.ts";
+				const label = input(); label.maxLength = 80; label.placeholder = "可选，默认使用文件名";
+				const uploadStatus = el("p", "", "form-hint"); uploadStatus.setAttribute("role", "status");
+				file.onchange = () => { const selected = file.files?.[0]; uploadStatus.textContent = selected ? `${selected.name} · ${selected.size} 字节` : ""; };
+				const upload = button("上传验证脚本", () => { void (async () => {
+					const selected = file.files?.[0];
+					if (!selected) { uploadStatus.textContent = "请先选择 .js、.mjs 或 .ts 脚本。"; file.focus(); return; }
+					if (!/\.(js|mjs|ts)$/.test(selected.name) || selected.size > 1024 * 1024 || !selected.size) { uploadStatus.textContent = "请选择非空的 .js、.mjs、.ts 单文件脚本，不超过 1 MiB。"; return; }
+					upload.disabled = true; uploadStatus.textContent = "正在上传…";
+					try {
+						const content = new TextDecoder("utf-8", { fatal: true }).decode(await selected.arrayBuffer());
+						const response = await fetch("/api/verifiers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: selected.name, content, ...(label.value.trim() ? { label: label.value.trim() } : {}) }) });
+						const value = await response.json(); if (!response.ok) throw new Error(value.error ?? "上传失败");
+						await loadVerifiers();
+						if (!verifiers.some(v => v.id === value.id)) verifiers.push(value);
+						verifierState = "ready"; current = value.id;
+						for (const refreshVerifier of verifierUpdates) refreshVerifier();
+						verifier.dispatchEvent(new Event("change", { bubbles: true }));
+						uploadStatus.textContent = "上传成功，已选中此脚本，可立即保存案例并运行，无需重启。";
+					} catch (cause) { uploadStatus.textContent = `上传失败，原规则已保留，可重试：${cause instanceof Error ? cause.message : String(cause)}`; }
+					finally { upload.disabled = false; }
+				})(); });
+				fields.append(field("选择脚本文件", file, "支持 UTF-8 .js / .mjs / .ts，单文件不超过 1 MiB；不安装第三方依赖。"), field("脚本显示名称（可选）", label), upload, uploadStatus,
+					el("p", "脚本会在运行评测器的机器上执行。只上传自己编写或信任的脚本；工作区副本不是操作系统沙箱。", "form-hint"));
+				const help = details("查看脚本格式与执行结果字段"); help.classList.add("Grading-script-guide");
+				help.append(el("p", verifierProtocolHelp), el("p", verifierTimingHelp));
+				const table = el("table"); const tbody = el("tbody");
+				for (const [key, meaning] of verifierFields) { const row = el("tr"); row.append(el("th", key), el("td", meaning)); tbody.append(row); } table.append(tbody); help.append(table);
+				for (const [filename, template, title] of [["verify-reply.mjs", replyTemplate, "读取最终回复并验证"], ["verify-artifact.mjs", artifactTemplate, "读取 summary.json 并验证 total=12"]]) {
+					help.append(el("h4", title), el("pre", template, "code"), button(`下载 ${filename}`, () => {
+						const url = URL.createObjectURL(new Blob([template], { type: "text/javascript;charset=utf-8" })); const link = el("a"); link.href = url; link.download = filename; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+					}));
+				}
+				fields.append(help);
+			}
+			validate(verifier, () => { if (verifierState !== "ready") throw new Error("请等待验收程序列表加载，或点击“重新加载列表”。"); if (!verifiers.some(v => v.id === verifier.value)) throw new Error("请选择可用程序，或先上传验证脚本。"); });
 			const exit = input(rule.expectedExitCode ?? 0); if (kind === "command") { fields.append(field("期望退出码", exit, "通常填 0；实际退出码 0 通过，1 不通过。")); validate(exit, () => { if (!/^\d+$/.test(exit.value) || !Number.isSafeInteger(Number(exit.value))) throw new Error("退出码请填写非负整数，通常为 0。"); }); }
 			readParams = () => ({ ...rule, verifierId: verifier.value, ...(kind === "command" ? { expectedExitCode: Number(exit.value) } : {}) });
 		} else {
@@ -155,7 +196,7 @@ export function gradingEditor(initial?: GradingConfig) {
 		const preview = el("p", "", "Grading-preview");
 		const read = () => { clear(); for (const task of validators) task(); const value: Draft = { ...readParams(), id: id.value, kind, required: required.checked }; delete value.label; if (name.value) value.label = name.value; return value; };
 		const updatePreview = (showErrors: boolean) => { try { const value = read(); preview.textContent = `通过条件：${condition(value)}${required.checked ? "" : "（仅供诊断，不影响任务通过）"}`; } catch (cause) { preview.textContent = `待补充：${cause instanceof Error ? cause.message : String(cause)}`; if (!showErrors) clear(); } };
-		card.addEventListener("input", () => updatePreview(false)); card.addEventListener("change", () => updatePreview(false)); card.addEventListener("focusout", () => updatePreview(true));
+		card.addEventListener("input", () => updatePreview(false)); card.addEventListener("change", () => updatePreview(false)); card.addEventListener("focusout", event => { if (event instanceof FocusEvent && event.relatedTarget instanceof Node && card.contains(event.relatedTarget)) return; updatePreview(true); });
 		const editor: Editor = { node: card, read, dispose };
 		const remove = button("移除", () => { editor.dispose(); editors = editors.filter(item => item !== editor); card.remove(); refresh(); }); remove.classList.add("btn-danger"); remove.setAttribute("aria-label", `移除规则：${guide.title}`);
 		head.append(el("strong", guide.title), check("必须满足才算通过", required), remove);
@@ -180,7 +221,15 @@ export function gradingEditor(initial?: GradingConfig) {
 		catch (cause) { rawError.textContent = `未应用，原规则已保留。请检查 JSON 语法和规则字段。详细信息：${cause instanceof Error ? cause.message : String(cause)}`; raw.focus(); }
 	})); advanced.append(raw, rawError, actions); content.append(advanced);
 	for (const rule of initial?.rules ?? []) appendRule(rule as unknown as Draft); refresh();
-	async function loadVerifiers() { if (loading) return; loading = true; verifierState = "loading"; for (const update of verifierUpdates) update(); try { const response = await fetch("/api/verifiers"); if (!response.ok) throw new Error(); const data = await response.json(); if (!Array.isArray(data.verifiers)) throw new Error(); verifiers = data.verifiers; verifierState = "ready"; } catch { verifierState = "error"; } finally { loading = false; for (const update of verifierUpdates) update(); } }
+	function loadVerifiers(): Promise<void> {
+		if (loadTask) return loadTask;
+		verifierState = "loading"; for (const update of verifierUpdates) update();
+		loadTask = (async () => {
+			try { const response = await fetch("/api/verifiers"); if (!response.ok) throw new Error(); const data = await response.json(); if (!Array.isArray(data.verifiers)) throw new Error(); verifiers = data.verifiers; verifierState = "ready"; }
+			catch { verifierState = "error"; }
+			finally { loadTask = undefined; for (const update of verifierUpdates) update(); }
+		})(); return loadTask;
+	}
 	void loadVerifiers();
 	return { element, setMode: (mode: string) => { modeHint.hidden = mode === "full-task"; }, read: (mode: string) => {
 		if (!enabled.checked) return undefined;

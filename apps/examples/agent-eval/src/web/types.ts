@@ -7,7 +7,7 @@ export type SavedCase = {
 };
 export type ItemStatus = "queued" | "running" | "passed" | "failed" | "error" | "cancelled" | "inconclusive";
 export type RunItem = {
-	id: string; runId: string; snapshot: SavedCase; moduleName: string;
+	id: string; runId: string; verifierSnapshots?: import("../grading/uploaded-verifiers.js").UploadedVerifier[]; snapshot: SavedCase; moduleName: string;
 	status: ItemStatus; text: string; result?: EvalCaseResult; error?: string;
 	phase?: "executing" | "verifying";
 	workspace?: string; startedAt?: string; endedAt?: string;

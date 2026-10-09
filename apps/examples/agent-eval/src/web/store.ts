@@ -9,7 +9,7 @@ import type { Module, Run, RunDetail, RunItem, SavedCase } from "./types.js";
 import { planTransfer, parseTransfer, TransferError, type TransferRequest, type TransferPreview } from "./transfer.js";
 
 export type RunInput = { caseIds?: string[]; moduleIds?: string[]; name?: string; note?: string; concurrency?: number; repeatCount?: number; useSettings?: boolean; replayMode?: string; parentRunId?: string; rerunScope?: "all" | "failed"; defaults?: EvalDefaults; draft?: Array<{ moduleId: string; definition: EvalCase; defaults: EvalDefaults }> };
-export type RunSource = { snapshot: SavedCase; moduleName: string };
+export type RunSource = { snapshot: SavedCase; moduleName: string; verifierSnapshots?: import("../grading/uploaded-verifiers.js").UploadedVerifier[] };
 
 const now = () => new Date().toISOString();
 const cleanTags = (tags: unknown): string[] => (Array.isArray(tags) ? tags : []).filter(tag => typeof tag === "string" && tag.trim()).map(tag => (tag as string).trim()).slice(0, 20);
@@ -162,7 +162,7 @@ export class EvalStore {
 		} else if (input.parentRunId) {
 			const items = this.detail(input.parentRunId).items.filter(i => input.rerunScope === "all" || ["failed", "error", "cancelled", "inconclusive"].includes(i.status));
 			// Repeated failures select a case once, retaining the original input snapshot.
-			sources = [...new Map(items.map(i => [i.snapshot.id, { snapshot: i.snapshot, moduleName: i.moduleName }])).values()];
+			sources = [...new Map(items.map(i => [i.snapshot.id, { snapshot: i.snapshot, moduleName: i.moduleName, verifierSnapshots: i.verifierSnapshots }])).values()];
 		}
 		else {
 			if (input.caseIds?.some(id => !this.get("case", id)) || input.moduleIds?.some(id => !this.get("module", id))) throw new Error("选中的案例或模块不存在");
@@ -182,7 +182,7 @@ export class EvalStore {
 				if (input.useSettings) snapshot.defaults = this.settings();
 				if (input.defaults) snapshot.defaults = { ...snapshot.defaults, ...input.defaults };
 				if (input.replayMode) snapshot.definition.replayMode = input.replayMode as "single-turn" | "full-task";
-				const item: RunItem = { id: randomUUID(), runId: run.id, round, snapshot, moduleName: source.moduleName, status: "queued", text: "" }; this.put("item", item.id, item);
+				const item: RunItem = { id: randomUUID(), runId: run.id, round, snapshot, verifierSnapshots: source.verifierSnapshots, moduleName: source.moduleName, status: "queued", text: "" }; this.put("item", item.id, item);
 			}
 		})(); return run;
 	}

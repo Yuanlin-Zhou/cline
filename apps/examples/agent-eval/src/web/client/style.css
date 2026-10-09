@@ -602,3 +602,10 @@ button, input, select, textarea, a, summary { scroll-margin: 20px; }
 @media (max-width: 760px) {
   .TagEditor .btn, .TagEditor-remove, .TagEditor-option { min-height: 44px; }
 }
+
+.Grading-script-guide { margin-top: 14px; }
+.Grading-script-guide table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.Grading-script-guide th, .Grading-script-guide td { padding: 8px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--color-border-muted); overflow-wrap: anywhere; }
+.Grading-script-guide th { width: 36%; font-family: var(--font-mono); }
+.Grading-script-guide p { line-height: 1.6; margin: 10px 0; }
+.Grading-script-guide pre { max-height: 360px; overflow: auto; }

@@ -1,3 +1,4 @@
+import { prepareVerifierCollection } from "../grading/uploaded-verifiers.js";
 import type { Db } from "mongodb";
 import { parseEvalSuite } from "../schema.js";
 import type { Module, SavedCase } from "./types.js";
@@ -50,7 +51,9 @@ export function moduleFromDocument(doc: ModuleDocument): Module {
 	if (typeof doc._id !== "string" || !doc._id || typeof doc.name !== "string" || !doc.name.trim() || doc.name.length > 80 || doc.nameKey !== doc.name.trim().toLowerCase() || typeof doc.archived !== "boolean" || !(doc.createdAt instanceof Date) || !Number.isFinite(doc.createdAt.getTime()) || !Number.isSafeInteger(doc.writeVersion) || doc.writeVersion < 1 || (doc.tags !== undefined && (!Array.isArray(doc.tags) || doc.tags.length > 20 || doc.tags.some(t => typeof t !== "string" || !t.trim())))) throw new CatalogError("MongoDB 模块文档不符合合同，请修正后重试", 422);
 	return { id: doc._id, name: doc.name, description: doc.description ?? "", tags: doc.tags ?? [], archived: doc.archived, createdAt: doc.createdAt.toISOString() };
 }
-export async function prepareMongoCollections(db: Db, cases: string, modules: string) {
+export async function prepareMongoCollections(db: Db, cases: string, modules: string, verifierCollection = "agent_eval_verifiers") {
+	if (new Set([cases, modules, verifierCollection]).size !== 3) throw new CatalogError("案例、模块与验证脚本集合不能同名");
+	await prepareVerifierCollection(db, verifierCollection);
 	for (const [name, validator] of [[cases, caseValidator], [modules, moduleValidator]] as const) {
 		if (await db.listCollections({ name }).hasNext()) await db.command({ collMod: name, validator, validationLevel: "strict", validationAction: "error" });
 		else await db.createCollection(name, { validator, validationLevel: "strict", validationAction: "error" });

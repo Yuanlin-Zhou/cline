@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { MongoVerifiers } from "../grading/uploaded-verifiers.js";
+import { replyTemplate } from "../grading/verifier-guide.js";
 import { MongoClient } from "mongodb";
 import { MongoCatalog, mongoFailure, type MongoConfig } from "./mongo-catalog.js";
 import { prepareMongoCollections, caseToDocument } from "./mongo-schema.js";
@@ -30,6 +32,23 @@ describe("MongoDB replica-set catalog (set EVAL_TEST_MONGODB_URI)", () => {
 			await cleanup.db("admin").command({ configureFailPoint: "failCommand", mode: "off" }).catch(() => {});
 			await cleanup.db(config.database).dropDatabase();
 		} finally { await cleanup.close(); await repository.close(); rmSync(directory, { recursive: true, force: true }); }
+	});
+	mongoTest("uploaded scripts persist in Mongo and snapshots rerun after the connection closes", async () => {
+		const scripts = new MongoVerifiers(repository.db, "agent_eval_verifiers"); await scripts.preflight();
+		const upload = await scripts.create({ filename: "verify.mjs", content: replyTemplate });
+		const module = await repository.createModule("scripts");
+		const c = await repository.createCase(module.id, defaults, { id: "script-case", prompt: "task", history: [], replayMode: "full-task", grading: { version: 1, rules: [{ id: "accept", kind: "script", verifierId: upload.id }] } });
+		const app = await createEvalServer({ directory, port: 0, storage: "mongodb", catalog: repository, execute: async item => ({ id: c.id, sessionId: item.id, text: "已完成", status: "passed", durationMs: 1, iterations: 1, usage: { inputTokens: 0, outputTokens: 0 }, toolCalls: [], assertions: [] }) });
+		const post = async (body: unknown) => { const res = await fetch(`http://127.0.0.1:${app.server.port}/api/runs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); return { status: res.status, value: await res.json() }; };
+		try {
+			const run = await post({ caseIds: [c.id] }); expect(run.status).toBe(202); await app.queue.idle();
+			expect(app.store.items(run.value.id)[0].verifierSnapshots?.[0].content).toBe(replyTemplate);
+			expect(await new MongoVerifiers(repository.db, "agent_eval_verifiers").get(upload.id)).toEqual(upload);
+			await repository.close();
+			const rerun = await post({ parentRunId: run.value.id, rerunScope: "all" }); expect(rerun.status).toBe(202); await app.queue.idle();
+			expect(app.store.items(rerun.value.id)[0].verifierSnapshots?.[0].sha256).toBe(upload.sha256);
+			expect((await post({ caseIds: [c.id] })).status).toBe(503);
+		} finally { await app.close(); }
 	});
 	const seed = (module: Module, name = "a", mode: "single-turn" | "full-task" = "single-turn") => repository.createCase(module.id, defaults, { id: name, prompt: "hello", history: [{ role: "user", content: "Bun" }], replayMode: mode, tags: ["comma,tag"], headersEnv: { authorization: "AUTH" } });
 	async function transfer(operation: "copy" | "move", target: Module, cases: SavedCase[], policy = "rename") {

@@ -3,7 +3,7 @@ import { prepareMongoCollections } from "../src/web/mongo-schema.js";
 
 const repository = await MongoCatalog.connect(mongoConfig(), false);
 try {
-	await prepareMongoCollections(repository.db, repository.config.caseCollection, repository.config.moduleCollection);
+	await prepareMongoCollections(repository.db, repository.config.caseCollection, repository.config.moduleCollection, repository.config.verifierCollection);
 	await repository.preflight();
 	if (process.argv.includes("--seed-modules")) {
 		const session = repository.client.startSession();

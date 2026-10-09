@@ -4,6 +4,8 @@ A small JSON-in/JSON-out evaluator that runs the local workspace version of `Cli
 
 This uses the SDK instead of spawning and scraping the terminal CLI. `initialMessages` preserves the supplied conversation history exactly, while each case still gets an isolated Cline session.
 
+中文启动配置说明见 [STARTUP.md](STARTUP.md)，包含 MongoDB / SQLite 选择、首次准备、环境变量、模型凭据、验证脚本和迁移步骤。
+
 ## MongoDB case and module storage
 
 Set `EVAL_CASE_STORAGE=mongodb` to read and edit cases directly in MongoDB, including cases created by an external generator. Single-turn and full-task cases, tags, copies and moves use the same MongoDB catalog; evaluation history and immutable execution snapshots remain in SQLite. Prepare collections/indexes explicitly and use a replica set for transactions. Existing deployments default to SQLite and are never migrated automatically.
@@ -84,7 +86,11 @@ Cases without `grading` retain the original text/finish-reason semantics. Task r
 
 **SDK boundary:** this release does not modify the SDK. Its existing tool-start event can also describe a blocked attempt. All live tool/approval grading capabilities are therefore explicitly unsupported. Required behavior rules are rejected before creating a run; optional rules report insufficient evidence. The independent behavior checker is tested with synthetic, causally ordered events; that does not claim live approval coverage.
 
-Register trusted verifiers using an evaluator-owned JSON file:
+Upload a UTF-8 `.js`, `.mjs` or `.ts` script (up to 1 MiB) in **案例详情 → 判定规则 → 使用验证脚本 → 上传验证脚本**. Uploading saves the script and selects it immediately, without administrator registration or a server restart. The same card includes input/result field documentation and two downloadable, runnable templates. See [the upload guide](docs/uploaded-verifiers.md).
+
+Uploaded scripts follow `EVAL_CASE_STORAGE`: MongoDB uses `agent_eval_verifiers` in the case database; SQLite uses the existing records store. Run submission freezes the referenced source and hash in SQLite execution snapshots. Accepted runs and snapshot reruns can therefore execute without the MongoDB script library. Do not upgrade the MongoDB driver beyond the tested 6.21.0 without verifying Bun compatibility.
+
+Existing trusted command/script registrations also remain supported using an evaluator-owned JSON file:
 
 ```powershell
 $env:EVAL_VERIFIERS_FILE = (Resolve-Path examples/grading/verifiers.json).Path
@@ -95,7 +101,7 @@ bun run eval examples/grading/suite.json --output results/grading.json
 
 Configure the model/provider credential as usual before a real run. [The sample suite](examples/grading/suite.json) asks the Agent to create a JSON file; [the verifier](examples/grading/verify-summary.ts) independently checks the file. It does not accept a verbal claim of completion.
 
-Registry fields: unique `id`, `label`, `version`, `command` (absolute executable path, or `{runtime}` for the current runtime), `args` (array, never a shell string), `files` (verifier files/dependencies to fingerprint), `env` (explicitly permitted environment-variable names), and `timeoutMs` (default 60000, maximum 180000). `{verifierDir}` resolves relative to the registry; `{workspace}` and `{context}` resolve per verification. Scripts receive `EVAL_CONTEXT`, containing a disposable workspace path, execution result, rule and evidence index. Keep verifier files outside the Agent fixture. Restart the Web server after changing registry configuration.
+Registry fields: unique `id`, `label`, `version`, `command` (absolute executable path, or `{runtime}` for the current runtime), `args` (array, never a shell string), `files` (verifier files/dependencies to fingerprint), `env` (explicitly permitted environment-variable names), and `timeoutMs` (default 60000, maximum 180000). `{verifierDir}` resolves relative to the registry; `{workspace}` and `{context}` resolve per verification. Scripts receive `EVAL_CONTEXT`, containing a disposable workspace path, execution result, rule and evidence index. Keep verifier files outside the Agent fixture. The Web list and new executions reload registry configuration without a server restart.
 
 Script stdout must be one JSON object: `{ "protocolVersion": 1, "verdict": "pass", "expected": ..., "actual": ..., "message": "...", "evidence": [] }`. Evidence entries reference registered evidence IDs. Exit 0 plus valid JSON is required for script judgments; nonzero exit, malformed protocol, truncation or timeout is a verifier error. For `command` rules, an unexpected exit code is an acceptance failure. Use a script wrapper to distinguish test failures from framework faults where necessary.
 

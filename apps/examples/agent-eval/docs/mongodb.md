@@ -24,6 +24,7 @@ export EVAL_MONGODB_URI='mongodb://127.0.0.1:27017/?replicaSet=rs0'
 export EVAL_MONGODB_DATABASE=agent_eval
 export EVAL_MONGODB_CASE_COLLECTION=agent_eval_cases
 export EVAL_MONGODB_MODULE_COLLECTION=agent_eval_modules
+export EVAL_MONGODB_VERIFIER_COLLECTION=agent_eval_verifiers
 bun run mongo:prepare
 ```
 
@@ -98,3 +99,11 @@ bun run typecheck
 ```
 
 Use `mongod --setParameter enableTestCommands=1` only on the local test replica set. Tests exercise concurrency, transaction rollback after a write, commit retries, module archive races, migration, and history access during a closed Mongo connection. Without `EVAL_TEST_MONGODB_URI`, these integration tests are explicitly skipped.
+
+## User-uploaded verification scripts
+
+The script library uses `agent_eval_verifiers` in the same MongoDB database (override with `EVAL_MONGODB_VERIFIER_COLLECTION`). Upgrade preparation with `bun run mongo:prepare` to install its validator, and grant the application account ordinary read/write access to this collection. The three collection names must differ. The application checks the script collection at startup; it never requires schema-management privileges. This preparation is needed once when deploying the feature, not for each uploaded script. Users subsequently upload and immediately select scripts without administrator action or restarting the application.
+
+Each document contains string `_id`, `schemaVersion: 1`, `label`, `filename`, `extension`, UTF-8 `content`, SHA-256 `sha256`/`version`, `timeoutMs: 60000`, and BSON `createdAt`. The upload API performs byte-size, filename, protocol metadata and digest validation. Uploaded source is immutable; uploading the same filename creates a new ID. Do not directly edit these documents in place.
+
+Run submission copies referenced source and metadata into the SQLite RunItem snapshot in the same local transaction that commits the run. Execution materializes that frozen source outside the Agent fixture. A MongoDB outage blocks new script-library reads/uploads, but does not block accepted runs, history or snapshot reruns. SQLite deployments use the existing records store for the script library and do not need MongoDB. CLI JSON suites referencing uploaded IDs use the matching EVAL_CASE_STORAGE and database configuration (or the SQLite EVAL_DATA_DIR).

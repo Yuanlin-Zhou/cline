@@ -2,6 +2,8 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { hashFile, materialize, redact, saveEvidence, sha256 } from "./evidence.js";
 import { runProcess } from "./process.js";
+import { validateUploaded, type UploadedVerifier, type VerifierRepository } from "./uploaded-verifiers.js";
+import type { EvalCase } from "../types.js";
 import type { EvidenceManifest, Rule } from "./types.js";
 
 export type Verifier = { id: string; label: string; version: string; command: string; args: string[]; files: string[]; env: string[]; timeoutMs: number; sha256: string; fileHashes: Array<{ path: string; sha256: string }> };
@@ -22,7 +24,7 @@ export async function loadVerifiers(file = process.env.EVAL_VERIFIERS_FILE): Pro
 	}
 	return result;
 }
-export const publicVerifier = (v: Verifier) => ({ id: v.id, label: v.label, version: v.version, sha256: v.sha256, timeoutMs: v.timeoutMs, dependencies: v.files.map(f => path.basename(f)) });
+export const publicVerifier = (v: Verifier) => ({ id: v.id, label: v.label, version: v.version, sha256: v.sha256, timeoutMs: v.timeoutMs, source: "configured", dependencies: v.files.map(f => path.basename(f)) });
 
 export async function verifyProcess(rule: Extract<Rule, { kind: "command" | "script" }>, verifier: Verifier, input: { directory: string; gradeDirectory: string; evidence: EvidenceManifest; execution: unknown; signal?: AbortSignal; timeoutMs: number; secrets: string[] }) {
 	const deadline = Date.now() + input.timeoutMs;
@@ -51,4 +53,32 @@ export async function verifyProcess(rule: Extract<Rule, { kind: "command" | "scr
 	if (!parsed || parsed.protocolVersion !== 1 || !["pass", "fail"].includes(String(parsed.verdict)) || typeof parsed.message !== "string" || !("expected" in parsed) || !("actual" in parsed) || !Array.isArray(parsed.evidence) || parsed.evidence.some(id => typeof id !== "string" || !input.evidence.refs.some(r => r.id === id))) return { status: "error" as const, message: "验证脚本协议无效", actual: null, evidenceRefs: [ref] };
 	if (stdout.includes("[REDACTED]")) return { status: "insufficient" as const, message: "验证结果含已脱敏字段，无法精确判定", actual: null, evidenceRefs: [ref] };
 	return { status: parsed.verdict as "pass" | "fail", message: parsed.message, expected: parsed.expected, actual: parsed.actual, evidenceRefs: [ref, ...parsed.evidence as string[]] };
+}
+
+// Loading is scoped to the current case, so unrelated uploads never change its grade hash.
+export async function resolveVerifiers(definition: EvalCase, repository?: VerifierRepository, snapshots?: UploadedVerifier[]) {
+	const ids = [...new Set((definition.grading?.rules ?? []).flatMap(r => "verifierId" in r ? [r.verifierId] : []))];
+	const configured = ids.some(id => !id.startsWith("uploaded-")) ? await loadVerifiers() : [];
+	const uploaded: UploadedVerifier[] = [];
+	for (const id of ids) {
+		if (!id.startsWith("uploaded-")) { if (!configured.some(v => v.id === id)) throw new Error(`验证器 ${id} 未注册`); continue; }
+		const value = snapshots !== undefined ? snapshots.find(v => v.id === id) : await repository?.get(id);
+		if (!value) throw new Error(`上传脚本 ${id} 不存在或运行源码快照缺失`);
+		if (configured.some(v => v.id === id)) throw new Error(`验证器 ID 冲突：${id}`);
+		uploaded.push(validateUploaded(value));
+	}
+	return { configured: configured.filter(v => ids.includes(v.id)), uploaded };
+}
+export function uploadedPlaceholder(v: UploadedVerifier): Verifier {
+	return { id: v.id, label: v.label, version: v.version, sha256: v.sha256, timeoutMs: v.timeoutMs, command: process.execPath, args: [], files: [], env: [], fileHashes: [] };
+}
+export async function materializeVerifiers(values: UploadedVerifier[], directory: string): Promise<Verifier[]> {
+	if (!values.length) return [];
+	const runtimeHash = await hashFile(process.execPath);
+	const destination = path.join(directory, "verifiers"); await mkdir(destination, { recursive: true });
+	return Promise.all(values.map(async value => {
+		const v = validateUploaded(value); const file = path.join(destination, `${v.id}${v.extension}`);
+		await writeFile(file, v.content, { flag: "wx" });
+		return { ...uploadedPlaceholder(v), args: [file], files: [file], fileHashes: [{ path: process.execPath, sha256: runtimeHash }, { path: file, sha256: v.sha256 }] };
+	}));
 }

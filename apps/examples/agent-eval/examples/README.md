@@ -132,12 +132,12 @@ bun run web
 
 ### 验收程序与验证脚本
 
-`command` 和 `script` 都只能引用评测器通过 `EVAL_VERIFIERS_FILE` 预先注册的 `verifierId`，案例不能内嵌 shell 命令。两者都在证据快照的独立副本上运行：
+`command` 和 `script` 都通过 `verifierId` 引用程序，案例不能内嵌 shell 命令。用户可在案例的“判定规则 → 使用验证脚本”中直接上传 .js/.mjs/.ts 文件，立即选用，无需管理员注册或重启；原有 `EVAL_VERIFIERS_FILE` 配置继续支持。两者都在证据快照的独立副本上运行：
 
 - `command`：退出码等于 `expectedExitCode` 时通过；其他退出码是明确失败。
 - `script`：进程必须退出 0，stdout 必须是一个协议 JSON，其中包含 `protocolVersion: 1`、`verdict`、`expected`、`actual`、`message` 和 `evidence`。`verdict: "fail"` 是明确失败；非零退出、超时、无效 JSON、协议错误或输出截断是验证错误。
 
-注册表及完整脚本示例见 `grading/verifiers.json`、`grading/verify-summary.ts` 和 `importable/registered-verifier.json`。
+上传步骤、字段说明和无需依赖的模板见 [验证脚本上传指南](../docs/uploaded-verifiers.md)。注册表及完整脚本示例见 `grading/verifiers.json`、`grading/verify-summary.ts` 和 `importable/registered-verifier.json`。
 
 ## 工具行为验收
 

@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { createEvalServer } from "../web/server.js";
+import { replyTemplate } from "./verifier-guide.js";
 import { runProcess } from "./process.js";
 import type { RunDetail, SavedCase } from "../web/types.js";
 
@@ -41,6 +42,13 @@ test("real SDK worker → fixed evidence → grading → HTTP/CLI exports, witho
 		const csv = await (await fetch(`${base}/api/runs/${id}/export?format=csv`)).text(); expect(csv).toContain('"grading_verdict"'); expect(csv).toContain('"task"');
 		const updated = await fetch(`${base}/api/cases/${c.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ revision: c.revision, defaults: c.defaults, definition: { ...c.definition, grading: { version: 1, rules: [{ id: "changed", kind: "file.exists", path: "other.txt" }] } } }) });
 		expect(updated.status).toBe(200); expect(app.store.detail(id).items[0].snapshot.definition.grading?.rules[0].id).toBe("json");
+		const uploadResponse = await post("/api/verifiers", { filename: "verify-reply.mjs", content: replyTemplate.replace('"已完成"', '"Done"') });
+		expect(uploadResponse.status).toBe(201); const uploaded = await uploadResponse.json() as { id: string };
+		const scriptCase = app.store.createCase(moduleId, c.defaults, { ...c.definition, id: "uploaded-script", grading: { version: 1, rules: [{ id: "script", kind: "script", verifierId: uploaded.id }] } });
+		const scriptRunResponse = await post("/api/runs", { caseIds: [scriptCase.id] }); expect(scriptRunResponse.status).toBe(202);
+		const scriptRun = await scriptRunResponse.json() as { id: string }; await app.queue.idle();
+		const verified = app.store.items(scriptRun.id)[0]; expect(verified.status).toBe("passed"); expect(verified.result?.grading?.results[0].actual).toEqual({ executionStatus: "completed", text: "Done" });
+		const workerSuite = await readFile(path.join(path.dirname(verified.workspace!), "suite.json"), "utf8"); expect(workerSuite).not.toContain(uploaded.id); expect(workerSuite).not.toContain("stdout must contain");
 		const denied = app.store.createCase(moduleId, c.defaults, { ...c.definition, id: "unsupported", grading: { version: 1, rules: [{ id: "tool", kind: "tool.count", match: { name: "read_files", phase: "started" }, min: 1 }] } });
 		const requestCount = requests.length; expect((await post("/api/runs", { caseIds: [denied.id] })).status).toBe(400); expect(requests.length).toBe(requestCount);
 		const missing = app.store.createCase(moduleId, c.defaults, { ...c.definition, id: "missing", grading: { version: 1, rules: [{ id: "output", kind: "file.exists", path: "never-created.txt" }] } });

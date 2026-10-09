@@ -7,11 +7,11 @@ import { caseFromDocument, caseToDocument, moduleFromDocument, moduleToDocument,
 import { parseTransfer, planTransfer, TransferError } from "./transfer.js";
 import type { Module, SavedCase } from "./types.js";
 
-export type MongoConfig = { uri: string; database: string; caseCollection: string; moduleCollection: string };
+export type MongoConfig = { uri: string; database: string; caseCollection: string; moduleCollection: string; verifierCollection?: string };
 export function mongoConfig(env = process.env): MongoConfig {
 	if (!env.EVAL_MONGODB_URI) throw new CatalogError("MongoDB 模式需要 EVAL_MONGODB_URI", 503);
-	const config = { uri: env.EVAL_MONGODB_URI, database: env.EVAL_MONGODB_DATABASE || "agent_eval", caseCollection: env.EVAL_MONGODB_CASE_COLLECTION || "agent_eval_cases", moduleCollection: env.EVAL_MONGODB_MODULE_COLLECTION || "agent_eval_modules" };
-	if (config.caseCollection === config.moduleCollection) throw new CatalogError("案例与模块集合不能同名");
+	const config = { uri: env.EVAL_MONGODB_URI, database: env.EVAL_MONGODB_DATABASE || "agent_eval", caseCollection: env.EVAL_MONGODB_CASE_COLLECTION || "agent_eval_cases", moduleCollection: env.EVAL_MONGODB_MODULE_COLLECTION || "agent_eval_modules", verifierCollection: env.EVAL_MONGODB_VERIFIER_COLLECTION || "agent_eval_verifiers" };
+	if (new Set([config.caseCollection, config.moduleCollection, config.verifierCollection]).size !== 3) throw new CatalogError("案例、模块与验证脚本集合不能同名");
 	return config;
 }
 export function mongoFailure(error: unknown): Error {
@@ -28,6 +28,7 @@ export class MongoCatalog implements CatalogRepository {
 	readonly cases: Collection<CaseDocument>;
 	readonly modules: Collection<ModuleDocument>;
 	constructor(readonly client: MongoClient, readonly db: Db, readonly config: MongoConfig) {
+		if (new Set([config.caseCollection, config.moduleCollection, config.verifierCollection ?? "agent_eval_verifiers"]).size !== 3) throw new CatalogError("案例、模块与验证脚本集合不能同名");
 		this.cases = db.collection(config.caseCollection); this.modules = db.collection(config.moduleCollection);
 	}
 	static async connect(config: MongoConfig, check = true) {

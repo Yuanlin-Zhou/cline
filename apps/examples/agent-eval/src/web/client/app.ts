@@ -1203,7 +1203,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 	};
 	renderHistory();
 
-	const readDefinitionFromForm = (): EvalCase => {
+	const readDefinitionFromForm = (validateGrading = true): EvalCase => {
 		const history: EvalMessage[] = [];
 		for (let index = 0; index < definition.history.length; index++) {
 			const content = val(`h-content-${index}`).trim();
@@ -1218,7 +1218,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 			history,
 			prompt: val("f-prompt"),
 			assertions,
-			grading: taskGrading.read(replayMode),
+			grading: validateGrading ? taskGrading.read(replayMode) : definition.grading,
 			...readHeaderEditor("f-case-headers"),
 			cwd: val("f-cwd").trim() || undefined,
 			tools: val("f-tools") as ToolMode,
@@ -1243,7 +1243,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 	};
 
 	const readDefaultsFromForm = (): EvalDefaults => readConfig("f", true);
-	const savedForm = JSON.stringify({ definition: readDefinitionFromForm(), defaults: readDefaultsFromForm() });
+	const savedForm = JSON.stringify({ definition: readDefinitionFromForm(false), defaults: readDefaultsFromForm() });
 	function transferSaved(operation: "copy" | "move") {
 		if (!existing) return;
 		try {

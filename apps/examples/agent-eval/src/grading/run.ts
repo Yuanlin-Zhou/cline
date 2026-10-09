@@ -6,15 +6,19 @@ import { fileURLToPath } from "node:url";
 import type { EvalCase, EvalDefaults, EvalCaseResult } from "../types.js";
 import { prepareWorkspace } from "../web/workspace.js";
 import { gradeCase, preflight } from "./engine.js";
-import { loadVerifiers } from "./verifiers.js";
+import { resolveVerifiers, materializeVerifiers } from "./verifiers.js";
+import { loadCliVerifierSnapshots } from "./verifier-source.js";
+import type { UploadedVerifier } from "./uploaded-verifiers.js";
 import { manifest, redact, redactValue, saveEvidence, snapshot } from "./evidence.js";
 import { killTree } from "./process.js";
 import type { EvidenceEvent } from "./types.js";
 
-export async function runIsolated(input: { definition: EvalCase; defaults: EvalDefaults; directory: string; itemId?: string; signal?: AbortSignal; onText?: (text: string) => void; onWorkspace?: (workspace: string) => void; onPhase?: (phase: "executing" | "verifying") => void }): Promise<EvalCaseResult> {
+export async function runIsolated(input: { definition: EvalCase; defaults: EvalDefaults; directory: string; verifierSnapshots?: UploadedVerifier[]; itemId?: string; signal?: AbortSignal; onText?: (text: string) => void; onWorkspace?: (workspace: string) => void; onPhase?: (phase: "executing" | "verifying") => void }): Promise<EvalCaseResult> {
 	const { definition, defaults, directory, signal } = input; const started = Date.now();
 	await mkdir(directory, { recursive: true });
-	const verifiers = definition.grading ? await loadVerifiers() : [];
+	const snapshots = input.verifierSnapshots ?? await loadCliVerifierSnapshots(definition, path.resolve(directory, "../../.."));
+	const resolved = await resolveVerifiers(definition, undefined, snapshots);
+	const verifiers = [...resolved.configured, ...await materializeVerifiers(resolved.uploaded, directory)];
 	preflight(definition, verifiers);
 	const source = definition.replayMode === "full-task" ? definition.cwd ?? defaults.cwd : undefined;
 	if (source && verifiers.some(v => v.files.some(file => { const relative = path.relative(path.resolve(source), file); return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative)); }))) throw new Error("正式验收脚本不能位于 Agent fixture 内，请将验证器移到独立目录");

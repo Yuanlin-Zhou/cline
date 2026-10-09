@@ -8,7 +8,7 @@ import type { Run, RunItem } from "./types.js";
 export type Executor = (item: RunItem, onText: (text: string) => void, signal: AbortSignal) => Promise<EvalCaseResult>;
 export function makeExecutor(store: EvalStore): Executor {
 	return async (item, onText, signal) => runIsolated({
-		definition: item.snapshot.definition, defaults: item.snapshot.defaults,
+		definition: item.snapshot.definition, defaults: item.snapshot.defaults, verifierSnapshots: item.verifierSnapshots ?? [],
 		directory: path.join(store.directory, "runs", item.runId, item.id), itemId: item.id, signal, onText,
 		onWorkspace: workspace => { item.workspace = workspace; store.put("item", item.id, item); },
 		onPhase: phase => { item.phase = phase; store.put("item", item.id, item); },
