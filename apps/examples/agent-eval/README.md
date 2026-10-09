@@ -6,7 +6,7 @@ This uses the SDK instead of spawning and scraping the terminal CLI. `initialMes
 
 ## Copying and moving cases between modules
 
-In the Web UI, use **复制** or **移动** on a saved case, or select multiple cases and use **复制所选 / 移动所选**. Saved case details also provide **复制到… / 移动到…**; save any draft changes first. Batch operations include selected cases hidden by the current filters.
+In the Web UI, select cases and use **复制所选 / 移动所选**, or open a saved case through its name or row and use **复制到… / 移动到…** in the details. Save any draft changes first. List rows show only **运行 / 删除** actions. Batch operations include selected cases hidden by the current filters.
 
 Choose an active target module and review the preview before confirming. Copies retain all configuration and get a new identity with no execution history. Moves retain their identity and history, increase the revision, and change module ownership. Existing runs and historical reruns keep their original snapshots. Same-module copies use `-copyN`; cross-module collisions either stop the entire operation or use `-copyN` / `-moveN`. No existing case is overwritten.
 

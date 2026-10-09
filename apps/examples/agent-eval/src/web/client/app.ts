@@ -584,7 +584,7 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
 			const hay = [c.definition.id, c.definition.description ?? "", latest?.sessionId ?? "", ...(c.definition.tags ?? [])].join(" ").toLowerCase();
 			return hay.includes(query);
 		});
-		tableBody.replaceChildren(...visible.map((c) => caseRow(c, selected?.id ?? "", selection, renderTable, s)));
+		tableBody.replaceChildren(...visible.map((c) => caseRow(c, selection, renderTable, s)));
 		if (!visible.length) tableBody.append(h("tr", {}, h("td", { colspan: 7, class: "empty" }, "没有匹配的案例，试试调整筛选条件或导入案例。")));
 		selectionInfo.textContent = selection.size ? `已选 ${selection.size} 个案例` : `${visible.length} 个案例`;
 		runSelectedBtn.disabled = selection.size === 0;
@@ -595,7 +595,7 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
 	};
 
 	const tableWrap = h("div", { class: "TableWrap" });
-	const table = h("table", { class: "Table" });
+	const table = h("table", { class: "Table CaseTable" });
 	const selectAll = h("input", { type: "checkbox", "aria-label": "选择当前筛选结果", onchange: (e: Event) => {
 		const checked = (e.target as HTMLInputElement).checked;
 		for (const c of visible) { if (checked) selection.add(c.id); else selection.delete(c.id); }
@@ -609,7 +609,7 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
 			h("th", {}, "标签"),
 			h("th", { class: "num" }, "版本"),
 			h("th", {}, "最近结果"),
-			h("th", {}, "操作"),
+			h("th", { class: "CaseTable-actionsCell" }, "操作"),
 		),
 	));
 	const tableBody = h("tbody");
@@ -661,13 +661,14 @@ function moduleItem(module: Pick<Module, "id" | "name" | "description">, active:
 	return wrapper;
 }
 
-function caseRow(c: SavedCase, moduleId: string, selection: Set<string>, rerender: () => void, s: StateResponse): HTMLElement {
+function caseRow(c: SavedCase, selection: Set<string>, rerender: () => void, s: StateResponse): HTMLElement {
 	const latest = s.latest[c.id];
 	const tr = h("tr", { class: "clickable", onclick: () => navigate(`#/case/${c.id}`) });
 	tr.append(
 		h("td", {}, h("input", {
 			type: "checkbox",
 			checked: selection.has(c.id),
+			"aria-label": `选择案例 ${c.definition.id}`,
 			onclick: (e: Event) => e.stopPropagation(),
 			onchange: (e: Event) => {
 				const checked = (e.target as HTMLInputElement).checked;
@@ -676,8 +677,8 @@ function caseRow(c: SavedCase, moduleId: string, selection: Set<string>, rerende
 				rerender();
 			},
 		})),
-		h("td", {},
-			h("div", { class: "case-name" }, c.definition.id),
+		h("td", { class: "CaseTable-content" },
+			h("a", { class: "case-name CaseTable-link", href: `#/case/${c.id}`, onclick: (event: Event) => event.stopPropagation() }, c.definition.id),
 			c.definition.description ? h("div", { class: "muted small" }, c.definition.description) : h("span", {}),
 		),
 		h("td", {}, badge(replayLabel(c.definition.replayMode), c.definition.replayMode === "full-task" ? "Label--done" : "Label--accent")),
@@ -693,26 +694,11 @@ function caseRow(c: SavedCase, moduleId: string, selection: Set<string>, rerende
 				: h("span", { class: "muted" }, "未运行"),
 		),
 	);
-	const actions = h("td", { onclick: (e: Event) => e.stopPropagation() });
-	actions.append(
-		h("button", { class: "btn btn-sm", onclick: () => runCases([c.id], [], `调试 · ${c.definition.id}`) }, "运行"),
-		h("button", { class: "btn btn-sm", onclick: () => navigate(`#/case/${c.id}`) }, "查看"),
-		h("button", {
-			class: "btn btn-sm",
-			onclick: () => openCaseTransfer("copy", [c], s, () => { selection.delete(c.id); render(); }),
-		}, "复制"),
-		h("button", { class: "btn btn-sm", disabled: !s.modules.some(m => m.id !== c.moduleId), title: "移动到其他模块；需要至少两个有效模块", onclick: () => openCaseTransfer("move", [c], s, () => { selection.delete(c.id); render(); }) }, "移动"),
-		h("button", {
-			class: "btn btn-sm",
-			onclick: () => confirmModal("归档案例", `确定归档案例「${c.definition.id}」吗？归档后不再参与评测，可随时恢复。`, "归档", async () => {
-				try {
-					await api(`/api/cases/${c.id}/archive`, { method: "POST", headers: JSON_HEADERS });
-					toast("已归档案例");
-					render();
-				} catch (error) { toast(error instanceof Error ? error.message : String(error), "error"); }
-			}),
-		}, "归档"),
-		h("button", { class: "btn btn-sm btn-danger", onclick: () => deleteCase(c, () => render()) }, "删除"),
+	const actions = h("td", { class: "CaseTable-actionsCell", onclick: (e: Event) => e.stopPropagation() },
+		h("div", { class: "CaseTable-actions" },
+			h("button", { class: "btn btn-sm", onclick: () => runCases([c.id], [], `调试 · ${c.definition.id}`) }, "运行"),
+			h("button", { class: "btn btn-sm btn-danger", onclick: () => deleteCase(c, () => render()) }, "删除"),
+		),
 	);
 	tr.append(actions);
 	return tr;

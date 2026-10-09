@@ -571,3 +571,14 @@ button, input, select, textarea, a, summary { scroll-margin: 20px; }
   .Modal-overlay:has(.CaseTransfer) { padding: 20px 8px; }
   .Modal:has(.CaseTransfer) .Modal-footer .btn { flex: 1; min-height: 44px; }
 }
+
+/* Keep case content prominent while row actions stay compact and aligned. */
+.CaseTable-content { min-width: 180px; max-width: 420px; overflow-wrap: anywhere; }
+.CaseTable-link { display: inline-block; text-decoration: none; }
+.CaseTable-link:hover { color: var(--color-accent-fg); text-decoration: underline; }
+.CaseTable-link:focus-visible { outline: 2px solid var(--color-accent-fg); outline-offset: 3px; border-radius: 2px; }
+.CaseTable .CaseTable-actionsCell { width: 1%; white-space: nowrap; }
+.CaseTable-actions { display: flex; align-items: center; gap: 8px; }
+@media (max-width: 760px) {
+  .CaseTable-actions .btn { min-height: 44px; }
+}
