@@ -659,3 +659,35 @@ button, input, select, textarea, a, summary { scroll-margin: 20px; }
   .Verifier-actions > select { flex-basis: 100%; }
   .Verifier-dialog .btn, .ScriptEditor .btn { min-height: 40px; }
 }
+
+/* Goal-first grading workspace. */
+.GradingWorkspace [hidden] { display: none !important; }
+.GradingWorkspace { min-width: 0; }
+.GradingWorkspace-intro { margin: 12px 0 16px; }
+.GradingWorkspace-intro h3 { margin: 0 0 8px; font-size: 16px; }
+.GradingWorkspace-intro p { line-height: 1.6; margin: 6px 0; }
+.Grading-goals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+.Grading-goal.btn { flex-direction: column; align-items: flex-start; justify-content: flex-start; text-align: left; white-space: normal; padding: 14px; font-weight: 600; line-height: 1.5; }
+.Grading-goal .form-hint { display: block; margin-top: 8px; font-weight: 400; }
+.Grading-goal--restricted { border-style: dashed; }
+.GradingWorkspace .Box { margin-top: 16px; }
+.GradingWorkspace > .Verifier-details { padding-top: 12px; border-top: 1px solid var(--color-border-muted); margin-top: 20px; }
+.Grading-settings .Grading-advanced { padding: 10px 0; }
+.Grading-settings .Grading-advanced > summary, .Grading .Grading-advanced > summary { list-style: disclosure-closed; padding: 6px 0; cursor: pointer; }
+.Grading-settings .Grading-advanced[open] > summary, .Grading .Grading-advanced[open] > summary { list-style: disclosure-open; }
+.ReplyEditor .Grading-rule-head { padding: 0 0 12px; background: transparent; margin-bottom: 12px; }
+.ReplyEditor .Grading-rule-head strong { font-size: 14px; }
+.ReplyEditor .Verifier-actions { justify-content: space-between; }
+.ReplyEditor textarea { resize: vertical; }
+.Grading-mode-warning { border-left: 3px solid var(--color-attention-emphasis); background: var(--color-attention-subtle); padding: 10px 12px; margin-bottom: 14px; }
+.Grading-mode-warning p { margin: 0 0 8px; line-height: 1.6; font-size: 12px; }
+.Grading-rule-head strong { overflow-wrap: anywhere; min-width: 0; }
+.Grading-results [hidden] { display: none !important; }
+.Grading-results pre { max-height: 320px; overflow: auto; }
+.Grading-results .form-hint, .Grading-result-message { overflow-wrap: anywhere; line-height: 1.6; }
+.Grading-check, .Grading-evidence { border-top: 1px solid var(--color-border-muted); padding-top: 8px; }
+.Grading-file-chooser > select { margin: 12px 0; }
+@media (max-width: 760px) { .Grading-goals { grid-template-columns: 1fr; } .Grading-goal .form-hint { margin-top: 4px; } }
+
+.GradingWorkspace summary, .Verifier-dialog summary, .Grading-results summary { list-style: none !important; }
+.GradingWorkspace summary::-webkit-details-marker, .Verifier-dialog summary::-webkit-details-marker, .Grading-results summary::-webkit-details-marker { display: none; }

@@ -18,13 +18,13 @@ export function readExpected(type: string, text: string): unknown {
 
 type Guide = { title: string; purpose: string; sample: Record<string, unknown>; example: string };
 export const guides: Record<string, Guide> = {
-	"file.exists": { title: "生成了指定文件", purpose: "确认交付文件存在；存在不代表内容正确，可再添加内容或 JSON 检查。", sample: { path: "reports/summary.json" }, example: "文件路径：reports/summary.json。通过：运行结束时该普通文件存在；不通过：文件不存在。目录不算文件。" },
-	"file.absent": { title: "没有留下指定文件", purpose: "禁止临时文件或额外产物；只检查填写的这个路径。", sample: { path: "debug.log" }, example: "文件路径：debug.log。通过：运行结束时没有该文件；不通过：留下了 debug.log。" },
-	"file.unchanged": { title: "原有文件没有被修改", purpose: "保护配置或输入文件。请先在初始工作区准备该文件，再检查运行前后内容是否一致。", sample: { path: "config.json" }, example: "文件路径：config.json。通过：运行前后都存在，内容完全一致；不通过：被修改、删除或运行后才新增。" },
-	"file.text": { title: "文件内容符合要求", purpose: "检查 UTF-8 文件内容，区分大小写，不自动去除空白；文件缺失也不通过。要检查 Agent 最终回复，请使用上方文本断言。", sample: { path: "README.md", op: "contains", expected: "Bun" }, example: "文件路径：README.md；判断方式：包含；期望文本：Bun。通过：使用 Bun 安装；不通过：使用 npm 安装。" },
+	"file.exists": { title: "交付文件存在", purpose: "确认交付文件存在；存在不代表内容正确，可再添加内容或 JSON 检查。", sample: { path: "reports/summary.json" }, example: "文件路径：reports/summary.json。通过：运行结束时该普通文件存在；不通过：文件不存在。目录不算文件。" },
+	"file.absent": { title: "禁止生成指定文件", purpose: "禁止临时文件或额外产物；只检查填写的这个路径。", sample: { path: "debug.log" }, example: "文件路径：debug.log。通过：运行结束时没有该文件；不通过：留下了 debug.log。" },
+	"file.unchanged": { title: "初始文件保持不变", purpose: "保护配置或输入文件。请先在初始工作区准备该文件，再检查运行前后内容是否一致。", sample: { path: "config.json" }, example: "文件路径：config.json。通过：运行前后都存在，内容完全一致；不通过：被修改、删除或运行后才新增。" },
+	"file.text": { title: "文件内容符合要求", purpose: "检查 UTF-8 文件内容，区分大小写，不自动去除空白；文件缺失也不通过。要检查 Agent 最终回复，请添加最终回复检查。", sample: { path: "README.md", op: "contains", expected: "Bun" }, example: "文件路径：README.md；判断方式：包含；期望文本：Bun。通过：使用 Bun 安装；不通过：使用 npm 安装。" },
 	"file.json": { title: "JSON 中的数据符合要求", purpose: "检查 JSON 文件里的字段、统计值或数组成员。数字 12 与文字“12”是不同的值。", sample: { path: "summary.json", pointer: "/total", op: "equals", expected: 12 }, example: '文件路径：summary.json；要检查的字段：/total；判断方式：等于；值的类型：数字；预期值：12。通过：{"total":12}；不通过：{"total":"12"} 或 {"total":10}。' },
 	command: { title: "运行已配置的验收程序（高级）", purpose: "运行维护者注册的验收程序，并检查退出码。这里不能填写 shell 命令或脚本路径。", sample: { verifierId: "", expectedExitCode: 0 }, example: "从列表选择真实的验收程序，期望退出码填 0（通常表示正常结束）。通过：退出码为 0；不通过：退出码为 1；超时属于验证错误。" },
-	script: { title: "使用Python验证脚本（可上传）", purpose: "适合内置规则无法表达的业务检查，可自行上传脚本返回判定结果，无需管理员注册或重启。", sample: { verifierId: "" }, example: "上传 .py 并实现 verify(ctx)，可检查结果、会话、文件；print进入日志。pass通过，fail业务失败，insufficient数据不足。旧JS/TS脚本仍兼容，异常属于验证错误。" },
+	script: { title: "Python 验证脚本", purpose: "适合内置规则无法表达的业务检查，可自行上传脚本返回判定结果，无需管理员注册或重启。", sample: { verifierId: "" }, example: "上传 .py 并实现 verify(ctx)，可检查结果、会话、文件；print进入日志。pass通过，fail业务失败，insufficient数据不足。旧JS/TS脚本仍兼容，异常属于验证错误。" },
 	"tool.count": { title: "工具调用次数", purpose: "按工具名和阶段检查次数，例如至少调用一次 read_files。当前无法验证真实行为，仅可作为诊断配置。", sample: { match: { name: "read_files", phase: "started" }, min: 1 }, example: "min 为最少次数，max 为最多次数；max: 0 表示禁止调用。当前执行只会显示证据不足。" },
 	"tool.parameters": { title: "工具参数", purpose: "检查匹配调用的参数值。当前无法验证真实行为，仅可作为诊断配置。", sample: { match: { name: "read_files", phase: "started" }, check: { pointer: "/path", op: "equals", expected: "input.json" } }, example: "示例要求 read_files 的 path 参数等于 input.json。当前执行只会显示证据不足。" },
 	"tool.order": { title: "工具先后顺序", purpose: "要求前一个工具成功完成后，再开始后一个工具。当前无法验证真实行为。", sample: { before: { name: "read_files", phase: "completed" }, after: { name: "apply_patch", phase: "started" } }, example: "示例要求先成功读取文件，再开始修改。当前执行只会显示证据不足。" },
@@ -53,4 +53,20 @@ export function condition(rule: Record<string, unknown>): string {
 	if (rule.op === "approx") return `${target} 是数字，与 ${rule.expected} 的偏差不超过 ${Math.max(Number(rule.absTolerance ?? 0), Number(rule.relTolerance ?? 0) * Math.abs(Number(rule.expected)))}。`;
 	const type = rule.kind === "file.json" ? ({ text: "文字", number: "数字", boolean: "布尔值", null: "空值", json: "数组/对象" }[valueType(rule.expected)]) : "";
 	return `${target} ${comparisons[String(rule.op)]?.label ?? rule.op} ${type ? `${type} ` : ""}${JSON.stringify(rule.expected)}。`;
+}
+
+
+export function ruleTitle(rule: Record<string, unknown>, verifierLabel?: string): string {
+	if (typeof rule.label === "string" && rule.label) return rule.label;
+	const kind = String(rule.kind); const path = String(rule.path ?? "文件");
+	const compact = (value: unknown) => { const text = JSON.stringify(value) ?? ""; return text.length > 60 ? text.slice(0, 60) + "…" : text; };
+	if (kind === "file.exists") return `${path || "文件"} 存在`;
+	if (kind === "file.absent") return `不生成 ${path || "指定文件"}`;
+	if (kind === "file.unchanged") return `${path || "初始文件"} 保持不变`;
+	if (kind === "file.text" || kind === "file.json") return `${path || (kind === "file.json" ? "JSON 文件" : "文本文件")}${kind === "file.json" && rule.pointer ? ` · ${rule.pointer}` : ""} ${comparisons[String(rule.op)]?.label ?? "内容检查"}${rule.op === "exists" ? "" : ` ${compact(rule.expected)}`}`;
+	if (kind === "script") return verifierLabel ? `脚本：${verifierLabel}` : "自定义脚本检查";
+	if (kind === "command") return verifierLabel ? `验收程序：${verifierLabel}` : "注册验收程序";
+	if (kind === "text.legacy") return "最终回复与结束状态检查";
+	if (kind === "budget") return "任务执行时限";
+	return guides[kind]?.title ?? "判定检查";
 }

@@ -1,3 +1,5 @@
+import { replyEditor } from "./reply-editor.js";
+import { action as verifierAction, fold as verifierFold } from "./verifier-ui.js";
 import { verifierTrial } from "./verifier-trial.js";
 import { tagEditor } from "./tag-editor.js";
 import { conversationView, executionStatus, showSyncStatus, syncStatus } from "./observability.js";
@@ -1094,6 +1096,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 				definition.history = structuredClone(sample.history); renderHistory();
 				historyBox.toggleAttribute("open", sample.history.length > 0);
 				(document.getElementById("a-contains") as HTMLTextAreaElement).value = (sample.assertions?.contains ?? []).join("\n");
+				replyChecks.refresh();
 				for (const key of ["tools", "maxIterations", "timeoutMs"] as const) {
 					const control = document.getElementById({ tools: "f-tools", maxIterations: "f-maxiter", timeoutMs: "f-timeout" }[key]) as HTMLInputElement;
 					if (sample[key] !== undefined) control.value = String(sample[key]);
@@ -1131,23 +1134,22 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 	credBody.append(advancedFields);
 	credBox.append(credBody);
 
-	const assertBox = h("div", { class: "Box mt-3" });
-	const assertBody = h("div", { class: "Box-body" });
-	assertBody.append(
-		h("div", { class: "section-title" }, h("span", {}, "最终回复检查（可选）")),
-		h("p", { class: "form-hint" }, "这里检查 Agent 最后发出的回复，不读取工作区文件。每行填写一项；留空就不检查。要检查交付文件，请使用下方的任务验收规则。"),
-		field("回复必须包含（每行一个）", textarea("a-contains", (definition.assertions?.contains ?? []).join("\n")), "例如 bun install；最后回复必须包含所有填写项。"),
-		field("回复不能包含（每行一个）", textarea("a-notContains", (definition.assertions?.notContains ?? []).join("\n")), "例如 npm install；最后回复不能包含任何填写项。"),
-		field("回复需匹配正则（每行一个）", textarea("a-matches", (definition.assertions?.matches ?? []).join("\n")), "例如 Bun|bun；最后回复必须匹配所有表达式，无需填写 / 分隔符。"),
-		field("结束状态（可选）", select("a-finish", [["", "不额外检查（推荐由任务验收规则判定）"], ...FINISH_OPTIONS], definition.grading ? definition.assertions?.finishReason ?? "" : definition.assertions?.finishReason ?? "completed"), "只在明确需要检查 Agent 如何结束时选择。通常保持“不额外检查”，由下方必要规则判断任务是否完成；选择“正常完成”则要求 Agent 的结束状态确实为正常完成。"),
-	);
-	assertBox.append(assertBody);
-	const taskGrading = gradingEditor(definition.grading, { caseId: existing?.id });
-
+	const replyChecks = replyEditor({ initial: definition.assertions, finish: definition.grading ? definition.assertions?.finishReason ?? "" : definition.assertions?.finishReason ?? "completed", finishOptions: FINISH_OPTIONS, omitDefaultFinish: !definition.assertions && !definition.grading });
+	const taskGrading = gradingEditor(definition.grading, { caseId: existing?.id, onModeChange: () => { replayMode = "full-task"; updateMode(); } });
+	const rulesPage = h("section", { class: "GradingWorkspace" });
+	const ruleIntro = h("div", { class: "GradingWorkspace-intro" }, h("h3", {}, "如何判断评测通过？"), h("p", {}, "选择你要检查的内容。所有影响通过的检查都满足，才算本次评测通过。"), h("p", {class:"form-hint"}, "未配置内容检查时，系统仅检查是否正常结束，不能证明业务任务完成。"));
+	const goals = h("div", { class: "Grading-goals", "aria-label": "添加判定检查" });
+	const goal = (title: string, description: string, click: () => void) => { const button = verifierAction(title, click); button.classList.add("Grading-goal"); button.setAttribute("aria-label", title); button.append(h("span", {class:"form-hint"}, description)); return button; };
+	const replyGoal = goal("最终回复", "检查回复包含、不包含或匹配文字", () => replyChecks.open());
+	const fileGoal = goal("文件产物", "检查交付文件和 JSON · 需要完整任务", () => taskGrading.openFiles());
+	const scriptGoal = goal("Python 脚本", "自定义检查结果、会话与文件", () => taskGrading.addScript());
+	goals.append(replyGoal, fileGoal, scriptGoal);
+	const ruleAdvanced = verifierFold("高级判定设置"); ruleAdvanced.append(replyChecks.finishSettings, taskGrading.advanced);
+	rulesPage.append(ruleIntro, goals, replyChecks.element, taskGrading.element, ruleAdvanced);
 
 	left.append(panelTabs("case-editor", [
 		["输入", h("div", {}, form, historyBox, promptBox)],
-		["判定规则", h("div", {}, assertBox, taskGrading.element)],
+		["判定规则", rulesPage],
 		["配置", h("div", {}, envBox, credBox)],
 	]));
 	credBox.setAttribute("open", "");
@@ -1174,9 +1176,11 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 	right.append(resultPanel, historyBox2);
 	layout.append(left, right);
 	app.append(layout);
+	if (new URLSearchParams(location.hash.split("?")[1]).get("tab") === "grading") document.getElementById("case-editor-tab-1")?.click();
 	const updateMode = (): void => {
 		const single = replayMode === "single-turn";
 		taskGrading.setMode(replayMode);
+		fileGoal.classList.toggle("Grading-goal--restricted", single); fileGoal.title = single ? "文件检查需要完整任务，可点击切换并选择检查类型。" : "添加文件检查";
 		envBox.hidden = single;
 		for (const card of modeCards.querySelectorAll<HTMLElement>("button")) {
 			card.setAttribute("aria-pressed", String(card.dataset.mode === replayMode));
@@ -1231,18 +1235,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 		return result;
 	};
 
-	const readAssertionsFromForm = (): EvalAssertions | undefined => {
-		const contains = splitLines(val("a-contains"));
-		const notContains = splitLines(val("a-notContains"));
-		const matches = splitLines(val("a-matches"));
-		const finishReason = val("a-finish") as EvalAssertions["finishReason"];
-		if (!contains.length && !notContains.length && !matches.length && (!finishReason || (finishReason === "completed" && !definition.assertions && !definition.grading))) return undefined;
-		const assertions: EvalAssertions = { finishReason: finishReason || undefined };
-		if (contains.length) assertions.contains = contains;
-		if (notContains.length) assertions.notContains = notContains;
-		if (matches.length) assertions.matches = matches;
-		return assertions;
-	};
+	const readAssertionsFromForm = (): EvalAssertions | undefined => replyChecks.read();
 
 	const readDefaultsFromForm = (): EvalDefaults => readConfig("f", true);
 	const savedForm = JSON.stringify({ definition: readDefinitionFromForm(false), defaults: readDefaultsFromForm() });
@@ -1272,11 +1265,13 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 			const value = Number(val(id));
 			if (!Number.isInteger(value) || value <= 0) invalid(id, "请输入大于 0 的整数。");
 		}
-		for (const [index, pattern] of splitLines(val("a-matches")).entries()) {
-			try { new RegExp(pattern, "u"); } catch { invalid("a-matches", `第 ${index + 1} 条正则表达式无效。`); break; }
+		if (first) {
+			const panel = first.closest('[role="tabpanel"]');
+			if (panel?.id) document.querySelector<HTMLButtonElement>(`[aria-controls="${panel.id}"]`)?.click();
+			first.focus();
+			return false;
 		}
-		first?.focus();
-		try { taskGrading.read(replayMode); } catch (error) { toast(String(error), "error"); return false; }
+		try { replyChecks.read(); taskGrading.read(replayMode); } catch (error) { toast(error instanceof Error ? error.message : String(error), "error"); return false; }
 		return !first;
 	};
 
@@ -2013,7 +2008,7 @@ function createItemInspector(runId: string, initial: RunItem) {
 			const reason = item.error ?? result?.error ?? (item.status === "failed" ? result?.assertions.filter(a => !a.passed).map(a => a.message).join("；") || "断言未通过" : "");
 			if (reason) content.append(flash(reason, item.status === "error" ? "warning" : "error"));
 			if (result) renderAssertions(content, result);
-			if (result) content.append(gradingPanel(result, async id => api(`/api/runs/${runId}/items/${item.id}/evidence/${id}`)));
+			if (result) content.append(gradingPanel(result, async id => api(`/api/runs/${runId}/items/${item.id}/evidence/${id}`), { rules: item.snapshot.definition.grading?.rules, verifiers: item.verifierSnapshots, caseUrl: item.snapshot.revision > 0 ? `#/case/${item.snapshot.id}?tab=grading` : undefined }));
 			if (result && !["error", "cancelled"].includes(item.status)) content.append(h("div", { class: "section-title mt-3" }, "最终回复"), h("pre", { class: "output" }, result.text || "（无文本回复）"));
 			if (!result || ["error", "cancelled"].includes(item.status)) {
 				const preview = h("details", { class: "mt-3" }, h("summary", {}, ["queued", "running"].includes(item.status) ? "实时文本预览" : "已有输出（执行未完整结束）"), h("p", { class: "muted small" }, "这里只是文本片段；按消息查看过程请切换到会话记录。"), h("pre", { class: "output", "data-live-output": true }, item.text || result?.text || "暂无文本片段。"));

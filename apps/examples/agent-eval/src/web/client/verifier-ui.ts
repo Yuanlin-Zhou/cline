@@ -21,7 +21,7 @@ export function verifierDialog(title: string, body: HTMLElement, options: { wide
 	dialog.append(modal); document.body.append(dialog);
 	dialog.addEventListener("cancel", e => { if (options.canClose?.() === false) e.preventDefault(); });
 	dialog.addEventListener("click", e => { if (e.target === dialog) close(); });
-	dialog.addEventListener("close", () => { dialog.remove(); options.onClose?.(); if (origin?.isConnected) origin.focus(); }, { once: true });
+	dialog.addEventListener("close", () => { dialog.remove(); if (origin?.isConnected) origin.focus(); options.onClose?.(); }, { once: true });
 	dialog.showModal(); return { close, dialog };
 }
 export function tabs(items: Array<[string, HTMLElement]>, onChange?: (index: number) => void) {
