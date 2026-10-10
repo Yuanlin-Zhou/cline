@@ -276,4 +276,4 @@ Windows PowerShell 可设置 `$env:EVAL_PYTHON_EXECUTABLE = 'D:\venv\Scripts\pyt
 
 MongoDB 已有部署需要使用准备账号再次执行 `bun run mongo:prepare`，更新验证脚本集合校验器以接受 `.py`；旧 JS/TS 脚本继续有效。运行账号仍无需管理集合权限。存储模式无需变化，Python 支持两种模式。
 
-案例规则上传 `.py`，入口 `verify(ctx)`，返回 verdict/message/可选 checks；print 输出进入日志。详情见 [Python 验证脚本说明](docs/python-verifiers.md)。页面提供最终回复、产物、会话三个可下载模板，以及历史结果试验证和输入预览。新执行固定保存验证输入；历史试验证不会重新调用模型或修改原结论。
+案例规则上传 `.py`，入口 `verify(ctx)`，返回 verdict/message/可选 checks；print 输出进入日志。详情见 [Python 验证脚本说明](docs/python-verifiers.md)。规则卡片通过“上传 .py”弹窗上传，通过“编写指南”选择回复、产物或会话模板；“高级设置”保存参数和输入要求，“试验证”打开结果/输入/日志面板。关闭试验证面板不会停止后台任务，同一页面可重新打开查看。新执行固定保存验证输入；历史试验证不会重新调用模型或修改原结论。

@@ -619,3 +619,43 @@ button, input, select, textarea, a, summary { scroll-margin: 20px; }
 .ConversationMessage { margin: 12px 0; padding: 12px; border: 1px solid var(--color-border-default); border-radius: var(--radius); }
 .ConversationMessage > strong { display: block; margin-bottom: 8px; }
 .ConversationMessage details { margin: 8px 0; }
+
+/* Python verifier: compact rule controls and focused dialogs. */
+.ScriptEditor, .VerifierTrial, .Verifier-guide, .Verifier-upload { min-width: 0; }
+.ScriptEditor > .Grading-field { margin-bottom: 8px; }
+.Verifier-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0; min-width: 0; }
+.Verifier-actions > select { flex: 1; width: auto; min-width: 160px; max-width: 100%; }
+.Verifier-actions > .btn { flex-shrink: 0; }
+.Verifier-summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.Verifier-summary .form-hint { margin: 0; }
+.Verifier-details { margin: 12px 0; min-width: 0; }
+.Verifier-details > summary { cursor: pointer; color: var(--color-fg-muted); font-size: 13px; padding: 8px 0; overflow-wrap: anywhere; }
+.Verifier-details[open] > summary { margin-bottom: 8px; color: var(--color-fg-default); }
+.Verifier-details .form-hint, .VerifierTrial .form-hint { line-height: 1.6; overflow-wrap: anywhere; }
+.Verifier-details .Verifier-actions { justify-content: space-between; }
+.Verifier-warning { color: var(--color-danger-fg); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.VerifierTrial-status { font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; }
+.Verifier-empty { color: var(--color-fg-muted); border: 1px dashed var(--color-border-default); border-radius: var(--radius); padding: 20px; line-height: 1.6; }
+.Verifier-tabbar { display: flex; flex-wrap: wrap; gap: 8px; border-bottom: 1px solid var(--color-border-default); padding: 0 0 12px; margin: 18px 0; }
+.Verifier-tabbar .btn[aria-selected="true"] { color: var(--color-accent-fg); border-color: var(--color-accent-emphasis); background: var(--color-accent-subtle); }
+.Verifier-tabs > [role="tabpanel"] { min-width: 0; }
+.Verifier-code, .VerifierTrial pre, .Verifier-guide pre { max-height: 360px; overflow: auto; white-space: pre; overflow-wrap: normal; margin: 12px 0; }
+.Verifier-dialog [hidden], .VerifierTrial [hidden] { display: none !important; }
+.Verifier-dialog { padding: 32px 16px; }
+.Verifier-dialog .Modal { max-height: calc(100dvh - 64px); display: flex; flex-direction: column; }
+.Verifier-dialog .Modal--wide { max-width: 960px; }
+.Verifier-dialog .Modal-header { margin: 0; justify-content: space-between; flex-shrink: 0; }
+.Verifier-dialog .Modal-body { min-height: 0; max-height: none; overflow: auto; }
+.Verifier-dialog .Modal-footer { flex-shrink: 0; }
+.Verifier-dialog .Modal-footer .Verifier-actions { margin: 0; }
+.Verifier-dialog .form-control { width: 100%; min-width: 0; max-width: 100%; }
+.Verifier-dialog .Verifier-actions > select { width: auto; }
+.Verifier-dialog .form-group { margin-bottom: 16px; }
+.Verifier-dialog :focus-visible, .ScriptEditor :focus-visible { outline: 2px solid var(--color-accent-emphasis); outline-offset: 2px; }
+@media (max-width: 600px) {
+  .Verifier-dialog { padding: 12px 8px; }
+  .Verifier-dialog .Modal { max-height: calc(100dvh - 24px); }
+  .Verifier-dialog .Modal-body { padding: 14px; }
+  .Verifier-actions > select { flex-basis: 100%; }
+  .Verifier-dialog .btn, .ScriptEditor .btn { min-height: 40px; }
+}

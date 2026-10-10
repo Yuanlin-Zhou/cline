@@ -2006,6 +2006,7 @@ function createItemInspector(runId: string, initial: RunItem) {
 	const renderTab = async () => {
 		const currentRevision = ++revision;
 		const result = item.result;
+		if (tab !== "verification") trial?.suspend();
 		for (const b of tabs.querySelectorAll("button")) { b.classList.toggle("active", b.dataset.tab === tab); b.setAttribute("aria-pressed", String(b.dataset.tab === tab)); }
 		content.replaceChildren();
 		if (tab === "result") {
@@ -2022,7 +2023,7 @@ function createItemInspector(runId: string, initial: RunItem) {
 		} else if (tab === "conversation") {
 			conversation ??= conversationView(runId, item.id); content.append(conversation.element); conversation.refresh();
 		} else if (tab === "verification") {
-			trial ??= verifierTrial({ runId, itemId: item.id }); content.append(trial.element);
+			trial ??= verifierTrial({ runId, itemId: item.id }); content.append(trial.element); trial.resume();
 		} else if (tab === "input") {
 			content.append(h("div", { class: "section-title" }, "输入快照"), h("pre", { class: "code" }, JSON.stringify(item.snapshot.definition, null, 2)), h("div", { class: "section-title mt-3" }, "最终生效配置"), h("pre", { class: "code" }, JSON.stringify({ ...item.snapshot.defaults, ...Object.fromEntries(Object.entries(item.snapshot.definition).filter(([key, value]) => ["timeoutMs", "systemPrompt", "cwd"].includes(key) && value !== undefined)), ...replayConfig(item.snapshot.definition, item.snapshot.defaults), cwd: item.workspace ?? item.snapshot.definition.cwd ?? item.snapshot.defaults.cwd }, null, 2)));
 		} else if (tab === "tools") {
