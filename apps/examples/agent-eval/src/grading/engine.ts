@@ -12,6 +12,10 @@ export function preflight(definition: EvalCase, verifiers: Verifier[]) {
 	for (const rule of definition.grading?.rules ?? []) {
 		if (rule.required !== false && requiredCapabilities(rule).some(key => !CAPABILITIES[key])) throw new Error(`grading.${rule.id}: 当前 SDK 不支持此行为规则所需的真实事件；请移除必要规则或设为可选诊断`);
 		if ("verifierId" in rule && !verifiers.some(v => v.id === rule.verifierId)) throw new Error(`grading.${rule.id}: 验证器 ${rule.verifierId} 未注册`);
+		if (definition.replayMode !== "full-task" && rule.kind === "script") {
+			if (verifiers.find(v => v.id === rule.verifierId)?.runtime !== "python") throw new Error(`grading.${rule.id}: 单轮回放只支持 Python verify(ctx) 验证脚本`);
+			if ([...(rule.required_inputs ?? []), ...(rule.require_complete ?? [])].some(v => v === "artifacts" || v === "baseline")) throw new Error(`grading.${rule.id}: 单轮回放不产生工作区产物，请选择完整任务模式`);
+		}
 	}
 }
 
@@ -35,7 +39,7 @@ export function verdict(results: RuleResult[]): Grade["verdict"] {
 export async function gradeCase(input: { definition: EvalCase; result: EvalCaseResult; directory: string; evidence: EvidenceManifest; events: EvidenceEvent[]; verifiers: Verifier[]; signal?: AbortSignal; secrets?: string[]; totalTimeoutMs?: number }): Promise<Grade> {
 	const started = Date.now(); const deadline = started + (input.totalTimeoutMs ?? 180000); const id = randomUUID(); const gradeDirectory = path.join(input.directory, "grading", id);
 	await mkdir(gradeDirectory, { recursive: true });
-	const rules = input.definition.grading!; const ruleHash = sha256(JSON.stringify({ rules, assertions: input.definition.assertions, verifiers: input.verifiers.map(v => ({ id: v.id, sha256: v.sha256 })) }));
+	const rules = input.definition.grading!; const ruleHash = sha256(JSON.stringify({ rules, assertions: input.definition.assertions, verifiers: input.verifiers.map(v => ({ id: v.id, sha256: v.sha256, environmentId: v.pythonEnvironment?.environmentId })) }));
 	await writeFile(path.join(gradeDirectory, "rules.json"), JSON.stringify({ ...rules, assertions: input.definition.assertions, ruleHash }, null, 2));
 	const results: RuleResult[] = [];
 	for (const rule of rules.rules) {

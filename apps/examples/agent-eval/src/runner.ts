@@ -197,7 +197,15 @@ export async function runEvalSuite(input: {
 	});
 	const unsubscribe = cline.subscribe((event) => {
 		if (event.type === "agent_event") input.onActivity?.(event.payload.event);
-		if (event.type === "agent_event" && "contentType" in event.payload.event && event.payload.event.contentType === "tool") input.onDiagnostic?.(event);
+		if (event.type === "agent_event") {
+			const value = event.payload.event;
+			if ("contentType" in value && (value.contentType === "text" || value.contentType === "tool") || ["iteration_start", "iteration_end", "done", "error"].includes(value.type)) {
+				const record = { ...value } as Record<string, unknown>;
+				delete record.accumulated;
+				if (value.type === "content_end" && "contentType" in value && value.contentType === "text" || value.type === "done") { delete record.text; delete record.result; }
+				input.onDiagnostic?.({ ...event, payload: { ...event.payload, event: record } });
+			}
+		}
 		if (
 			event.type === "agent_event" &&
 			event.payload.event.type === "content_start" &&

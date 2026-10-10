@@ -10,22 +10,23 @@ export async function killTree(pid: number) {
 		});
 	} else { try { process.kill(-pid, "SIGKILL"); } catch { try { process.kill(pid, "SIGKILL"); } catch {} } }
 }
-export async function runProcess(command: string, args: string[], options: { cwd: string; env: Record<string, string>; timeoutMs: number; signal?: AbortSignal }) {
+export async function runProcess(command: string, args: string[], options: { cwd: string; env: Record<string, string>; timeoutMs: number; signal?: AbortSignal; stdin?: string }) {
 	options.signal?.throwIfAborted();
 	return new Promise<{ code: number | null; stdout: string; stderr: string; truncated: boolean; timedOut: boolean; cleanupError?: string }>((resolve, reject) => {
-		const child = spawn(command, args, { cwd: options.cwd, env: options.env, shell: false, windowsHide: true, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"] });
+		const child = spawn(command, args, { cwd: options.cwd, env: options.env, shell: false, windowsHide: true, detached: process.platform !== "win32", stdio: [options.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"] });
+		if (options.stdin !== undefined) { child.stdin?.on("error", () => {}); child.stdin?.end(options.stdin); }
 		let stdout = Buffer.alloc(0); let stderr = Buffer.alloc(0); let truncated = false; let timedOut = false; let killing: Promise<void> | undefined;
 		let cleanupError: string | undefined;
 		const stop = () => { if (child.pid) killing ??= killTree(child.pid).catch(error => {
 			cleanupError = String(error); child.kill("SIGKILL");
 			// Do not wait forever on pipes inherited by a descendant when OS cleanup failed.
-			child.stdout.destroy(); child.stderr.destroy();
+			child.stdout!.destroy(); child.stderr!.destroy();
 		}); };
 		const timeout = setTimeout(() => { timedOut = true; stop(); }, options.timeoutMs);
 		options.signal?.addEventListener("abort", stop, { once: true });
 		if (options.signal?.aborted) stop();
 		const take = (previous: Buffer, data: Buffer) => { if (previous.length + data.length > 1024 * 1024) truncated = true; return Buffer.concat([previous, data.subarray(0, Math.max(0, 1024 * 1024 - previous.length))]); };
-		child.stdout.on("data", b => { stdout = take(stdout, b); }); child.stderr.on("data", b => { stderr = take(stderr, b); });
+		child.stdout!.on("data", b => { stdout = take(stdout, b); }); child.stderr!.on("data", b => { stderr = take(stderr, b); });
 		const cleanup = () => { clearTimeout(timeout); options.signal?.removeEventListener("abort", stop); };
 		child.on("error", error => { cleanup(); reject(error); });
 		child.on("close", async code => { cleanup(); await killing; resolve({ code, stdout: stdout.toString("utf8"), stderr: stderr.toString("utf8"), truncated, timedOut, cleanupError }); });

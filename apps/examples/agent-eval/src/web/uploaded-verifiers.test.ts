@@ -32,7 +32,7 @@ async function request(route: string, body?: unknown, origin?: string) {
 }
 
 test("upload validates filenames, UTF-8 size and content without executing it", () => {
-	for (const input of [{ filename: "../x.mjs", content: "x" }, { filename: "x.py", content: "x" }, { filename: "x.ts", content: " " }, { filename: "x.ts", content: "\ud800" }, { filename: "x.ts", content: "a", command: "sh" }]) expect(() => parseUpload(input)).toThrow();
+	for (const input of [{ filename: "../x.mjs", content: "x" }, { filename: "x.sh", content: "x" }, { filename: "x.ts", content: " " }, { filename: "x.ts", content: "\ud800" }, { filename: "x.ts", content: "a", command: "sh" }]) expect(() => parseUpload(input)).toThrow();
 	expect(() => parseUpload({ filename: "x.ts", content: "汉".repeat(400000) })).toThrow("1 MiB");
 	const value = parseUpload({ filename: "x.ts", content: "throw new Error('not run at upload')" });
 	expect(validateUploaded(value)).toEqual(value);

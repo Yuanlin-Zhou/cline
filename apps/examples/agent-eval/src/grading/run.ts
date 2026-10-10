@@ -12,9 +12,10 @@ import type { UploadedVerifier } from "./uploaded-verifiers.js";
 import { manifest, redact, redactValue, saveEvidence, snapshot } from "./evidence.js";
 import { killTree } from "./process.js";
 import type { EvidenceEvent } from "./types.js";
+import { freezeValidationInput } from "./validation-context.js";
 import type { ExecutionUpdate } from "../web/activity.js";
 
-export async function runIsolated(input: { definition: EvalCase; defaults: EvalDefaults; directory: string; verifierSnapshots?: UploadedVerifier[]; itemId?: string; signal?: AbortSignal; onText?: (text: string) => void; onWorkspace?: (workspace: string) => void; onPhase?: (phase: "executing" | "verifying") => void; onUpdate?: (update: ExecutionUpdate) => void }): Promise<EvalCaseResult> {
+export async function runIsolated(input: { definition: EvalCase; defaults: EvalDefaults; directory: string; verifierSnapshots?: UploadedVerifier[]; itemId?: string; runId?: string; round?: number; signal?: AbortSignal; onText?: (text: string) => void; onWorkspace?: (workspace: string) => void; onPhase?: (phase: "executing" | "verifying") => void; onUpdate?: (update: ExecutionUpdate) => void }): Promise<EvalCaseResult> {
 	const { definition, defaults, directory, signal } = input; const started = Date.now();
 	await mkdir(directory, { recursive: true });
 	const snapshots = input.verifierSnapshots ?? await loadCliVerifierSnapshots(definition, path.resolve(directory, "../../.."));
@@ -35,7 +36,7 @@ export async function runIsolated(input: { definition: EvalCase; defaults: EvalD
 	const workspace = await prepareWorkspace(directory, source);
 	input.onWorkspace?.(workspace);
 	input.onUpdate?.({ workspace });
-	if (definition.grading) await snapshot(workspace, directory, "baseline", evidence, secrets);
+	if (definition.replayMode === "full-task") await snapshot(workspace, directory, "baseline", evidence, secrets);
 	signal?.throwIfAborted(); input.onPhase?.("executing");
 	input.onUpdate?.({ phase: "executing" });
 	// Only the parent owns grading. The worker receives the ordinary execution input.
@@ -49,7 +50,7 @@ export async function runIsolated(input: { definition: EvalCase; defaults: EvalD
 	const cancel = () => { try { child.stdin.write("cancel\n"); } catch {} killTimer = setTimeout(kill, 3000); };
 	child.stdin.on("error", () => {});
 	signal?.addEventListener("abort", cancel, { once: true }); if (signal?.aborted) cancel();
-	let result: EvalCaseResult | undefined; let failure = ""; let stderr = ""; let text = ""; let timedOut = false; let diagnostics = ""; let diagnosticComplete = true;
+	let result: EvalCaseResult | undefined; let failure = ""; let stderr = ""; let text = ""; let timedOut = false; let diagnostics = ""; let diagnosticComplete = true; let diagnosticSeq = 0; let diagnosticBytes = 0;
 	const timeout = setTimeout(() => { timedOut = true; failure = "执行超时（包含启动与清理）"; kill(); }, (definition.timeoutMs ?? defaults.timeoutMs ?? 300000) + 30000);
 	try {
 		const readOutput = async () => {
@@ -67,8 +68,8 @@ export async function runIsolated(input: { definition: EvalCase; defaults: EvalD
 					if (event.type === "result") result = event.result;
 					if (event.type === "error") failure = event.error;
 					if (event.type === "diagnostic") {
-						const entry = JSON.stringify(event.event) + "\n";
-						if (diagnostics.length + entry.length <= 4 * 1024 * 1024) { diagnostics += entry; persisted = persisted.then(() => appendFile(path.join(directory, "evidence/diagnostics.jsonl"), entry)); } else diagnosticComplete = false;
+						const entry = JSON.stringify({ seq: ++diagnosticSeq, timestamp: new Date().toISOString(), ...event.event }) + "\n";
+						if (diagnosticBytes + Buffer.byteLength(entry) <= 4 * 1024 * 1024) { diagnosticBytes += Buffer.byteLength(entry); diagnostics += entry; persisted = persisted.then(() => appendFile(path.join(directory, "evidence/diagnostics.jsonl"), entry)); } else diagnosticComplete = false;
 					}
 				}
 			}
@@ -79,9 +80,8 @@ export async function runIsolated(input: { definition: EvalCase; defaults: EvalD
 	} catch (error) { failure = String(error); kill(); await killing;
 	} finally { clearTimeout(timeout); clearTimeout(killTimer); signal?.removeEventListener("abort", cancel); }
 	if (!result || failure) result = { id: definition.id, sessionId, status: "error", text, durationMs: Date.now() - started, iterations: 0, usage: { inputTokens: 0, outputTokens: 0 }, toolCalls: [], assertions: [], error: failure || stderr || `执行进程退出 (${child.exitCode})` };
-	if (!definition.grading) { signal?.throwIfAborted(); return result; }
-	if (!result.text && text) result.text = redact(text, secrets);
-	result.assertions = [];
+		if (!result.text && text) result.text = redact(text, secrets);
+	if (definition.grading) result.assertions = [];
 	result.execution = { status: signal?.aborted ? "cancelled" : result.status === "error" ? "error" : "completed", reason: timedOut || result.error?.includes("evaluation timed out") ? "task_timeout" : result.error };
 	if (result.execution.status === "error") emit("execution.error", { error: result.error });
 	emit("session.ended", { status: result.execution.status }); await persisted;
@@ -90,12 +90,13 @@ export async function runIsolated(input: { definition: EvalCase; defaults: EvalD
 	await saveEvidence(directory, await readFile(path.join(directory, "evidence/events.jsonl")), "事件轨迹", evidence.refs);
 	if (diagnostics) await saveEvidence(directory, diagnostics, "SDK 诊断轨迹（不证明实际执行）", evidence.refs);
 	await saveEvidence(directory, JSON.stringify(result, null, 2), "执行结果", evidence.refs);
-	await snapshot(workspace, directory, "artifacts", evidence, secrets);
+	if (definition.replayMode === "full-task") await snapshot(workspace, directory, "artifacts", evidence, secrets);
 	await saveEvidence(directory, JSON.stringify(evidence, null, 2), "文件清单", evidence.refs);
+	await freezeValidationInput({ directory, definition, result, evidence, secrets, itemId: input.itemId, runId: input.runId, round: input.round });
 	input.onPhase?.("verifying");
 	input.onUpdate?.({ phase: "verifying", activity: { type: "phase", at: new Date().toISOString() } });
-	result.grading = await gradeCase({ definition, result, directory, evidence, events, verifiers, signal, secrets });
-	result.evidence = evidence; result.status = result.grading.verdict;
+	if (definition.grading) result.grading = await gradeCase({ definition, result, directory, evidence, events, verifiers, signal, secrets });
+	result.evidence = evidence; if (result.grading) result.status = result.grading.verdict;
 	await writeFile(path.join(directory, "execution.json"), JSON.stringify(result, null, 2));
 	await writeFile(path.join(directory, "evidence/manifest.json"), JSON.stringify(evidence, null, 2));
 	return result;

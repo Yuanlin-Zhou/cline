@@ -245,7 +245,7 @@ bun run web
 | 端口占用 | 停止占用进程，或设置其他 `EVAL_PORT` 后重启 |
 | 其他机器打不开页面 | 当前版本仅监听本机，改变端口不会开放远程访问 |
 | 产物验收提示模式不符 | 切换案例为完整任务模式，填写正确的 fixture 和验收规则 |
-| 验证脚本错误 | 检查 stdout 单个 JSON 协议、异常日志及超时；退出 0 不等于验收通过 |
+| 验证脚本错误 | Python 检查 verify(ctx) 返回值、验证日志和超时；JS/TS 检查 stdout JSON 协议 |
 
 开发验证：
 
@@ -262,3 +262,18 @@ MongoDB 集成测试需单独设置 `EVAL_TEST_MONGODB_URI` 并执行 `bun run t
 本说明的 Web/MongoDB 准备流程针对仓库源码。`bun run package` 生成的现有发布包主要提供 CLI，**不是完整 Web 服务或 Windows 单文件 EXE**；不能把源码中的 `bun run web`、`mongo:prepare` 命令直接套到该包。发布包安装和运行见 [README.release.md](README.release.md)。
 
 更多案例与配置示例见 [examples/README.md](examples/README.md)；上传脚本协议见 [docs/uploaded-verifiers.md](docs/uploaded-verifiers.md)；MongoDB 文档合同与迁移细节见 [docs/mongodb.md](docs/mongodb.md)。
+
+## 11. Python 验证环境
+
+Python 上传验证需要 **Python 3.10+**，运行在评测服务所在机器。默认尝试 `python3` / `python`，也可明确指定虚拟环境：
+
+```sh
+export EVAL_PYTHON_EXECUTABLE=/absolute/path/venv/bin/python
+bun run web
+```
+
+Windows PowerShell 可设置 `$env:EVAL_PYTHON_EXECUTABLE = 'D:\venv\Scripts\python.exe'`。所需第三方包事先安装到该环境，服务不会自动运行 pip。`GET /api/verifiers/runtime-status` 和规则卡片可查看运行环境状态；缺少 Python 时可上传，但执行会在调用模型前被拦截。
+
+MongoDB 已有部署需要使用准备账号再次执行 `bun run mongo:prepare`，更新验证脚本集合校验器以接受 `.py`；旧 JS/TS 脚本继续有效。运行账号仍无需管理集合权限。存储模式无需变化，Python 支持两种模式。
+
+案例规则上传 `.py`，入口 `verify(ctx)`，返回 verdict/message/可选 checks；print 输出进入日志。详情见 [Python 验证脚本说明](docs/python-verifiers.md)。页面提供最终回复、产物、会话三个可下载模板，以及历史结果试验证和输入预览。新执行固定保存验证输入；历史试验证不会重新调用模型或修改原结论。

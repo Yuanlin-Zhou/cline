@@ -1,3 +1,5 @@
+import { pythonFields, pythonReplyTemplate, pythonArtifactTemplate, pythonConversationTemplate } from "../../grading/python-guide.js";
+import { verifierTrial } from "./verifier-trial.js";
 import { parseGrading, safeRelative } from "../../grading/schema.js";
 import type { GradingConfig } from "../../grading/types.js";
 import { replyTemplate, artifactTemplate, verifierFields, verifierProtocolHelp, verifierTimingHelp } from "../../grading/verifier-guide.js";
@@ -5,7 +7,7 @@ import { comparisons, condition, guides, readExpected, valueType } from "./gradi
 
 type Draft = Record<string, unknown>;
 type Control = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
-type Verifier = { id: string; label: string; version: string; dependencies: string[]; source?: string };
+type Verifier = { id: string; label: string; version: string; dependencies: string[]; source?: string; runtime?: string };
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, text = "", cls = "") => { const node = document.createElement(tag); node.className = cls; node.textContent = text; return node; };
 const input = (value: unknown = "") => { const node = el("input", "", "form-control"); node.value = String(value); return node; };
 const select = (options: [string, string][], value = "") => { const node = el("select", "", "form-control"); for (const [key, name] of options) node.append(new Option(name, key)); node.value = value; return node; };
@@ -16,14 +18,14 @@ const json = (value: unknown) => JSON.stringify(value, null, 2);
 class FieldError extends Error { constructor(message: string, readonly control: Control) { super(message); } }
 let sequence = 0;
 
-export function gradingEditor(initial?: GradingConfig) {
+export function gradingEditor(initial?: GradingConfig, options: { caseId?: string } = {}) {
 	const element = el("section", "", "Box mt-3 Grading");
 	const header = el("div", "", "Box-header"); const enabled = input(); enabled.type = "checkbox"; enabled.checked = !!initial;
 	header.append(el("span", "任务结果与行为验收"), check("启用验收", enabled));
 	const body = el("div", "", "Box-body");
-	body.append(el("p", "检查 Agent 运行结束后的工作区文件。只回复“已完成”不代表通过；要检查最终回复，请使用上方“最终回复检查”。", "form-hint Grading-intro"));
+	body.append(el("p", "上传 Python 脚本可自定义检查执行结果、会话和产物；文件内置规则仍需完整任务模式。", "form-hint Grading-intro"));
 	const content = el("div"); content.hidden = !enabled.checked; enabled.onchange = () => { content.hidden = !enabled.checked; };
-	const modeHint = el("p", "文件验收需要完整任务模式，请在上方“回放方式”选择完整任务。", "form-hint");
+	const modeHint = el("p", "单轮可用 Python 验证回复与会话；检查产物请选择完整任务模式。", "form-hint");
 	content.append(modeHint, el("p", "必要规则与上方已填写的最终回复检查都满足才通过。取消“必须满足”后仅供诊断；至少保留一条必要规则。", "form-hint"));
 	body.append(content); element.append(header, body);
 	const error = el("div", "", "Grading-error"); error.setAttribute("role", "alert"); body.append(error);
@@ -137,22 +139,22 @@ export function gradingEditor(initial?: GradingConfig) {
 		} else if (kind === "command" || kind === "script") {
 			const verifier = select([], ""); const status = el("p", "", "form-hint"); let current = String(rule.verifierId ?? "");
 			const update = () => {
-				verifier.replaceChildren(new Option(verifierState === "loading" ? "正在加载验收程序…" : "请选择已注册的验收程序", ""));
-				for (const v of verifiers) verifier.append(new Option(`${v.label} · ${v.version} · ${v.source === "uploaded" ? "用户上传" : "配置注册"}`, v.id));
+				verifier.replaceChildren(new Option(verifierState === "loading" ? "正在加载验证脚本…" : "请选择验证脚本", ""));
+				for (const v of verifiers) verifier.append(new Option(`${v.runtime === "python" ? "Python · " : ""}${v.label} · ${v.version} · ${v.source === "uploaded" ? "用户上传" : "配置注册"}`, v.id));
 				if (current && !verifiers.some(v => v.id === current)) verifier.append(new Option(`${current}（未注册）`, current)); verifier.value = current;
 				status.textContent = verifierState === "loading" ? "正在读取服务端注册列表…" : verifierState === "error" ? "列表加载失败，请重试；已填写内容会保留。" : current && !verifiers.some(v => v.id === current) ? "此程序不可用，请上传脚本或选择其他程序。" : !verifiers.length ? "还没有验证脚本，可直接上传，或选择文件 / JSON 检查。" : "选择已有程序，或直接上传验证脚本；无需填写服务端命令或路径。";
 			};
 			verifier.onchange = () => { current = verifier.value; update(); }; verifierUpdates.add(update); dispose = () => { verifierUpdates.delete(update); }; update();
 			fields.append(field("验收程序 / 验证脚本", verifier), status, button("重新加载列表", () => { void loadVerifiers(); }));
 			if (kind === "script") {
-				const file = input(); file.type = "file"; file.accept = ".js,.mjs,.ts";
+				const file = input(); file.type = "file"; file.accept = ".py,.js,.mjs,.ts";
 				const label = input(); label.maxLength = 80; label.placeholder = "可选，默认使用文件名";
 				const uploadStatus = el("p", "", "form-hint"); uploadStatus.setAttribute("role", "status");
 				file.onchange = () => { const selected = file.files?.[0]; uploadStatus.textContent = selected ? `${selected.name} · ${selected.size} 字节` : ""; };
 				const upload = button("上传验证脚本", () => { void (async () => {
 					const selected = file.files?.[0];
-					if (!selected) { uploadStatus.textContent = "请先选择 .js、.mjs 或 .ts 脚本。"; file.focus(); return; }
-					if (!/\.(js|mjs|ts)$/.test(selected.name) || selected.size > 1024 * 1024 || !selected.size) { uploadStatus.textContent = "请选择非空的 .js、.mjs、.ts 单文件脚本，不超过 1 MiB。"; return; }
+					if (!selected) { uploadStatus.textContent = "请先选择 .py 脚本（也兼容 .js/.mjs/.ts）。"; file.focus(); return; }
+					if (!/\.(py|js|mjs|ts)$/.test(selected.name) || selected.size > 1024 * 1024 || !selected.size) { uploadStatus.textContent = "请选择非空的 .py/.js/.mjs/.ts 单文件脚本，不超过 1 MiB。"; return; }
 					upload.disabled = true; uploadStatus.textContent = "正在上传…";
 					try {
 						const content = new TextDecoder("utf-8", { fatal: true }).decode(await selected.arrayBuffer());
@@ -163,13 +165,23 @@ export function gradingEditor(initial?: GradingConfig) {
 						verifierState = "ready"; current = value.id;
 						for (const refreshVerifier of verifierUpdates) refreshVerifier();
 						verifier.dispatchEvent(new Event("change", { bubbles: true }));
-						uploadStatus.textContent = "上传成功，已选中此脚本，可立即保存案例并运行，无需重启。";
+						uploadStatus.textContent = value.syntaxStatus === "pending" ? "上传成功，已选中；Python环境未就绪，需配置后才能运行。" : "上传成功，已选中此脚本，可立即保存案例并运行，无需重启。";
 					} catch (cause) { uploadStatus.textContent = `上传失败，原规则已保留，可重试：${cause instanceof Error ? cause.message : String(cause)}`; }
 					finally { upload.disabled = false; }
 				})(); });
-				fields.append(field("选择脚本文件", file, "支持 UTF-8 .js / .mjs / .ts，单文件不超过 1 MiB；不安装第三方依赖。"), field("脚本显示名称（可选）", label), upload, uploadStatus,
+				fields.append(field("选择脚本文件", file, "推荐 UTF-8 .py；兼容 .js/.mjs/.ts，单文件不超过 1 MiB。Python使用标准库或服务端已有依赖，不自动安装。"), field("脚本显示名称（可选）", label), upload, uploadStatus,
 					el("p", "脚本会在运行评测器的机器上执行。只上传自己编写或信任的脚本；工作区副本不是操作系统沙箱。", "form-hint"));
-				const help = details("查看脚本格式与执行结果字段"); help.classList.add("Grading-script-guide");
+				const runtimeHint = el("p", "正在检查Python环境…", "form-hint"); fields.append(runtimeHint);
+				void fetch("/api/verifiers/runtime-status").then(r => r.json()).then(value => { runtimeHint.textContent = value.ready ? `Python ${value.version} 已就绪 · 环境 ${value.environmentId.slice(0, 12)}` : value.message; }).catch(() => { runtimeHint.textContent = "Python环境状态读取失败，可重新加载页面。"; });
+				const pythonHelp = details("Python verify(ctx)：格式、输入字段与示例"); pythonHelp.open = true;
+				pythonHelp.append(el("p", "实现 def verify(ctx)，返回 verdict、message，可选 checks。print 自动记录为日志；无需输出JSON协议。通过：pass；业务失败：fail；数据不足：insufficient。"));
+				const pythonTable = el("table");
+				for (const [key, meaning] of pythonFields) { const row = el("tr"); row.append(el("th", key), el("td", meaning)); pythonTable.append(row); } pythonHelp.append(pythonTable);
+				for (const [filename, template] of [["verify-reply.py", pythonReplyTemplate], ["verify-artifacts.py", pythonArtifactTemplate], ["verify-conversation.py", pythonConversationTemplate]]) {
+					pythonHelp.append(button(`下载 ${filename}`, () => { const url = URL.createObjectURL(new Blob([template], { type: "text/plain;charset=utf-8" })); const link = el("a"); link.href = url; link.download = filename; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }));
+				}
+				pythonHelp.append(el("pre", pythonReplyTemplate, "code")); fields.append(pythonHelp);
+				const help = details("兼容JS/TS：脚本格式与执行结果字段"); help.classList.add("Grading-script-guide");
 				help.append(el("p", verifierProtocolHelp), el("p", verifierTimingHelp));
 				const table = el("table"); const tbody = el("tbody");
 				for (const [key, meaning] of verifierFields) { const row = el("tr"); row.append(el("th", key), el("td", meaning)); tbody.append(row); } table.append(tbody); help.append(table);
@@ -182,7 +194,24 @@ export function gradingEditor(initial?: GradingConfig) {
 			}
 			validate(verifier, () => { if (verifierState !== "ready") throw new Error("请等待验收程序列表加载，或点击“重新加载列表”。"); if (!verifiers.some(v => v.id === verifier.value)) throw new Error("请选择可用程序，或先上传验证脚本。"); });
 			const exit = input(rule.expectedExitCode ?? 0); if (kind === "command") { fields.append(field("期望退出码", exit, "通常填 0；实际退出码 0 通过，1 不通过。")); validate(exit, () => { if (!/^\d+$/.test(exit.value) || !Number.isSafeInteger(Number(exit.value))) throw new Error("退出码请填写非负整数，通常为 0。"); }); }
-			readParams = () => ({ ...rule, verifierId: verifier.value, ...(kind === "command" ? { expectedExitCode: Number(exit.value) } : {}) });
+			if (kind === "script") {
+				const params = el("textarea", "", "form-control"); params.rows = 3; params.value = json(rule.params ?? {});
+				fields.append(field("脚本参数（JSON，可选）", params, '在 ctx["params"] 读取，例如 {"contains":"hello world"}。'));
+				const readJson = () => { try { const v = JSON.parse(params.value || "{}"); if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error(); return v; } catch { throw new Error("脚本参数须为JSON对象"); } };
+				validate(params, readJson);
+				const inputs: Array<[string, string]> = [["execution", "执行结果"], ["conversation", "会话记录"], ["artifacts", "执行产物"], ["baseline", "执行前文件"], ["diagnostics", "工具诊断"]];
+				const selected = new Map<string, HTMLInputElement>(); const full = new Map<string, HTMLInputElement>(); const inputHelp = details("必要输入与完整性要求");
+				inputHelp.append(el("p", "不可用的必要输入会返回证据不足。SDK会话完整性通常未知，勾选完整性要求可能无法判定。"));
+				for (const [key, title] of inputs) {
+					const wanted = input(); wanted.type = "checkbox"; wanted.checked = ((rule.required_inputs as string[] | undefined) ?? ["execution"]).includes(key); selected.set(key, wanted);
+					const complete = input(); complete.type = "checkbox"; complete.checked = ((rule.require_complete as string[] | undefined) ?? []).includes(key); full.set(key, complete);
+					const row = el("div", "", "flex-center gap-3"); row.append(check(`需要${title}`, wanted), check(`要求${title}完整`, complete)); inputHelp.append(row);
+				}
+				fields.append(inputHelp);
+				readParams = () => ({ ...rule, verifierId: verifier.value, params: readJson(), required_inputs: [...selected].filter(([, control]) => control.checked).map(([key]) => key), require_complete: [...full].filter(([, control]) => control.checked).map(([key]) => key) });
+				const trial = verifierTrial({ caseId: options.caseId, getRule: () => ({ ...readParams(), id: id.value, kind: "script" }) as Extract<import("../../grading/types.js").Rule, {kind:"script"}> }); fields.append(trial.element);
+				const previousDispose = dispose; dispose = () => { previousDispose(); trial.dispose(); };
+			} else readParams = () => ({ ...rule, verifierId: verifier.value, expectedExitCode: Number(exit.value) });
 		} else {
 			const params = el("textarea", "", "form-control"); params.rows = 5; params.value = json(Object.fromEntries(Object.entries(rule).filter(([key]) => !["id", "kind", "required", "label"].includes(key))));
 			fields.append(field("行为参数（JSON，高级）", params, "工具名需与真实工具一致；phase 可填 requested、started 或 completed。当前示例不能证明真实行为已通过。"));
@@ -234,8 +263,8 @@ export function gradingEditor(initial?: GradingConfig) {
 	return { element, setMode: (mode: string) => { modeHint.hidden = mode === "full-task"; }, read: (mode: string) => {
 		if (!enabled.checked) return undefined;
 		try {
-			if (mode !== "full-task") throw new Error("文件验收需要完整任务模式。请在上方“回放方式”选择完整任务。");
-			const rules = collect(); if (!rules.length) throw new Error("请先添加一条结果规则，或关闭“启用验收”。");
+
+			const rules = collect(); if (mode !== "full-task" && rules.some(r => r.kind !== "script" || verifiers.find(v => v.id === r.verifierId)?.runtime !== "python" || [...(r.required_inputs as string[] ?? []), ...(r.require_complete as string[] ?? [])].some(v => ["artifacts", "baseline"].includes(v)))) throw new Error("单轮只支持Python回复/会话验证；产物检查请选择完整任务模式。"); if (!rules.length) throw new Error("请先添加一条结果规则，或关闭“启用验收”。");
 			if (!rules.some(rule => rule.required !== false)) throw new Error("请至少为一条规则勾选“必须满足才算通过”。");
 			const ids = new Set<unknown>(); for (const [index, rule] of rules.entries()) { if (ids.has(rule.id)) throw new FieldError(`第 ${index + 1} 条规则 ID 重复，请在高级设置中修改。`, editors[index].node.querySelector<HTMLInputElement>(".Grading-id")!); ids.add(rule.id); if (String(rule.kind).startsWith("tool.") && rule.required !== false) throw new Error(`${guides[String(rule.kind)].title}当前无法验证真实行为，请取消“必须满足”或移除此规则。`); }
 			const config = parseGrading({ version: 1, rules }, "grading", mode); error.textContent = ""; return config;

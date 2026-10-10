@@ -1,3 +1,4 @@
+import { verifierTrial } from "./verifier-trial.js";
 import { tagEditor } from "./tag-editor.js";
 import { conversationView, executionStatus, showSyncStatus, syncStatus } from "./observability.js";
 import type { TransferPreview } from "../transfer.js";
@@ -1141,7 +1142,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 		field("结束状态（可选）", select("a-finish", [["", "不额外检查（推荐由任务验收规则判定）"], ...FINISH_OPTIONS], definition.grading ? definition.assertions?.finishReason ?? "" : definition.assertions?.finishReason ?? "completed"), "只在明确需要检查 Agent 如何结束时选择。通常保持“不额外检查”，由下方必要规则判断任务是否完成；选择“正常完成”则要求 Agent 的结束状态确实为正常完成。"),
 	);
 	assertBox.append(assertBody);
-	const taskGrading = gradingEditor(definition.grading);
+	const taskGrading = gradingEditor(definition.grading, { caseId: existing?.id });
 
 
 	left.append(panelTabs("case-editor", [
@@ -1993,7 +1994,8 @@ function createItemInspector(runId: string, initial: RunItem) {
 	const sync = syncStatus(runId);
 	const element = h("div", {}, title, meta, progress, sync, tabs, content);
 	let conversation: ReturnType<typeof conversationView> | undefined;
-	const labels = [["result", "结果与断言"], ["conversation", "会话记录"], ["input", "输入快照"], ["tools", "工具诊断"], ["artifacts", "文件产物"]];
+	let trial: ReturnType<typeof verifierTrial> | undefined;
+	const labels = [["result", "结果与断言"], ["conversation", "会话记录"], ["verification", "脚本试验证"], ["input", "输入快照"], ["tools", "工具诊断"], ["artifacts", "文件产物"]];
 	const setHeader = () => {
 		title.replaceChildren(h("span", {}, item.snapshot.definition.id), statusBadge(item.status));
 		meta.replaceChildren(h("span", {}, `v${item.snapshot.revision} · ${item.snapshot.defaults.modelId} · ${replayLabel(item.snapshot.definition.replayMode)}`), sessionIdLabel(item.sessionId ?? item.result?.sessionId));
@@ -2019,6 +2021,8 @@ function createItemInspector(runId: string, initial: RunItem) {
 			if (result) content.append(h("div", { class: "metric-row mt-3" }, ...[["耗时", fmtDuration(result.durationMs)], ["迭代", String(result.iterations)], ["输入 Token", fmtTokens(result.usage.inputTokens)], ["输出 Token", fmtTokens(result.usage.outputTokens)], ["费用", fmtCost(result.usage.totalCost)]].map(([label, value]) => h("span", { class: "metric" }, label + " ", h("b", {}, value)))));
 		} else if (tab === "conversation") {
 			conversation ??= conversationView(runId, item.id); content.append(conversation.element); conversation.refresh();
+		} else if (tab === "verification") {
+			trial ??= verifierTrial({ runId, itemId: item.id }); content.append(trial.element);
 		} else if (tab === "input") {
 			content.append(h("div", { class: "section-title" }, "输入快照"), h("pre", { class: "code" }, JSON.stringify(item.snapshot.definition, null, 2)), h("div", { class: "section-title mt-3" }, "最终生效配置"), h("pre", { class: "code" }, JSON.stringify({ ...item.snapshot.defaults, ...Object.fromEntries(Object.entries(item.snapshot.definition).filter(([key, value]) => ["timeoutMs", "systemPrompt", "cwd"].includes(key) && value !== undefined)), ...replayConfig(item.snapshot.definition, item.snapshot.defaults), cwd: item.workspace ?? item.snapshot.definition.cwd ?? item.snapshot.defaults.cwd }, null, 2)));
 		} else if (tab === "tools") {

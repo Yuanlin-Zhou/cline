@@ -6,12 +6,14 @@ export type Rule = Base & (
 	| { kind: "file.text"; path: string; op: "contains" | "notContains" | "matches"; expected: string }
 	| ({ kind: "file.json"; path: string } & Comparison)
 	| { kind: "command"; verifierId: string; expectedExitCode: number }
-	| { kind: "script"; verifierId: string }
+	| { kind: "script"; verifierId: string; params?: Record<string, unknown>; required_inputs?: ValidationInputName[]; require_complete?: ValidationInputName[] }
 	| { kind: "tool.count"; match: ToolMatch; min?: number; max?: number }
 	| { kind: "tool.parameters"; match: ToolMatch; check: Comparison }
 	| { kind: "tool.order"; before: ToolMatch; after: ToolMatch; requireAfter?: boolean }
 	| { kind: "tool.approval"; match: ToolMatch }
 );
+export type ValidationInputName = "execution" | "conversation" | "artifacts" | "baseline" | "diagnostics";
+export type ScriptCheck = { id: string; status: "pass" | "fail" | "insufficient"; message: string; expected?: unknown; actual?: unknown; files?: string[] };
 export type GradingConfig = { version: 1; rules: Rule[] };
 export type EvidenceEvent = {
 	schemaVersion: 1; eventId: string; itemId: string; sessionId: string; seq: number; timestamp: string;
@@ -24,6 +26,9 @@ export type RuleResult = {
 	id: string; kind: string; label?: string; required: boolean;
 	status: "pass" | "fail" | "error" | "insufficient" | "skipped";
 	expected?: unknown; actual?: unknown; message: string; evidenceRefs: string[]; durationMs: number;
+	checks?: ScriptCheck[];
+	contextSha256?: string;
+	runtime?: { version: string; environmentId: string };
 };
 export type EvidenceRef = { id: string; label: string; path: string; sha256: string; size: number };
 export type FileEvidence = { path: string; sha256: string; size: number; ref: string };

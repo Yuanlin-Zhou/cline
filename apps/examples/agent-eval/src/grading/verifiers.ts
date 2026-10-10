@@ -5,8 +5,10 @@ import { runProcess } from "./process.js";
 import { validateUploaded, type UploadedVerifier, type VerifierRepository } from "./uploaded-verifiers.js";
 import type { EvalCase } from "../types.js";
 import type { EvidenceManifest, Rule } from "./types.js";
+import { preparePythonUpload, type PythonEnvironment } from "./python-runtime.js";
+import { verifyPythonProcess } from "./python-verifier.js";
 
-export type Verifier = { id: string; label: string; version: string; command: string; args: string[]; files: string[]; env: string[]; timeoutMs: number; sha256: string; fileHashes: Array<{ path: string; sha256: string }> };
+export type Verifier = { id: string; label: string; version: string; command: string; args: string[]; files: string[]; env: string[]; timeoutMs: number; sha256: string; fileHashes: Array<{ path: string; sha256: string }>; runtime?: "python" | "bun"; contractVersion?: 1 | 2; pythonEnvironment?: PythonEnvironment };
 export async function loadVerifiers(file = process.env.EVAL_VERIFIERS_FILE): Promise<Verifier[]> {
 	if (!file) return [];
 	const raw: unknown = JSON.parse(await readFile(file, "utf8"));
@@ -27,6 +29,7 @@ export async function loadVerifiers(file = process.env.EVAL_VERIFIERS_FILE): Pro
 export const publicVerifier = (v: Verifier) => ({ id: v.id, label: v.label, version: v.version, sha256: v.sha256, timeoutMs: v.timeoutMs, source: "configured", dependencies: v.files.map(f => path.basename(f)) });
 
 export async function verifyProcess(rule: Extract<Rule, { kind: "command" | "script" }>, verifier: Verifier, input: { directory: string; gradeDirectory: string; evidence: EvidenceManifest; execution: unknown; signal?: AbortSignal; timeoutMs: number; secrets: string[] }) {
+	if (verifier.runtime === "python" && rule.kind === "script") return verifyPythonProcess(rule, verifier, input);
 	const deadline = Date.now() + input.timeoutMs;
 	const checkVersion = async () => { for (const file of verifier.fileHashes) if (await hashFile(file.path) !== file.sha256) throw new Error("验证器或声明依赖已变更，请重新运行以固定新版本"); };
 	await checkVersion();
@@ -70,15 +73,15 @@ export async function resolveVerifiers(definition: EvalCase, repository?: Verifi
 	return { configured: configured.filter(v => ids.includes(v.id)), uploaded };
 }
 export function uploadedPlaceholder(v: UploadedVerifier): Verifier {
-	return { id: v.id, label: v.label, version: v.version, sha256: v.sha256, timeoutMs: v.timeoutMs, command: process.execPath, args: [], files: [], env: [], fileHashes: [] };
+	return { id: v.id, label: v.label, version: v.version, sha256: v.sha256, timeoutMs: v.timeoutMs, command: process.execPath, args: [], files: [], env: [], fileHashes: [], runtime: v.runtime ?? "bun", contractVersion: v.contractVersion ?? 1, pythonEnvironment: v.pythonEnvironment };
 }
 export async function materializeVerifiers(values: UploadedVerifier[], directory: string): Promise<Verifier[]> {
 	if (!values.length) return [];
 	const runtimeHash = await hashFile(process.execPath);
 	const destination = path.join(directory, "verifiers"); await mkdir(destination, { recursive: true });
 	return Promise.all(values.map(async value => {
-		const v = validateUploaded(value); const file = path.join(destination, `${v.id}${v.extension}`);
+		const v = await preparePythonUpload(validateUploaded(value)); const file = path.join(destination, `${v.id}${v.extension}`);
 		await writeFile(file, v.content, { flag: "wx" });
-		return { ...uploadedPlaceholder(v), args: [file], files: [file], fileHashes: [{ path: process.execPath, sha256: runtimeHash }, { path: file, sha256: v.sha256 }] };
+		return { ...uploadedPlaceholder(v), command: v.pythonEnvironment?.command ?? process.execPath, args: [file], files: [file], fileHashes: [{ path: v.pythonEnvironment?.command ?? process.execPath, sha256: v.pythonEnvironment?.sha256 ?? runtimeHash }, { path: file, sha256: v.sha256 }] };
 	}));
 }

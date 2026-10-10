@@ -10,7 +10,7 @@ export type Executor = (item: RunItem, onText: (text: string) => void, signal: A
 export function makeExecutor(store: EvalStore): Executor {
 	return async (item, onText, signal, onUpdate) => runIsolated({
 		definition: item.snapshot.definition, defaults: item.snapshot.defaults, verifierSnapshots: item.verifierSnapshots ?? [],
-		directory: path.join(store.directory, "runs", item.runId, item.id), itemId: item.id, signal, onText,
+		directory: path.join(store.directory, "runs", item.runId, item.id), itemId: item.id, runId: item.runId, round: item.round, signal, onText,
 		onUpdate,
 	});
 }

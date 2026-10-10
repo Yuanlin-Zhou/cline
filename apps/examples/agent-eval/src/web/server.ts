@@ -16,6 +16,11 @@ import { preflight } from "../grading/engine.js";
 import { CAPABILITIES, readEvidence } from "../grading/evidence.js";
 import { gradingSummary } from "../grading/summary.js";
 import { readConversation } from "./conversation.js";
+import { preparePythonUpload, pythonRuntimeStatus, pythonEnvironment, validatePythonSource } from "../grading/python-runtime.js";
+import { parseUpload } from "../grading/uploaded-verifiers.js";
+import { frozenValidationInput, historicalEvidence } from "../grading/validation-context.js";
+import { parseGrading } from "../grading/schema.js";
+import { VerifierTests } from "./verifier-tests.js";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
 const client = fileURLToPath(new URL("client/", import.meta.url));
@@ -32,6 +37,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 	const catalog = connected ?? new SqliteCatalog(store);
 	try {
 	const queue = new EvalQueue(store, options.execute);
+	const verifierTests = new VerifierTests(store);
 	const verifierRepository = options.verifierRepository ?? (catalog instanceof MongoCatalog ? new MongoVerifiers(catalog.db, catalog.config.verifierCollection ?? "agent_eval_verifiers") : new SqliteVerifiers(store));
 	if (verifierRepository instanceof MongoVerifiers) await verifierRepository.preflight();
 	const build = await Bun.build({ entrypoints: [path.join(client, "app.ts")], target: "browser", minify: false });
@@ -67,7 +73,40 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					if (uploaded.some(v => configured.some(c => c.id === v.id))) throw new CatalogError("验证器 ID 冲突", 409);
 					return json({ verifiers: [...configured.map(publicVerifier), ...uploaded.map(publicUploaded)], capabilities: CAPABILITIES });
 				}
-				if (route === "/api/verifiers" && method === "POST") return json(publicUploaded(await verifierRepository.create(await request.json())), 201);
+				if (route === "/api/verifiers/runtime-status" && method === "GET") return json(await pythonRuntimeStatus());
+				if (route === "/api/verifiers" && method === "POST") {
+					const body = await request.json(); const parsed = parseUpload(body); const runtime = parsed.extension === ".py" ? await pythonRuntimeStatus() : undefined;
+					if (runtime?.ready) await validatePythonSource(parsed.content, await pythonEnvironment());
+					return json({ ...publicUploaded(await verifierRepository.create(body)), syntaxStatus: parsed.extension === ".py" ? runtime?.ready ? "checked" : "pending" : "not_applicable" }, 201);
+				}
+				const validationMatch = route.match(/^\/api\/runs\/([^/]+)\/items\/([^/]+)\/(validation-input|verifier-tests)(?:\/([^/]+))?(?:\/(cancel|evidence)(?:\/([^/]+))?)?$/);
+				if (validationMatch) {
+					const [, runId, itemId, kind, testId, action, evidenceId] = validationMatch;
+					const item = store.get<RunItem>("item", itemId);
+					if (!item || item.runId !== runId) return json({ error: "执行记录不存在" }, 404);
+					const directory = path.join(store.directory, "runs", runId, itemId);
+					if (kind === "validation-input" && method === "GET") {
+						if (["queued", "running"].includes(item.status)) throw new Error("执行尚未结束，请等待冻结验证输入");
+						const value = await frozenValidationInput(directory, await historicalEvidence(directory, item));
+						if (url.searchParams.has("download")) return new Response(JSON.stringify(value.context, null, 2), { headers: { "Content-Type": "application/json", "Content-Disposition": `attachment; filename="validation-input-${item.id}.json"` } });
+						const preview = JSON.stringify(value.context, null, 2); return json({ text: preview.slice(0, 200000), truncated: preview.length > 200000, sha256: value.sha256 });
+					}
+					if (kind === "verifier-tests" && !testId && method === "POST") {
+						const body = await request.json(); const rule = parseGrading({ version: 1, rules: [{ id: "python-test", kind: "script", verifierId: body.verifierId, params: body.params, required_inputs: body.required_inputs, require_complete: body.require_complete }] })!.rules[0] as Extract<import("../grading/types.js").Rule, { kind: "script" }>;
+						if (Object.keys(body).some(k => !["verifierId", "params", "required_inputs", "require_complete"].includes(k))) throw new Error("试验证参数包含未知字段");
+						const v = item.verifierSnapshots?.find(v => v.id === body.verifierId) ?? await verifierRepository.get(body.verifierId); if (!v) return json({ error: "脚本不存在" }, 404);
+						return json(await verifierTests.create(item, v, rule), 202);
+					}
+					if (kind === "verifier-tests" && testId) {
+						const test = verifierTests.get(testId, runId, itemId); if (!test) return json({ error: "试验证记录不存在" }, 404);
+						if (action === "cancel" && method === "POST") { verifierTests.cancel(testId); return json({ status: "cancelling" }); }
+						if (action === "evidence" && method === "GET") {
+							const ref = test.evidence.refs.find(r => r.id === evidenceId); if (!ref) return json({ error: "试验证证据不存在" }, 404);
+							return json({ text: (await readEvidence(directory, ref, 4 * 1024 * 1024)).toString("utf8") });
+						}
+						if (!action && method === "GET") return json(test);
+					}
+				}
 				const conversationMatch = route.match(/^\/api\/runs\/([^/]+)\/items\/([^/]+)\/conversation$/);
 				if (conversationMatch && method === "GET") {
 					const [, runId, itemId] = conversationMatch;
@@ -89,7 +128,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					if (kind === "grading") return json(item.result.grading);
 					const ref = item.result.evidence?.refs.find(r => r.id === evidenceId);
 					if (!ref) return json({ error: "证据不存在" }, 404);
-					const bytes = await readEvidence(path.join(store.directory, "runs", runId, itemId), ref);
+					const bytes = await readEvidence(path.join(store.directory, "runs", runId, itemId), ref, 4 * 1024 * 1024);
 					return json({ id: ref.id, label: ref.label, text: bytes.includes(0) ? "二进制文件，无法文本预览" : bytes.toString("utf8"), sha256: ref.sha256 });
 				}
 				if (route === "/api/modules" && method === "POST") { const body = await request.json(); return json(await catalog.createModule(body.name, body.description, body.tags), 201); }
@@ -201,6 +240,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 						const definition = parseEvalSuite({ defaults: source.snapshot.defaults, cases: [{ ...source.snapshot.definition, ...(body.replayMode ? { replayMode: body.replayMode } : {}) }] }).cases[0];
 						const frozen = body.parentRunId ? source.verifierSnapshots ?? [] : undefined;
 						const resolved = await resolveVerifiers(definition, frozen === undefined ? verifierRepository : undefined, frozen);
+						resolved.uploaded = await Promise.all(resolved.uploaded.map(v => preparePythonUpload(v)));
 						preflight(definition, [...resolved.configured, ...resolved.uploaded.map(uploadedPlaceholder)]);
 						prepared.push({ ...source, verifierSnapshots: resolved.uploaded });
 					}
@@ -231,7 +271,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 	let closing: Promise<void> | undefined;
 	const close = () => closing ??= (async () => {
 		for (const run of store.list<Run>("run")) if (["queued", "running"].includes(run.status)) queue.cancel(run.id);
-		await server.stop(true); await queue.idle(); await catalog.close(); store.db.close();
+		await server.stop(true); await queue.idle(); await verifierTests.close(); await catalog.close(); store.db.close();
 	})();
 	return { server, store, queue, catalog, close };
 	} catch (error) { await catalog.close(); store.db.close(); throw error; }

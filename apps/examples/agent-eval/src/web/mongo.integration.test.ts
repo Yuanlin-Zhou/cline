@@ -35,6 +35,9 @@ describe("MongoDB replica-set catalog (set EVAL_TEST_MONGODB_URI)", () => {
 	});
 	mongoTest("uploaded scripts persist in Mongo and snapshots rerun after the connection closes", async () => {
 		const scripts = new MongoVerifiers(repository.db, "agent_eval_verifiers"); await scripts.preflight();
+		const python = await scripts.create({ filename: "verify.py", content: 'def verify(ctx):\n    return {"verdict": "pass", "message": "ok"}\n' });
+		expect((await new MongoVerifiers(repository.db, "agent_eval_verifiers").get(python.id))?.runtime).toBe("python");
+		expect(python.contractVersion).toBe(2);
 		const upload = await scripts.create({ filename: "verify.mjs", content: replyTemplate });
 		const module = await repository.createModule("scripts");
 		const c = await repository.createCase(module.id, defaults, { id: "script-case", prompt: "task", history: [], replayMode: "full-task", grading: { version: 1, rules: [{ id: "accept", kind: "script", verifierId: upload.id }] } });

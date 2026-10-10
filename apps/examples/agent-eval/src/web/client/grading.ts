@@ -17,6 +17,8 @@ export function gradingPanel(result: EvalCaseResult, load?: (id: string) => Prom
 		const tone = r.status === "pass" ? "success" : r.status === "fail" || r.status === "error" ? "danger" : "attention";
 		summary.append(el("span", status[r.status], `Label Label--${tone}`), el("strong", r.label ?? r.id), el("span", r.required ? "必要" : "可选", "muted small"));
 		row.append(summary, el("p", r.message), el("strong", "预期"), el("pre", json(r.expected), "code"), el("strong", "实际"), el("pre", json(r.actual), "code"));
+		if (r.runtime) row.append(el("p", `Python ${r.runtime.version} · 环境 ${r.runtime.environmentId.slice(0, 12)} · 输入摘要 ${r.contextSha256?.slice(0, 12)}`, "muted small"));
+		for (const check of r.checks ?? []) row.append(el("h4", `${check.id} · ${status[check.status]} · ${check.message}`), el("pre", json({ expected: check.expected, actual: check.actual, files: check.files }), "code"));
 		for (const ref of r.evidenceRefs) row.append(button(result.evidence?.refs.find(e => e.id === ref)?.label ?? "查看证据", async () => {
 			const preview = el("pre", "加载中…", "code"); row.append(preview);
 			try { preview.textContent = load ? (await load(ref)).text : "请在批次详情查看证据"; } catch (e) { preview.textContent = String(e); }

@@ -54,7 +54,7 @@ export function parseGrading(value: unknown, at = "grading", replayMode = "full-
 		const fields: Record<string, string[]> = {
 			"file.exists": ["path"], "file.absent": ["path"], "file.unchanged": ["path"],
 			"file.text": ["path", "op", "expected"], "file.json": ["path", "pointer", "op", "expected", "absTolerance", "relTolerance"],
-			command: ["verifierId", "expectedExitCode"], script: ["verifierId"],
+			command: ["verifierId", "expectedExitCode"], script: ["verifierId", "params", "required_inputs", "require_complete"],
 			"tool.count": ["match", "min", "max"], "tool.parameters": ["match", "check"],
 			"tool.order": ["before", "after", "requireAfter"], "tool.approval": ["match"],
 		};
@@ -67,6 +67,10 @@ export function parseGrading(value: unknown, at = "grading", replayMode = "full-
 		}
 		if (r.kind === "file.json") comparison(Object.fromEntries(Object.entries(r).filter(([k]) => !["id", "kind", "required", "label", "path"].includes(k))), p);
 		if (r.kind === "command" || r.kind === "script") { string(r.verifierId, `${p}.verifierId`); if (r.kind === "command") number(r.expectedExitCode, `${p}.expectedExitCode`, true); }
+		if (r.kind === "script") {
+			if (r.params !== undefined) { object(r.params, `${p}.params`); if (JSON.stringify(r.params).length > 65536) throw new Error(`${p}.params: 参数超过64KiB`); }
+			for (const key of ["required_inputs", "require_complete"]) if (r[key] !== undefined && (!Array.isArray(r[key]) || r[key].some(v => !["execution", "conversation", "artifacts", "baseline", "diagnostics"].includes(String(v))) || new Set(r[key]).size !== r[key].length)) throw new Error(`${p}.${key}: 须为不重复的输入数据名称数组`);
+		}
 		if (r.kind.startsWith("tool.") && r.kind !== "tool.order") match(r.match, `${p}.match`);
 		if (r.kind === "tool.approval" && (r.match as ToolMatch).phase !== "started") throw new Error(`${p}.match.phase: 审批规则须使用 started`);
 		if (r.kind === "tool.parameters") comparison(r.check, `${p}.check`);
@@ -79,7 +83,7 @@ export function parseGrading(value: unknown, at = "grading", replayMode = "full-
 			const before = match(r.before, `${p}.before`); const after = match(r.after, `${p}.after`); boolean(r.requireAfter, `${p}.requireAfter`);
 			if (before.phase !== "completed" || after.phase !== "started") throw new Error(`${p}: 顺序须为 completed → started`);
 		}
-		if (replayMode !== "full-task" && r.required !== false) throw new Error(`${p}: 产物及行为验收须使用 full-task 完整任务模式`);
+		if (replayMode !== "full-task" && r.required !== false && r.kind !== "script") throw new Error(`${p}: 产物及行为验收须使用 full-task 完整任务模式`);
 	}
 	if (!config.rules.some(r => (r as Rule).required !== false)) throw new Error(`${at}: 至少需要一条必要规则`);
 	return structuredClone(config) as GradingConfig;
