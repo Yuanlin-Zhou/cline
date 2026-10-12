@@ -107,3 +107,15 @@ apps/examples/agent-eval/examples/importable/function-call-basic.json 提供至�
 仅覆盖已确认六工具，无 apply_patch/提问/提交/团队/子代理/MCP 通用验证器。原始响应上限 512 KiB；验证器最多 15 项调用，以匹配平台 100 条 checks 限制，超限报告不足。明细大值截断并明确标注，完整原始输入仍可查看/下载。严格格式检查按 Schema 定义，不增加文件存在、命令成功、URL 可访问等业务条件。
 
 当前首期仅支持 OpenAI-compatible Chat Completions，其他 providerId 预检提示调整配置；SDK 解析后的旧轨迹不会被当作原生响应通过。真实模型效果及实际 MongoDB 部署需在对应环境验证；MongoDB 升级需运行 mongo:prepare，已在启动说明注明。
+
+
+## 7. 已批准结果展示范围内的缺陷修复（2026-10-12）
+
+用户反馈验证失败时只有检查项 expected/actual，看不到本轮模型输出。原因是结果页仍仅渲染 result.text，原生 function call 的 message.content 通常为 null；虽已固定归档 functionCallResponse，结果页没有渲染它。本次补齐既有方案的模型响应可查看要求，不新增回放模式、判分或存储行为。
+
+- “结果与断言”在检查结论之前展示“本轮模型响应”，包括回复、调用名称/id/type 和 arguments 的原始值；非字符串 arguments 和异常调用结构也直接呈现。
+- 模型返回的 reasoning_content 可单独展开；完整原始正文可查看、复制和下载，保留无效 JSON、重复字段和服务错误正文，不从验证器检查项反推模型输出。
+- HTTP 错误或异常响应结构仍显示已有原始正文；旧历史缺少原始响应时明确说明，普通文字回复也放到检查结论前。
+- 使用相同结果查看组件，适用于案例调试和历史/批次结果；已有原始归档数据无需重新评测。未改后端、SDK 或数据字段。
+
+验证：类型检查与 git diff --check 通过；Chromium 通过四类真实 worker/验证器场景：字符串行号导致验证失败、仅文字无调用、非法响应 JSON、HTTP 503 正文。确认响应区域在检查结论前，原始 arguments 和思考内容可读，完整原文查看/复制/下载与模拟服务返回内容一致，390px 无横向溢出，页面无错误且未产生额外模型请求。

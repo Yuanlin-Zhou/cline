@@ -1,3 +1,4 @@
+import { modelResponse } from "./model-response.js";
 import { functionCallEditor } from "./function-call-editor.js";
 import { replyEditor } from "./reply-editor.js";
 import { action as verifierAction, fold as verifierFold } from "./verifier-ui.js";
@@ -2011,9 +2012,10 @@ function createItemInspector(runId: string, initial: RunItem) {
 		if (tab === "result") {
 			const reason = item.error ?? result?.error ?? (item.status === "failed" ? result?.assertions.filter(a => !a.passed).map(a => a.message).join("；") || "断言未通过" : "");
 			if (reason) content.append(flash(reason, item.status === "error" ? "warning" : "error"));
+			if (result && (result.functionCallResponse || item.snapshot.definition.replayMode === "function-call")) content.append(modelResponse(result));
+			else if (result && !["error", "cancelled"].includes(item.status)) content.append(h("div", { class: "section-title mt-3" }, "最终回复"), h("pre", { class: "output" }, result.text || "（无文本回复）"));
 			if (result) renderAssertions(content, result);
 			if (result) content.append(gradingPanel(result, async id => api(`/api/runs/${runId}/items/${item.id}/evidence/${id}`), { rules: item.snapshot.definition.grading?.rules, verifiers: item.verifierSnapshots, caseUrl: item.snapshot.revision > 0 ? `#/case/${item.snapshot.id}?tab=grading` : undefined }));
-			if (result && !["error", "cancelled"].includes(item.status)) content.append(h("div", { class: "section-title mt-3" }, "最终回复"), h("pre", { class: "output" }, result.text || "（无文本回复）"));
 			if (!result || ["error", "cancelled"].includes(item.status)) {
 				const preview = h("details", { class: "mt-3" }, h("summary", {}, ["queued", "running"].includes(item.status) ? "实时文本预览" : "已有输出（执行未完整结束）"), h("p", { class: "muted small" }, "这里只是文本片段；按消息查看过程请切换到会话记录。"), h("pre", { class: "output", "data-live-output": true }, item.text || result?.text || "暂无文本片段。"));
 				content.append(preview);

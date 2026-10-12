@@ -691,3 +691,11 @@ button, input, select, textarea, a, summary { scroll-margin: 20px; }
 
 .GradingWorkspace summary, .Verifier-dialog summary, .Grading-results summary { list-style: none !important; }
 .GradingWorkspace summary::-webkit-details-marker, .Verifier-dialog summary::-webkit-details-marker, .Grading-results summary::-webkit-details-marker { display: none; }
+
+/* Keep model evidence visible before the validator's verdict and comparison values. */
+.ModelResponse { min-width: 0; }
+.ModelResponse pre { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ModelResponse .form-hint, .ModelResponse-call strong { overflow-wrap: anywhere; }
+.ModelResponse-call { margin: 12px 0; padding: 12px; border: 1px solid var(--color-border-default); border-radius: var(--radius); min-width: 0; }
+.ModelResponse-call > strong { display: block; }
+.ModelResponse .Verifier-actions { justify-content: flex-start; }
