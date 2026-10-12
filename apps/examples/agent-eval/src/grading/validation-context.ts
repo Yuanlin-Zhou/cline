@@ -13,7 +13,7 @@ export type ValidationContext = {
 	case: { id: string; prompt: string; history: unknown[]; replay_mode: string };
 	execution: InputSection & { text: string; finish_reason?: string; error?: string; duration_ms: number; iterations: number; usage: unknown };
 	conversation: InputSection & { source: string; scope: string; messages: Array<{ id: string; index: number; role: string; blocks: Array<Record<string, unknown>> }> };
-	diagnostics: InputSection & { tool_calls: unknown[]; capabilities: EvidenceManifest["capabilities"]; events_ref?: string };
+	diagnostics: InputSection & { tool_calls: unknown[]; capabilities: EvidenceManifest["capabilities"]; events_ref?: string; function_call_response?: EvalCaseResult["functionCallResponse"] };
 	artifacts: InputSection & { files: Array<{ path: string; size: number; sha256: string; change: string }>; deleted: string[] };
 	baseline: InputSection & { files: Array<{ path: string; size: number; sha256: string }> };
 	params?: Record<string, unknown>; paths?: Record<string, string>;
@@ -43,7 +43,7 @@ export async function freezeValidationInput(input: { directory: string; definiti
 		case: { id: definition.id, prompt: definition.prompt, history: definition.history ?? [], replay_mode: definition.replayMode ?? "single-turn" },
 		execution: { ...complete(executionStatus), text: result.text, finish_reason: result.finishReason, error: result.error, duration_ms: result.durationMs, iterations: result.iterations, usage: result.usage },
 		conversation: { status: session.status, completeness: session.completeness, issues: session.issues, source: "sdk_saved_context", scope: "main_session", messages: session.messages.map((m, index) => ({ id: `${result.sessionId}:${index}`, index, role: String(m.role ?? "unknown"), blocks: contentBlocks(m.content) })) },
-		diagnostics: { ...complete(diagnostic || result.toolCalls.length ? "ready" : "missing", "unknown", ["工具通知仅供诊断，不证明实际执行或审批；事件记录可能截断。"]), tool_calls: result.toolCalls, capabilities: { ...evidence.capabilities }, events_ref: diagnostic?.id },
+		diagnostics: { ...complete(diagnostic || result.toolCalls.length || result.functionCallResponse ? "ready" : "missing", "unknown", ["工具通知仅供诊断，不证明实际执行或审批；事件记录可能截断。"]), ...(result.functionCallResponse ? { function_call_response: result.functionCallResponse } : {}), tool_calls: result.toolCalls, capabilities: { ...evidence.capabilities }, events_ref: diagnostic?.id },
 		artifacts: { ...fileState, files: evidence.artifacts.map(f => ({ path: f.path, size: f.size, sha256: f.sha256, change: evidence.baseline.some(b => b.path === f.path) ? evidence.baseline.some(b => b.path === f.path && b.sha256 === f.sha256) ? "unchanged" : "modified" : "added" })), deleted: evidence.baseline.filter(f => !evidence.artifacts.some(a => a.path === f.path)).map(f => f.path) },
 		baseline: { ...fileState, files: evidence.baseline.map(f => ({ path: f.path, size: f.size, sha256: f.sha256 })) },
 	};

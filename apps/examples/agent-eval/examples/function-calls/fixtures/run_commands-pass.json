@@ -1,0 +1,44 @@
+{
+  "context_version": 2,
+  "case": {
+    "replay_mode": "function-call",
+    "history": []
+  },
+  "execution": {
+    "status": "completed"
+  },
+  "diagnostics": {
+    "function_call_response": {
+      "schema_version": 1,
+      "protocol": "openai-chat-completions",
+      "completeness": "complete",
+      "request_tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "run_commands",
+            "parameters": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object",
+              "properties": {
+                "commands": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "description": "The non-interactive shell command to execute - MUST keep input short and concise (within 12000 characters) to avoid timeouts."
+                  },
+                  "description": "Array of complete shell command strings to execute."
+                }
+              },
+              "required": [
+                "commands"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      ],
+      "raw_response": "{\"choices\": [{\"index\": 0, \"finish_reason\": \"tool_calls\", \"message\": {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"call_1\", \"type\": \"function\", \"function\": {\"name\": \"run_commands\", \"arguments\": \"{\\\"commands\\\": [\\\"bun run test\\\"]}\"}}]}}]}"
+    }
+  }
+}

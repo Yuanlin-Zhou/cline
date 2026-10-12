@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "source": "sdk/packages/core/src/extensions/tools/schemas.ts",
+  "sourceSha256": "1e983b3a29e26386bda52b7df80f08ec6ff2e5d98479a0e826ac59f168094589",
+  "tools": [
+    "read_files",
+    "search_codebase",
+    "run_commands",
+    "fetch_web_content",
+    "editor",
+    "skills"
+  ]
+}

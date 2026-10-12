@@ -12,6 +12,7 @@ export function preflight(definition: EvalCase, verifiers: Verifier[]) {
 	for (const rule of definition.grading?.rules ?? []) {
 		if (rule.required !== false && requiredCapabilities(rule).some(key => !CAPABILITIES[key])) throw new Error(`grading.${rule.id}: 当前 SDK 不支持此行为规则所需的真实事件；请移除必要规则或设为可选诊断`);
 		if ("verifierId" in rule && !verifiers.some(v => v.id === rule.verifierId)) throw new Error(`grading.${rule.id}: 验证器 ${rule.verifierId} 未注册`);
+		if (definition.replayMode === "function-call" && rule.kind !== "script") throw new Error("函数调用回放只支持 Python 脚本验收");
 		if (definition.replayMode !== "full-task" && rule.kind === "script") {
 			if (verifiers.find(v => v.id === rule.verifierId)?.runtime !== "python") throw new Error(`grading.${rule.id}: 单轮回放只支持 Python verify(ctx) 验证脚本`);
 			if ([...(rule.required_inputs ?? []), ...(rule.require_complete ?? [])].some(v => v === "artifacts" || v === "baseline")) throw new Error(`grading.${rule.id}: 单轮回放不产生工作区产物，请选择完整任务模式`);

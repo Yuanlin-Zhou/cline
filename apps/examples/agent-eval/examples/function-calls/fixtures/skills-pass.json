@@ -1,0 +1,52 @@
+{
+  "context_version": 2,
+  "case": {
+    "replay_mode": "function-call",
+    "history": []
+  },
+  "execution": {
+    "status": "completed"
+  },
+  "diagnostics": {
+    "function_call_response": {
+      "schema_version": 1,
+      "protocol": "openai-chat-completions",
+      "completeness": "complete",
+      "request_tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "skills",
+            "parameters": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object",
+              "properties": {
+                "skill": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Name of the skill to execute."
+                },
+                "args": {
+                  "description": "Arguments for the skill; use null when omitted",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "skill"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      ],
+      "raw_response": "{\"choices\": [{\"index\": 0, \"finish_reason\": \"tool_calls\", \"message\": {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"call_1\", \"type\": \"function\", \"function\": {\"name\": \"skills\", \"arguments\": \"{\\\"skill\\\": \\\"code-review\\\", \\\"args\\\": \\\"检查 /project 的代码\\\"}\"}}]}}]}"
+    }
+  }
+}

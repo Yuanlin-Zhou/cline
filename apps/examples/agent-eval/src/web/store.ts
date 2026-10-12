@@ -115,7 +115,7 @@ export class EvalStore {
 		this.db.query("DELETE FROM records WHERE kind='case' AND id=?").run(id);
 	}
 	parseImport(content: string, mode: string, replayMode: string): EvalSuite {
-		if (!["single-turn", "full-task"].includes(replayMode)) throw new Error("请选择有效回放方式");
+		if (!["single-turn", "full-task", "function-call"].includes(replayMode)) throw new Error("请选择有效回放方式");
 		let raw: Record<string, unknown>;
 		if (mode === "jsonl") {
 			const cases = content.split(/\r?\n/).map((line, index) => { if (!line.trim()) return null; try { return JSON.parse(line); } catch { throw new Error(`第 ${index + 1} 行不是有效 JSON`); } }).filter(Boolean);
@@ -127,7 +127,7 @@ export class EvalStore {
 		if (!raw || typeof raw !== "object") throw new Error("请输入案例集 JSON 或案例数组");
 		if (!Array.isArray(raw.cases) || raw.cases.length > 1000) throw new Error("每次导入 1–1000 个案例");
 		const suite = parseEvalSuite({ ...raw, cases: raw.cases.map(c => c && typeof c === "object" ? { ...c, replayMode: c.replayMode ?? replayMode } : c), defaults: { ...this.settings(), ...(raw.defaults as object ?? {}) } });
-		for (const item of suite.cases) item.replayMode ??= replayMode as "single-turn" | "full-task";
+		for (const item of suite.cases) item.replayMode ??= replayMode as "single-turn" | "full-task" | "function-call";
 		return suite;
 	}
 	importCases(moduleId: string, suite: EvalSuite, policy: string) {
@@ -154,11 +154,11 @@ export class EvalStore {
 		const repeatCount = input.repeatCount === undefined ? 1 : input.repeatCount;
 		if (!Number.isInteger(repeatCount) || repeatCount < 1 || repeatCount > 100) throw new Error("重复轮数须为 1–100 的整数");
 		if (input.rerunScope !== undefined && !["all", "failed"].includes(input.rerunScope)) throw new Error("重跑范围无效");
-		if (input.replayMode && !["single-turn", "full-task"].includes(input.replayMode)) throw new Error("回放方式无效");
+		if (input.replayMode && !["single-turn", "full-task", "function-call"].includes(input.replayMode)) throw new Error("回放方式无效");
 		let sources: RunSource[];
 		if (resolvedSources) sources = resolvedSources;
 		else if (input.draft?.length) {
-			sources = input.draft.map(draft => ({ snapshot: { id: randomUUID(), moduleId: draft.moduleId, revision: 0, definition: { ...draft.definition, replayMode: input.replayMode as "single-turn" | "full-task" }, defaults: draft.defaults, updatedAt: now() }, moduleName: this.require<Module>("module", draft.moduleId).name }));
+			sources = input.draft.map(draft => ({ snapshot: { id: randomUUID(), moduleId: draft.moduleId, revision: 0, definition: { ...draft.definition, replayMode: input.replayMode as "single-turn" | "full-task" | "function-call" }, defaults: draft.defaults, updatedAt: now() }, moduleName: this.require<Module>("module", draft.moduleId).name }));
 		} else if (input.parentRunId) {
 			const items = this.detail(input.parentRunId).items.filter(i => input.rerunScope === "all" || ["failed", "error", "cancelled", "inconclusive"].includes(i.status));
 			// Repeated failures select a case once, retaining the original input snapshot.
@@ -181,7 +181,7 @@ export class EvalStore {
 				const snapshot = structuredClone(source.snapshot);
 				if (input.useSettings) snapshot.defaults = this.settings();
 				if (input.defaults) snapshot.defaults = { ...snapshot.defaults, ...input.defaults };
-				if (input.replayMode) snapshot.definition.replayMode = input.replayMode as "single-turn" | "full-task";
+				if (input.replayMode) snapshot.definition.replayMode = input.replayMode as "single-turn" | "full-task" | "function-call";
 				const item: RunItem = { id: randomUUID(), runId: run.id, round, snapshot, verifierSnapshots: source.verifierSnapshots, moduleName: source.moduleName, status: "queued", text: "" }; this.put("item", item.id, item);
 			}
 		})(); return run;

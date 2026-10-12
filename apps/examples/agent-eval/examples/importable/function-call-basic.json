@@ -1,0 +1,209 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "fc-read_files",
+      "description": "read_files 自动工具选择与原生参数格式；不执行工具",
+      "replayMode": "function-call",
+      "functionCall": {
+        "tools": [
+          "read_files"
+        ],
+        "toolChoice": "auto"
+      },
+      "history": [],
+      "prompt": "请调用 read_files 读取 /project/README.md 的第 1 到 10 行。 只发出一次原生工具调用，不要用文字或 JSON 代码块替代。",
+      "grading": {
+        "version": 1,
+        "rules": [
+          {
+            "id": "format",
+            "kind": "script",
+            "verifierId": "example-fc-read_files",
+            "required_inputs": [
+              "execution",
+              "diagnostics"
+            ],
+            "params": {
+              "expected_count": 1,
+              "expected_total_calls": 1,
+              "allowed_tools": [
+                "read_files"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "fc-search_codebase",
+      "description": "search_codebase 自动工具选择与原生参数格式；不执行工具",
+      "replayMode": "function-call",
+      "functionCall": {
+        "tools": [
+          "search_codebase"
+        ],
+        "toolChoice": "auto"
+      },
+      "history": [],
+      "prompt": "请调用 search_codebase 查找代码中 TODO 或 FIXME 标记。 只发出一次原生工具调用，不要用文字或 JSON 代码块替代。",
+      "grading": {
+        "version": 1,
+        "rules": [
+          {
+            "id": "format",
+            "kind": "script",
+            "verifierId": "example-fc-search_codebase",
+            "required_inputs": [
+              "execution",
+              "diagnostics"
+            ],
+            "params": {
+              "expected_count": 1,
+              "expected_total_calls": 1,
+              "allowed_tools": [
+                "search_codebase"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "fc-run_commands",
+      "description": "run_commands 自动工具选择与原生参数格式；不执行工具",
+      "replayMode": "function-call",
+      "functionCall": {
+        "tools": [
+          "run_commands"
+        ],
+        "toolChoice": "auto"
+      },
+      "history": [],
+      "prompt": "请调用 run_commands 运行 bun run test。 只发出一次原生工具调用，不要用文字或 JSON 代码块替代。",
+      "grading": {
+        "version": 1,
+        "rules": [
+          {
+            "id": "format",
+            "kind": "script",
+            "verifierId": "example-fc-run_commands",
+            "required_inputs": [
+              "execution",
+              "diagnostics"
+            ],
+            "params": {
+              "expected_count": 1,
+              "expected_total_calls": 1,
+              "allowed_tools": [
+                "run_commands"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "fc-fetch_web_content",
+      "description": "fetch_web_content 自动工具选择与原生参数格式；不执行工具",
+      "replayMode": "function-call",
+      "functionCall": {
+        "tools": [
+          "fetch_web_content"
+        ],
+        "toolChoice": "auto"
+      },
+      "history": [],
+      "prompt": "请调用 fetch_web_content 获取 https://example.com 并概括页面主要内容。 只发出一次原生工具调用，不要用文字或 JSON 代码块替代。",
+      "grading": {
+        "version": 1,
+        "rules": [
+          {
+            "id": "format",
+            "kind": "script",
+            "verifierId": "example-fc-fetch_web_content",
+            "required_inputs": [
+              "execution",
+              "diagnostics"
+            ],
+            "params": {
+              "expected_count": 1,
+              "expected_total_calls": 1,
+              "allowed_tools": [
+                "fetch_web_content"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "fc-editor",
+      "description": "editor 自动工具选择与原生参数格式；不执行工具",
+      "replayMode": "function-call",
+      "functionCall": {
+        "tools": [
+          "editor"
+        ],
+        "toolChoice": "auto"
+      },
+      "history": [],
+      "prompt": "请调用 editor 创建 /project/hello.txt，内容为 hello world 加一个换行。 只发出一次原生工具调用，不要用文字或 JSON 代码块替代。",
+      "grading": {
+        "version": 1,
+        "rules": [
+          {
+            "id": "format",
+            "kind": "script",
+            "verifierId": "example-fc-editor",
+            "required_inputs": [
+              "execution",
+              "diagnostics"
+            ],
+            "params": {
+              "expected_count": 1,
+              "expected_total_calls": 1,
+              "allowed_tools": [
+                "editor"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "fc-skills",
+      "description": "skills 自动工具选择与原生参数格式；不执行工具",
+      "replayMode": "function-call",
+      "functionCall": {
+        "tools": [
+          "skills"
+        ],
+        "toolChoice": "auto"
+      },
+      "history": [],
+      "prompt": "请调用 skills 使用 code-review 技能，参数为“检查 /project 的代码”。 只发出一次原生工具调用，不要用文字或 JSON 代码块替代。",
+      "grading": {
+        "version": 1,
+        "rules": [
+          {
+            "id": "format",
+            "kind": "script",
+            "verifierId": "example-fc-skills",
+            "required_inputs": [
+              "execution",
+              "diagnostics"
+            ],
+            "params": {
+              "expected_count": 1,
+              "expected_total_calls": 1,
+              "allowed_tools": [
+                "skills"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

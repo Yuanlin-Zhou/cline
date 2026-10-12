@@ -1,3 +1,4 @@
+import { runFunctionCall, preflightFunctionCall } from "./function-call.js";
 import { resolveHeaders } from "./headers.js";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -53,15 +54,18 @@ function errorMessage(error: unknown): string {
 }
 
 async function runCase(input: {
-	cline: ClineCore;
+	cline: ClineCore | undefined;
 	caseDefinition: EvalCase;
 	suite: EvalSuite;
 	overrides: CliOverrides;
 	suiteDirectory: string;
 	signal?: AbortSignal;
 	onSession?: (sessionId: string) => void;
+	onText?: (text: string) => void;
 }): Promise<EvalCaseResult> {
 	const { cline, caseDefinition, suite, overrides, suiteDirectory } = input;
+	if(caseDefinition.replayMode === "function-call") return runFunctionCall({definition:caseDefinition,defaults:{...suite.defaults,...(overrides.providerId?{providerId:overrides.providerId}:{}),...(overrides.modelId?{modelId:overrides.modelId}:{}),...(overrides.apiKeyEnv?{apiKeyEnv:overrides.apiKeyEnv}:{})},signal:input.signal,onSession:input.onSession,onText:input.onText});
+	if (!cline) throw new Error("SDK runtime unavailable");
 	const defaults = suite.defaults;
 	const sessionId = randomUUID();
 	input.onSession?.(sessionId);
@@ -185,7 +189,8 @@ export async function runEvalSuite(input: {
 	const startedAt = new Date();
 	const suiteDirectory = path.dirname(suitePath);
 	resolveApiKey(overrides.apiKeyEnv ?? suite.defaults.apiKeyEnv);
-	const cline = await ClineCore.create({
+	for (const definition of suite.cases) preflightFunctionCall(definition, {...suite.defaults,...(overrides.providerId?{providerId:overrides.providerId}:{}),...(overrides.modelId?{modelId:overrides.modelId}:{}),...(overrides.apiKeyEnv?{apiKeyEnv:overrides.apiKeyEnv}:{})});
+	const cline = suite.cases.some(c=>c.replayMode !== "function-call" && !c.grading) ? await ClineCore.create({
 		clientName: "agent-eval",
 		backendMode: "local",
 		capabilities: {
@@ -194,8 +199,8 @@ export async function runEvalSuite(input: {
 				reason: `evaluation policy denied ${request.toolName}`,
 			}),
 		},
-	});
-	const unsubscribe = cline.subscribe((event) => {
+	}) : undefined;
+	const unsubscribe = cline?.subscribe((event) => {
 		if (event.type === "agent_event") input.onActivity?.(event.payload.event);
 		if (event.type === "agent_event") {
 			const value = event.payload.event;
@@ -236,13 +241,14 @@ export async function runEvalSuite(input: {
 				suiteDirectory,
 				signal: input.signal,
 				onSession: input.onSession,
+				onText: input.onText,
 			});
 			results.push(result);
 			onCaseComplete?.(result);
 		}
 	} finally {
-		unsubscribe();
-		await cline.dispose("evaluation finished");
+		unsubscribe?.();
+		await cline?.dispose("evaluation finished");
 	}
 
 	const endedAt = new Date();

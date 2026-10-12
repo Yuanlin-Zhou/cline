@@ -1,0 +1,80 @@
+{
+  "context_version": 2,
+  "case": {
+    "replay_mode": "function-call",
+    "history": []
+  },
+  "execution": {
+    "status": "completed"
+  },
+  "diagnostics": {
+    "function_call_response": {
+      "schema_version": 1,
+      "protocol": "openai-chat-completions",
+      "completeness": "complete",
+      "request_tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "read_files",
+            "parameters": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object",
+              "properties": {
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "description": "The absolute path of a text file to read content from"
+                      },
+                      "start_line": {
+                        "description": "Optional one-based starting line number to read from; use null or omit for the start of the file",
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "end_line": {
+                        "description": "Optional one-based ending line number to read through; use null or omit to read to the end of the file or the read cap, whichever comes first",
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "path"
+                    ],
+                    "additionalProperties": false,
+                    "description": "A file read request with optional inclusive one-based line bounds. Always include path; start_line/end_line must be on the same object as the path they apply to, never in a separate array element"
+                  },
+                  "description": "Array of file read requests; each element is one file and must include path. Omit start_line/end_line or set them to null to read from the start; provide integers on the same object as the path to return only that inclusive one-based line range — never emit a range as its own array element. Reads are capped, so page through long files with start_line/end_line. Prefer this tool over running terminal command to get file content for better performance and reliability."
+                }
+              },
+              "required": [
+                "files"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      ],
+      "raw_response": "{\"choices\": [{\"index\": 0, \"finish_reason\": \"tool_calls\", \"message\": {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"call_1\", \"type\": \"function\", \"function\": {\"name\": \"read_files\", \"arguments\": \"{\\\"files\\\": [{\\\"path\\\": \\\"/project/README.md\\\", \\\"start_line\\\": 1, \\\"end_line\\\": 10}]}\"}}]}}]}"
+    }
+  }
+}

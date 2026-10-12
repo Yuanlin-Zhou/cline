@@ -1,3 +1,4 @@
+import { functionCallEditor } from "./function-call-editor.js";
 import { replyEditor } from "./reply-editor.js";
 import { action as verifierAction, fold as verifierFold } from "./verifier-ui.js";
 import { verifierTrial } from "./verifier-trial.js";
@@ -574,7 +575,7 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
 	const savedList = caseListState.get(moduleId ?? "");
 	const searchBox = input("case-search", savedList?.search ?? "", "text");
 	searchBox.setAttribute("placeholder", "按名称、ID 或标签筛选…");
-	const replayFilter = select("case-replay", [["", "全部回放方式"], ["single-turn", "单轮回放"], ["full-task", "多轮回放（完整任务）"]], "");
+	const replayFilter = select("case-replay", [["", "全部回放方式"], ["single-turn", "单轮回放"], ["full-task", "多轮回放（完整任务）"], ["function-call", "单轮函数调用（仅检查格式）"]], "");
 	const resultFilter = select("case-result", [["", "全部结果"], ["passed", "通过"], ["failed", "失败"], ["error", "执行错误"], ["inconclusive", "无法判定"], ["none", "未运行"]], "");
 	(replayFilter as HTMLSelectElement).value = savedList?.replay ?? "";
 	(resultFilter as HTMLSelectElement).value = savedList?.result ?? "";
@@ -888,7 +889,7 @@ async function renderImport(app: HTMLElement): Promise<void> {
 		inner.append(
 			h("div", { class: "flash flash-info" }, `共解析出 ${preview.cases.length} 个有效案例${duplicateCount ? `，其中 ${duplicateCount} 个与现有案例 ID 重复` : ""}。`),
 		);
-		if (preview.cases.some((c) => c.replayMode !== "full-task")) inner.append(h("p", { class: "form-hint" }, "单轮案例执行时禁用工具，只生成一次响应；文件中保留的工作区和多轮迭代配置不会用于单轮执行。"));
+		if (preview.cases.some((c) => c.replayMode === "single-turn")) inner.append(h("p", { class: "form-hint" }, "单轮案例执行时禁用工具，只生成一次响应；文件中保留的工作区和多轮迭代配置不会用于单轮执行。"));
 		const tableWrap = h("div", { class: "TableWrap" });
 		const table = h("table", { class: "Table" });
 		table.append(h("thead", {}, h("tr", {}, h("th", {}, "案例 ID"), h("th", {}, "描述"), h("th", {}, "回放方式"), h("th", {}, "状态"))));
@@ -1134,6 +1135,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 	credBody.append(advancedFields);
 	credBox.append(credBody);
 
+	const functionChecks = functionCallEditor(definition.functionCall);
 	const replyChecks = replyEditor({ initial: definition.assertions, finish: definition.grading ? definition.assertions?.finishReason ?? "" : definition.assertions?.finishReason ?? "completed", finishOptions: FINISH_OPTIONS, omitDefaultFinish: !definition.assertions && !definition.grading });
 	const taskGrading = gradingEditor(definition.grading, { caseId: existing?.id, onModeChange: () => { replayMode = "full-task"; updateMode(); } });
 	const rulesPage = h("section", { class: "GradingWorkspace" });
@@ -1148,7 +1150,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 	rulesPage.append(ruleIntro, goals, replyChecks.element, taskGrading.element, ruleAdvanced);
 
 	left.append(panelTabs("case-editor", [
-		["输入", h("div", {}, form, historyBox, promptBox)],
+		["输入", h("div", {}, form, historyBox, promptBox, functionChecks.element)],
 		["判定规则", rulesPage],
 		["配置", h("div", {}, envBox, credBox)],
 	]));
@@ -1178,7 +1180,8 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 	app.append(layout);
 	if (new URLSearchParams(location.hash.split("?")[1]).get("tab") === "grading") document.getElementById("case-editor-tab-1")?.click();
 	const updateMode = (): void => {
-		const single = replayMode === "single-turn";
+		const single = replayMode !== "full-task";
+		functionChecks.element.hidden = replayMode !== "function-call";
 		taskGrading.setMode(replayMode);
 		fileGoal.classList.toggle("Grading-goal--restricted", single); fileGoal.title = single ? "文件检查需要完整任务，可点击切换并选择检查类型。" : "添加文件检查";
 		envBox.hidden = single;
@@ -1219,6 +1222,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 		const result: EvalCase = {
 			id: val("f-id").trim(),
 			replayMode,
+			functionCall: replayMode === "function-call" ? functionChecks.read() : definition.functionCall,
 			tags: tagsEditor.read(),
 			description: val("f-desc").trim() || undefined,
 			history,
@@ -1228,7 +1232,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 			...readHeaderEditor("f-case-headers"),
 			cwd: val("f-cwd").trim() || undefined,
 			tools: val("f-tools") as ToolMode,
-			maxIterations: replayMode === "single-turn" && (!Number.isInteger(Number(val("f-maxiter"))) || Number(val("f-maxiter")) <= 0) ? defaults.maxIterations ?? 10 : Number(val("f-maxiter")),
+			maxIterations: replayMode !== "full-task" && (!Number.isInteger(Number(val("f-maxiter"))) || Number(val("f-maxiter")) <= 0) ? defaults.maxIterations ?? 10 : Number(val("f-maxiter")),
 			timeoutMs: Number(val("f-timeout")),
 			systemPrompt: val("f-sysprompt").trim() || undefined,
 		};
@@ -1271,7 +1275,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 			first.focus();
 			return false;
 		}
-		try { replyChecks.read(); taskGrading.read(replayMode); } catch (error) { toast(error instanceof Error ? error.message : String(error), "error"); return false; }
+		try { if(replayMode === "function-call") functionChecks.read(); replyChecks.read(); taskGrading.read(replayMode); } catch (error) { toast(error instanceof Error ? error.message : String(error), "error"); return false; }
 		return !first;
 	};
 
@@ -1304,7 +1308,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 		}
 	};
 
-	const runDraft = async (mode: "single-turn" | "full-task"): Promise<void> => {
+	const runDraft = async (mode: ReplayMode): Promise<void> => {
 		if (!validateCaseForm()) return;
 		const def = readDefinitionFromForm();
 		if (!def.id) return toast("案例 ID 不能为空", "error");
@@ -1547,7 +1551,7 @@ async function renderNewRun(app: HTMLElement): Promise<void> {
 	const replayBox = h("div", { class: "Box mt-3" });
 	replayBox.append(h("div", { class: "Box-header" }, "回放方式"));
 	const replayBody = h("div", { class: "Box-body" });
-	replayBody.append(field("回放方式", select("nr-replay", [["", "使用案例自身方式"], ["single-turn", "强制单轮回放"], ["full-task", "强制多轮回放（完整任务）"]], ""), "覆盖类型会应用于所有所选案例，不是按类型筛选；单轮固定禁用工具并只生成一次响应。"));
+	replayBody.append(field("回放方式", select("nr-replay", [["", "使用案例自身方式"], ["single-turn", "强制单轮回放"], ["full-task", "强制多轮回放（完整任务）"], ["function-call", "强制单轮函数调用（不执行工具）"]], ""), "覆盖方式应用于所有所选案例。单轮回放只生成文字；单轮函数调用公布工具但不执行，需要配置兼容服务。"));
 	replayBox.append(replayBody);
 
 	const configBox = h("div", { class: "Box mt-3" });
@@ -2022,7 +2026,7 @@ function createItemInspector(runId: string, initial: RunItem) {
 		} else if (tab === "input") {
 			content.append(h("div", { class: "section-title" }, "输入快照"), h("pre", { class: "code" }, JSON.stringify(item.snapshot.definition, null, 2)), h("div", { class: "section-title mt-3" }, "最终生效配置"), h("pre", { class: "code" }, JSON.stringify({ ...item.snapshot.defaults, ...Object.fromEntries(Object.entries(item.snapshot.definition).filter(([key, value]) => ["timeoutMs", "systemPrompt", "cwd"].includes(key) && value !== undefined)), ...replayConfig(item.snapshot.definition, item.snapshot.defaults), cwd: item.workspace ?? item.snapshot.definition.cwd ?? item.snapshot.defaults.cwd }, null, 2)));
 		} else if (tab === "tools") {
-			content.append(h("p", { class: "muted small" }, "这里展示 SDK 保存的工具诊断；请求与结果通知不证明工具实际执行。运行中的通知可在最近活动和会话记录中查看。"));
+			content.append(h("p", { class: "muted small" }, item.snapshot.definition.replayMode === "function-call" ? "这里是模型本轮生成的调用请求，没有执行任何工具。原始响应已固定归档，可在脚本试验证的输入数据中查看。" : "这里展示 SDK 保存的工具诊断；请求与结果通知不证明工具实际执行。运行中的通知可在最近活动和会话记录中查看。"));
 			if (!result?.toolCalls.length) content.append(h("div", { class: "empty" }, ["queued", "running"].includes(item.status) ? "执行结束后展示已记录的工具轨迹。" : "本次执行没有工具调用。"));
 			else renderToolCalls(content, result.toolCalls);
 		} else {

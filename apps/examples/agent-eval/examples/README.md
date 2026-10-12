@@ -2,7 +2,7 @@
 
 ## 直接导入
 
-启动 Web 服务后，进入 **案例集 → 导入案例**，选择目标模块和 JSON 格式，将下列文件内容粘贴到导入框即可。四个案例集均不固定模型供应商、模型 ID 或密钥，导入时继承当前 Web 设置；导入不会自动运行案例。
+启动 Web 服务后，进入 **案例集 → 导入案例**，选择目标模块和 JSON 格式，将下列文件内容粘贴到导入框即可。案例集均不固定模型供应商、模型 ID 或密钥，导入时继承当前 Web 设置；导入不会自动运行案例。
 
 | 文件 | 数量 | 内容 | 运行前提 |
 |---|---:|---|---|
@@ -10,8 +10,10 @@
 | `importable/full-task.json` | 5 | 文件创建、工作区检查和编码测试 | 有效模型配置；在隔离工作区使用完整工具 |
 | `importable/grading.json` | 6 | 文件、文本、JSON、数值容差及可选行为诊断 | 有效模型配置；无需额外验证器 |
 | `importable/registered-verifier.json` | 1 | 文件规则与独立验证脚本组合 | 另需配置 `grading/verifiers.json` |
+| `importable/function-call-basic.json` | 6 | 六工具单轮原生调用格式 | 先用准备脚本上传绑定 Python 验证器，配置 OpenAI-compatible |
+| `importable/function-call-multi.json` | 2 | 多调用及历史上下文 | 同上 |
 
-合计 20 个唯一案例，覆盖旧 `examples/*.json`、判分示例、Web 导入页内置示例和 `multi-turn.ts` 的对话场景。`multi-turn-project-requirements` 将已完成的前两轮写入 `history`，只运行最后一个 `prompt`；它验证上下文回放，不会重新调用模型执行历史轮次。
+原有四个案例集合计 20 个唯一案例，覆盖旧 `examples/*.json`、判分示例、Web 导入页内置示例和 `multi-turn.ts` 的对话场景。`multi-turn-project-requirements` 将已完成的前两轮写入 `history`，只运行最后一个 `prompt`；它验证上下文回放，不会重新调用模型执行历史轮次。
 
 `registered-verifier.json` 可以直接导入，但运行前需要从 `apps/examples/agent-eval` 配置：
 
@@ -61,7 +63,7 @@ bun run web
 
 ## 任务结果验收
 
-任务结果规则只能用于显式的 `"replayMode": "full-task"`。规则默认是必要规则；只有写出 `"required": false` 才是可选诊断。
+文件与注册程序规则用于显式的 `"replayMode": "full-task"`；Python 脚本也支持文字单轮和函数调用单轮的结果验证。规则默认是必要规则；只有写出 `"required": false` 才是可选诊断。
 
 | `kind` | 关键字段 | 通过条件 | 常见用途 |
 |---|---|---|---|
@@ -207,3 +209,7 @@ bun run web
 | 没有明确失败，但必要规则含 `error`、`insufficient` 或 `skipped` | `inconclusive` |
 
 可选规则无论通过、失败还是证据不足，都只提供诊断，不改变整体结论。执行错误与取消单独统计，不应混入任务通过率。任务通过率按已判定案例计算：`passed / (passed + failed)`。
+
+## 原生函数调用格式评测
+
+[六工具 Python 验证器及操作说明](function-calls/README.md)提供单轮函数调用专用回放、六个可独立上传的验证器，以及 `importable/function-call-basic.json`（6 个单工具案例）与 `importable/function-call-multi.json`（2 个多调用/历史案例）。先运行准备脚本上传并绑定验证器 ID，再导入生成的 JSON；需要配置 OpenAI-compatible 服务。该模式不执行工具，原文字单轮模式保持不变。

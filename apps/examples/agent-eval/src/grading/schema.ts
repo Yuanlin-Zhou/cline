@@ -83,6 +83,7 @@ export function parseGrading(value: unknown, at = "grading", replayMode = "full-
 			const before = match(r.before, `${p}.before`); const after = match(r.after, `${p}.after`); boolean(r.requireAfter, `${p}.requireAfter`);
 			if (before.phase !== "completed" || after.phase !== "started") throw new Error(`${p}: 顺序须为 completed → started`);
 		}
+		if (replayMode === "function-call" && r.kind !== "script") throw new Error(`${p}: 函数调用回放只支持 Python 脚本验收`);
 		if (replayMode !== "full-task" && r.required !== false && r.kind !== "script") throw new Error(`${p}: 产物及行为验收须使用 full-task 完整任务模式`);
 	}
 	if (!config.rules.some(r => (r as Rule).required !== false)) throw new Error(`${at}: 至少需要一条必要规则`);

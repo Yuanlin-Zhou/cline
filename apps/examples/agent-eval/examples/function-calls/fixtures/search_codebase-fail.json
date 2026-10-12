@@ -1,0 +1,43 @@
+{
+  "context_version": 2,
+  "case": {
+    "replay_mode": "function-call",
+    "history": []
+  },
+  "execution": {
+    "status": "completed"
+  },
+  "diagnostics": {
+    "function_call_response": {
+      "schema_version": 1,
+      "protocol": "openai-chat-completions",
+      "completeness": "complete",
+      "request_tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "search_codebase",
+            "parameters": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object",
+              "properties": {
+                "queries": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Array of regex search queries to execute"
+                }
+              },
+              "required": [
+                "queries"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      ],
+      "raw_response": "{\"choices\": [{\"index\": 0, \"finish_reason\": \"tool_calls\", \"message\": {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"call_1\", \"type\": \"function\", \"function\": {\"name\": \"search_codebase\", \"arguments\": \"{}\"}}]}}]}"
+    }
+  }
+}

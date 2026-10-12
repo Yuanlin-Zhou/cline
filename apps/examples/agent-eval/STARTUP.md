@@ -279,3 +279,9 @@ MongoDB 已有部署需要使用准备账号再次执行 `bun run mongo:prepare`
 案例规则上传 `.py`，入口 `verify(ctx)`，返回 verdict/message/可选 checks；print 输出进入日志。详情见 [Python 验证脚本说明](docs/python-verifiers.md)。规则卡片通过“上传 .py”弹窗上传，通过“编写指南”选择回复、产物或会话模板；“高级设置”保存参数和输入要求，“试验证”打开结果/输入/日志面板。关闭试验证面板不会停止后台任务，同一页面可重新打开查看。新执行固定保存验证输入；历史试验证不会重新调用模型或修改原结论。
 
 判定规则页面的操作路径、模式限制与结果说明见 [如何配置判定规则](docs/grading-ui.md)。
+
+## 单轮函数调用格式评测
+
+新增“单轮函数调用（仅检查格式）”，一次请求模型并固定保存原始响应，不执行工具。首期配置 providerId 为 `openai-compatible`，填写模型 ID、兼容服务 `baseUrl` 和密钥环境变量。六个验证器、上传绑定与可导入案例见 [function-calls/README.md](examples/function-calls/README.md)。
+
+已有 MongoDB 部署升级时运行 `bun run mongo:prepare` 更新案例集合校验器，允许 `function-call` 回放方式及工具配置；SQLite 无需结构迁移。旧文字单轮和完整任务方式保持原语义。

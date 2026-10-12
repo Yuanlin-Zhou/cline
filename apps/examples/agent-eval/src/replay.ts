@@ -1,9 +1,10 @@
 import type { EvalCase, EvalDefaults, ToolMode } from "./types.js";
 
-export type ReplayMode = "single-turn" | "full-task";
+export type ReplayMode = "single-turn" | "full-task" | "function-call";
 
 export const REPLAY_MODES: Array<{ value: ReplayMode; label: string; description: string; prompt: string }> = [
 	{ value: "single-turn", label: "单轮回放", description: "提供历史上下文和本轮问题，只生成一次模型回复，不调用工具。", prompt: "安装项目依赖应该执行什么命令？" },
+	{ value: "function-call", label: "单轮函数调用（仅检查格式）", description: "公布所选工具，只请求一次模型，保存原始调用；不执行工具。需要 OpenAI-compatible 服务。", prompt: "请调用 read_files 读取 /project/README.md 的第 1 至 10 行。" },
 	{ value: "full-task", label: "多轮回放（完整任务）", description: "提供初始任务，Agent 可调用工具连续执行，直到完成或达到限制；历史消息不是逐轮执行脚本。", prompt: "实现 TypeScript slugify 函数，编写并使用 Bun 运行测试，失败后修复，最后总结结果。" },
 ];
 
@@ -16,7 +17,7 @@ export function replayConfig(definition: EvalCase, defaults: EvalDefaults, overr
 }
 
 export function caseExample(mode: ReplayMode): EvalCase {
-	return mode === "single-turn" ? {
+	return mode === "function-call" ? { id: "function-read-files", replayMode: mode, history: [], prompt: REPLAY_MODES.find(m => m.value === mode)!.prompt, functionCall: { tools: ["read_files"], toolChoice: "auto" } } : mode === "single-turn" ? {
 		id: "history-bun-install", replayMode: mode, description: "验证模型遵循历史上下文", tags: ["回归", "上下文"],
 		history: [{ role: "user", content: "项目使用 Bun，请用中文回答。" }, { role: "assistant", content: "好的。" }],
 		prompt: REPLAY_MODES[0]!.prompt, assertions: { contains: ["bun install"], finishReason: "completed" },
@@ -30,7 +31,7 @@ export function caseExample(mode: ReplayMode): EvalCase {
 export const IMPORT_FIELDS: Array<[string, string, string, string]> = [
 	["id", "string · 必填", "模块内唯一；已有 ID 可跳过或更新版本", "history-bun-install"],
 	["prompt", "string · 必填", "单轮：本轮问题；多轮：任务初始指令", "安装依赖应该执行什么命令？"],
-	["replayMode", "string · 可选", "未填写时使用页面的缺省回放方式", "single-turn / full-task"],
+	["replayMode", "string · 可选", "未填写时使用页面的缺省回放方式", "single-turn / full-task / function-call"],
 	["description / tags", "string / string[] · 可选", "案例说明和用于筛选的标签", '"上下文检查" / ["回归"]'],
 	["history", "object[] · 可选", "历史上下文，默认空数组；不会逐条执行", '[{"role":"user","content":"使用 Bun"}]'],
 	["history[].role / content", "string · 每条必填", "role 仅 user 或 assistant；content 为非空文本", "user / 使用 Bun"],

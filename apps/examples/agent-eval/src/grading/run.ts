@@ -1,3 +1,4 @@
+import { preflightFunctionCall } from "../function-call.js";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
@@ -22,6 +23,7 @@ export async function runIsolated(input: { definition: EvalCase; defaults: EvalD
 	const resolved = await resolveVerifiers(definition, undefined, snapshots);
 	const verifiers = [...resolved.configured, ...await materializeVerifiers(resolved.uploaded, directory)];
 	preflight(definition, verifiers);
+	preflightFunctionCall(definition, defaults);
 	const source = definition.replayMode === "full-task" ? definition.cwd ?? defaults.cwd : undefined;
 	if (source && verifiers.some(v => v.files.some(file => { const relative = path.relative(path.resolve(source), file); return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative)); }))) throw new Error("正式验收脚本不能位于 Agent fixture 内，请将验证器移到独立目录");
 	const secrets = [defaults.apiKeyEnv ? process.env[defaults.apiKeyEnv] ?? "" : "", ...verifiers.flatMap(v => v.env.map(k => process.env[k] ?? ""))];
@@ -89,6 +91,7 @@ export async function runIsolated(input: { definition: EvalCase; defaults: EvalD
 	if (!diagnosticComplete) evidence.issues.push("诊断轨迹已截断或消息无效");
 	await saveEvidence(directory, await readFile(path.join(directory, "evidence/events.jsonl")), "事件轨迹", evidence.refs);
 	if (diagnostics) await saveEvidence(directory, diagnostics, "SDK 诊断轨迹（不证明实际执行）", evidence.refs);
+	if (result.functionCallResponse) await saveEvidence(directory, JSON.stringify(result.functionCallResponse), "原始函数调用响应 v1", evidence.refs);
 	await saveEvidence(directory, JSON.stringify(result, null, 2), "执行结果", evidence.refs);
 	if (definition.replayMode === "full-task") await snapshot(workspace, directory, "artifacts", evidence, secrets);
 	await saveEvidence(directory, JSON.stringify(evidence, null, 2), "文件清单", evidence.refs);

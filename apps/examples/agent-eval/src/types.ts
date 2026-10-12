@@ -34,7 +34,8 @@ export type EvalDefaults = HeaderConfig & {
 
 export type EvalCase = HeaderConfig & {
 	id: string;
-	replayMode?: "single-turn" | "full-task";
+	replayMode?: "single-turn" | "full-task" | "function-call";
+	functionCall?: import("./function-call-config.js").FunctionCallConfig;
 	tags?: string[];
 	description?: string;
 	history: EvalMessage[];
@@ -69,6 +70,7 @@ export type AssertionResult = {
 };
 
 export type EvalCaseResult = {
+	functionCallResponse?: import("./function-call.js").FunctionCallResponse;
 	id: string;
 	description?: string;
 	status: "passed" | "failed" | "error" | "inconclusive";

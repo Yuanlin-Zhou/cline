@@ -1,3 +1,4 @@
+import { parseFunctionCall } from "./function-call-config.js";
 import { parseHeaderConfig } from "./headers.js";
 import { parseGrading } from "./grading/schema.js";
 import type {
@@ -156,14 +157,15 @@ function parseCase(value: unknown, index: number): EvalCase {
 	if (value.history !== undefined && !Array.isArray(value.history)) {
 		throw new Error(`${path}.history must be an array`);
 	}
-	if (value.replayMode !== undefined && value.replayMode !== "single-turn" && value.replayMode !== "full-task") {
-		throw new Error(`${path}.replayMode must be single-turn or full-task`);
+	if (value.replayMode !== undefined && value.replayMode !== "single-turn" && value.replayMode !== "full-task" && value.replayMode !== "function-call") {
+		throw new Error(`${path}.replayMode must be single-turn, full-task or function-call`);
 	}
 
 	return {
 		...parseHeaderConfig(value, path),
 		id,
 		replayMode: value.replayMode as EvalCase["replayMode"],
+		functionCall: value.replayMode === "function-call" || value.functionCall !== undefined ? parseFunctionCall(value.functionCall) : undefined,
 		tags: parseStringArray(value.tags, `${path}.tags`),
 		description: readOptionalString(value.description, `${path}.description`),
 		history: (value.history ?? []).map((message, messageIndex) =>

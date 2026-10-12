@@ -1,0 +1,11 @@
+{
+  "case": {
+    "replay_mode": "single-turn"
+  },
+  "execution": {
+    "status": "completed"
+  },
+  "diagnostics": {
+    "tool_calls": []
+  }
+}

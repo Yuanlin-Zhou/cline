@@ -176,6 +176,7 @@ export function gradingEditor(initial?: GradingConfig, options: { caseId?: strin
 		const modeIssue = () => {
 			if (behavior) return required.checked ? "当前不能验证真实工具行为。请取消“影响通过”，仅作为参考诊断。" : "";
 			if (currentMode === "full-task") return "";
+			if (currentMode === "function-call" && kind !== "script") return "函数调用回放只支持 Python 脚本检查，请移除此项或切换模式。";
 			if (kind !== "script") return "这项检查需要完整任务模式。切换模式后可继续使用，配置不会被删除。";
 			try { const value = read(false); if (!value.verifierId) return ""; if (verifiers.find(v => v.id === value.verifierId)?.runtime !== "python") return "单轮仅支持 Python 回复或会话脚本；当前脚本需要完整任务模式。";
 				if ([...(value.required_inputs as string[] ?? []), ...(value.require_complete as string[] ?? [])].some(v => ["artifacts", "baseline"].includes(v))) return "脚本要求读取文件，需要完整任务模式。";
@@ -242,7 +243,7 @@ export function gradingEditor(initial?: GradingConfig, options: { caseId?: strin
 		try {
 
 			const rules = collect();
-			const conflict = editors.find(editor => editor.modeIssue() && (editor.read(false).required !== false || editor.read(false).kind === "script")); if (conflict) { error.textContent = conflict.modeIssue(); focus(conflict.anchor()); throw new Error(conflict.modeIssue()); }
+			const conflict = editors.find(editor => editor.modeIssue() && (currentMode === "function-call" || editor.read(false).required !== false || editor.read(false).kind === "script")); if (conflict) { error.textContent = conflict.modeIssue(); focus(conflict.anchor()); throw new Error(conflict.modeIssue()); }
 			if (!rules.length) throw new Error("请添加文件或脚本检查，或取消启用文件与脚本检查。");
 			if (!rules.some(rule => rule.required !== false)) throw new FieldError("至少一项文件或脚本检查需要勾选“影响通过”。", editors[0].requiredControl);
 			const ids = new Set<unknown>(); for (const [index, rule] of rules.entries()) { if (ids.has(rule.id)) throw new FieldError(`第 ${index + 1} 条检查的 ID 重复，请在规则详情中修改。`, editors[index].node.querySelector<HTMLInputElement>(".Grading-id")!); ids.add(rule.id); }

@@ -20,7 +20,8 @@ export const caseValidator = { $jsonSchema: {
 		_id: string, schemaVersion: { enum: [1] }, moduleId: string, revision: integer,
 		archived: { bsonType: "bool" }, createdAt: { bsonType: "date" }, updatedAt: { bsonType: "date" },
 		definition: { bsonType: "object", required: ["id", "replayMode", "prompt", "history"], properties: {
-			id: string, replayMode: { enum: ["single-turn", "full-task"] }, prompt: string,
+			id: string, replayMode: { enum: ["single-turn", "full-task", "function-call"] }, prompt: string,
+			functionCall: { bsonType: "object", required: ["tools"], additionalProperties: false, properties: { tools: { bsonType: "array", minItems: 1, maxItems: 6, uniqueItems: true, items: { enum: ["read_files", "search_codebase", "run_commands", "fetch_web_content", "editor", "skills"] } }, toolChoice: { enum: ["auto", "required", "read_files", "search_codebase", "run_commands", "fetch_web_content", "editor", "skills"] } } },
 			tags: { bsonType: "array", items: string },
 			history: { bsonType: "array", items: { bsonType: "object", required: ["role", "content"], properties: { role: { enum: ["user", "assistant"] }, content: string } } },
 		} },
@@ -38,7 +39,7 @@ export function caseToDocument(item: SavedCase): CaseDocument {
 }
 export function caseFromDocument(doc: CaseDocument): SavedCase {
 	try {
-		if (typeof doc._id !== "string" || !doc._id || doc.schemaVersion !== 1 || typeof doc.moduleId !== "string" || !doc.moduleId || !Number.isSafeInteger(doc.revision) || doc.revision < 1 || typeof doc.archived !== "boolean" || typeof doc.defaults?.providerId !== "string" || !doc.defaults.providerId || typeof doc.defaults?.modelId !== "string" || !doc.defaults.modelId || !(doc.createdAt instanceof Date) || !Number.isFinite(doc.createdAt.getTime()) || !(doc.updatedAt instanceof Date) || !Number.isFinite(doc.updatedAt.getTime()) || !["single-turn", "full-task"].includes(doc.definition?.replayMode ?? "")) throw new Error("字段类型无效");
+		if (typeof doc._id !== "string" || !doc._id || doc.schemaVersion !== 1 || typeof doc.moduleId !== "string" || !doc.moduleId || !Number.isSafeInteger(doc.revision) || doc.revision < 1 || typeof doc.archived !== "boolean" || typeof doc.defaults?.providerId !== "string" || !doc.defaults.providerId || typeof doc.defaults?.modelId !== "string" || !doc.defaults.modelId || !(doc.createdAt instanceof Date) || !Number.isFinite(doc.createdAt.getTime()) || !(doc.updatedAt instanceof Date) || !Number.isFinite(doc.updatedAt.getTime()) || !["single-turn", "full-task", "function-call"].includes(doc.definition?.replayMode ?? "")) throw new Error("字段类型无效");
 		const suite = parseEvalSuite({ defaults: doc.defaults, cases: [doc.definition] });
 		return { id: doc._id, moduleId: doc.moduleId, revision: doc.revision, archived: doc.archived, updatedAt: doc.updatedAt.toISOString(), defaults: suite.defaults, definition: suite.cases[0] };
 	} catch { throw new CatalogError(`MongoDB 案例文档 ${typeof doc._id === "string" ? doc._id : "(无有效 ID)"} 不符合案例合同，请修正后重试`, 422); }

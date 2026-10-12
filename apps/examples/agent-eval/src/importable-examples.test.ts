@@ -19,6 +19,8 @@ test("portable example suites import with the current Web model settings", () =>
 	const files = readdirSync(examplesDirectory).filter((file) => file.endsWith(".json")).sort();
 	expect(files).toEqual([
 		"full-task.json",
+		"function-call-basic.json",
+		"function-call-multi.json",
 		"grading.json",
 		"registered-verifier.json",
 		"single-turn.json",
@@ -49,7 +51,7 @@ test("portable example suites import with the current Web model settings", () =>
 				raw.cases.every(
 					(item) =>
 						Object.hasOwn(item, "replayMode") &&
-						(item.replayMode === "single-turn" || item.replayMode === "full-task"),
+						["single-turn", "full-task", "function-call"].includes(item.replayMode ?? ""),
 				),
 			).toBe(true);
 			const suite = store.parseImport(content, "json", "single-turn");
@@ -91,6 +93,14 @@ test("portable example suites contain every user-facing case exactly once", () =
 		"deepseek-history-test",
 		"deepseek-json-reasoning",
 		"deepseek-structured-answer",
+		"fc-editor",
+		"fc-fetch_web_content",
+		"fc-history-editor",
+		"fc-read_files",
+		"fc-run_commands",
+		"fc-search_codebase",
+		"fc-skills",
+		"fc-two-calls",
 		"grading-behavior-optional",
 		"grading-json-pass",
 		"grading-missing-fail",
