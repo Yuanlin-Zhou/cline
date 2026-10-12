@@ -1,3 +1,4 @@
+import { parseWorkspace } from "./workspace-config.js";
 import { parseFunctionCall } from "./function-call-config.js";
 import { parseHeaderConfig } from "./headers.js";
 import { parseGrading } from "./grading/schema.js";
@@ -126,6 +127,7 @@ function parseDefaults(value: unknown): EvalDefaults {
 		apiKeyEnv: readOptionalString(defaults.apiKeyEnv, "defaults.apiKeyEnv"),
 		baseUrl: readOptionalString(defaults.baseUrl, "defaults.baseUrl"),
 		cwd: readOptionalString(defaults.cwd, "defaults.cwd"),
+		workspace: parseWorkspace(defaults.workspace,"defaults.workspace"),
 		systemPrompt: readOptionalString(
 			defaults.systemPrompt,
 			"defaults.systemPrompt",
@@ -173,6 +175,7 @@ function parseCase(value: unknown, index: number): EvalCase {
 		),
 		prompt,
 		cwd: readOptionalString(value.cwd, `${path}.cwd`),
+		workspace: parseWorkspace(value.workspace,`${path}.workspace`),
 		systemPrompt: readOptionalString(
 			value.systemPrompt,
 			`${path}.systemPrompt`,

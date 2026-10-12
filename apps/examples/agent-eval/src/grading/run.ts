@@ -1,11 +1,12 @@
+import { workspaceLease } from "../web/workspace-lease.js";
 import { preflightFunctionCall } from "../function-call.js";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { EvalCase, EvalDefaults, EvalCaseResult } from "../types.js";
-import { prepareWorkspace } from "../web/workspace.js";
+import { prepareExecutionWorkspace, directWorkspace } from "../web/workspace.js";
 import { gradeCase, preflight } from "./engine.js";
 import { resolveVerifiers, materializeVerifiers } from "./verifiers.js";
 import { loadCliVerifierSnapshots } from "./verifier-source.js";
@@ -16,7 +17,7 @@ import type { EvidenceEvent } from "./types.js";
 import { freezeValidationInput } from "./validation-context.js";
 import type { ExecutionUpdate } from "../web/activity.js";
 
-export async function runIsolated(input: { definition: EvalCase; defaults: EvalDefaults; directory: string; verifierSnapshots?: UploadedVerifier[]; itemId?: string; runId?: string; round?: number; signal?: AbortSignal; onText?: (text: string) => void; onWorkspace?: (workspace: string) => void; onPhase?: (phase: "executing" | "verifying") => void; onUpdate?: (update: ExecutionUpdate) => void }): Promise<EvalCaseResult> {
+async function executeIsolated(input: { definition: EvalCase; defaults: EvalDefaults; directory: string; verifierSnapshots?: UploadedVerifier[]; itemId?: string; runId?: string; round?: number; signal?: AbortSignal; onText?: (text: string) => void; onWorkspace?: (workspace: string) => void; onPhase?: (phase: "executing" | "verifying") => void; onUpdate?: (update: ExecutionUpdate) => void }): Promise<EvalCaseResult> {
 	const { definition, defaults, directory, signal } = input; const started = Date.now();
 	await mkdir(directory, { recursive: true });
 	const snapshots = input.verifierSnapshots ?? await loadCliVerifierSnapshots(definition, path.resolve(directory, "../../.."));
@@ -24,7 +25,8 @@ export async function runIsolated(input: { definition: EvalCase; defaults: EvalD
 	const verifiers = [...resolved.configured, ...await materializeVerifiers(resolved.uploaded, directory)];
 	preflight(definition, verifiers);
 	preflightFunctionCall(definition, defaults);
-	const source = definition.replayMode === "full-task" ? definition.cwd ?? defaults.cwd : undefined;
+	const sourceInput = definition.replayMode === "full-task" ? definition.cwd ?? defaults.cwd : undefined;
+	const source = sourceInput ? await realpath(path.resolve(sourceInput)) : undefined;
 	if (source && verifiers.some(v => v.files.some(file => { const relative = path.relative(path.resolve(source), file); return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative)); }))) throw new Error("正式验收脚本不能位于 Agent fixture 内，请将验证器移到独立目录");
 	const secrets = [defaults.apiKeyEnv ? process.env[defaults.apiKeyEnv] ?? "" : "", ...verifiers.flatMap(v => v.env.map(k => process.env[k] ?? ""))];
 	if (definition.grading && secrets.some(secret => secret && JSON.stringify(definition.grading).includes(secret))) throw new Error("判分规则不得包含凭据值，请使用非敏感验收条件");
@@ -35,7 +37,8 @@ export async function runIsolated(input: { definition: EvalCase; defaults: EvalD
 		const event: EvidenceEvent = { schemaVersion: 1, eventId: randomUUID(), itemId: input.itemId ?? path.basename(directory), sessionId, seq: ++seq, timestamp: new Date().toISOString(), type, payload };
 		events.push(event); persisted = persisted.then(() => appendFile(path.join(directory, "evidence/events.jsonl"), redact(JSON.stringify(event), secrets) + "\n"));
 	};
-	const workspace = await prepareWorkspace(directory, source);
+	const workspaceInfo = await prepareExecutionWorkspace(directory, source, definition.replayMode === "full-task" ? definition.workspace ?? defaults.workspace : undefined);
+	const workspace = workspaceInfo.path;
 	input.onWorkspace?.(workspace);
 	input.onUpdate?.({ workspace });
 	if (definition.replayMode === "full-task") await snapshot(workspace, directory, "baseline", evidence, secrets);
@@ -84,6 +87,7 @@ export async function runIsolated(input: { definition: EvalCase; defaults: EvalD
 	if (!result || failure) result = { id: definition.id, sessionId, status: "error", text, durationMs: Date.now() - started, iterations: 0, usage: { inputTokens: 0, outputTokens: 0 }, toolCalls: [], assertions: [], error: failure || stderr || `执行进程退出 (${child.exitCode})` };
 		if (!result.text && text) result.text = redact(text, secrets);
 	if (definition.grading) result.assertions = [];
+	result.workspaceInfo = workspaceInfo;
 	result.execution = { status: signal?.aborted ? "cancelled" : result.status === "error" ? "error" : "completed", reason: timedOut || result.error?.includes("evaluation timed out") ? "task_timeout" : result.error };
 	if (result.execution.status === "error") emit("execution.error", { error: result.error });
 	emit("session.ended", { status: result.execution.status }); await persisted;
@@ -103,4 +107,14 @@ export async function runIsolated(input: { definition: EvalCase; defaults: EvalD
 	await writeFile(path.join(directory, "execution.json"), JSON.stringify(result, null, 2));
 	await writeFile(path.join(directory, "evidence/manifest.json"), JSON.stringify(evidence, null, 2));
 	return result;
+}
+
+
+export async function runIsolated(input:Parameters<typeof executeIsolated>[0]):Promise<EvalCaseResult>{
+ const config=input.definition.workspace??input.defaults.workspace;
+ if(input.definition.replayMode==="full-task"&&config?.mode==="direct"){
+  const root=await directWorkspace(input.definition.cwd??input.defaults.cwd,input.directory);
+  const release=await workspaceLease(root,input.signal);try{return await executeIsolated(input);}finally{release();}
+ }
+ return executeIsolated(input);
 }

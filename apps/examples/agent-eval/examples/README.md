@@ -217,3 +217,7 @@ bun run web
 ## editor 历史上下文与参数正确性案例
 
 [editor 单轮历史案例](editor-single-turn/README.md)补充 6 个新建、局部替换、按行插入、末尾追加、本轮覆盖旧计划和同轮双文件编辑场景。每个案例包含两轮历史消息与本轮输入，专用 Python 脚本自动核对路径、内容、换行和操作参数。先用该目录的 `prepare.py` 上传绑定，再导入生成的 JSON；不执行真实文件操作。
+
+## 完整任务工作区执行方式
+
+[workspace-execution/suite.json](workspace-execution/suite.json)展示复制后执行与直接目录执行两种配置。将占位路径换成服务器实际绝对路径后导入；具体默认值、并发、历史产物与 CLI 兼容见 [工作区执行说明](../docs/workspace-execution.md)。

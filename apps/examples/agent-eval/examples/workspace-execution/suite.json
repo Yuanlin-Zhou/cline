@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "workspace-copy-example",
+      "description": "复制初始工作区到指定根目录下的独立副本，再读取文件",
+      "replayMode": "full-task",
+      "history": [],
+      "prompt": "请使用 read_files 读取当前工作区 README.md，并用中文概括内容。不要修改任何文件。",
+      "cwd": "/replace-with-real-fixture",
+      "workspace": { "mode": "copy", "copyRoot": "/replace-with-copy-root" },
+      "tools": "read-only",
+      "maxIterations": 5
+    },
+    {
+      "id": "workspace-direct-example",
+      "description": "直接在指定工作区读取文件；没有复制步骤",
+      "replayMode": "full-task",
+      "history": [],
+      "prompt": "请使用 read_files 读取当前工作区 README.md，并用中文概括内容。不要修改任何文件。",
+      "cwd": "/replace-with-real-workspace",
+      "workspace": { "mode": "direct" },
+      "tools": "read-only",
+      "maxIterations": 5
+    }
+  ]
+}

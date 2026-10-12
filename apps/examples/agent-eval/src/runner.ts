@@ -40,6 +40,8 @@ function buildToolPolicies(mode: ToolMode): Record<string, ToolPolicy> {
 	};
 }
 
+function resolveWorkspaceConfig(config:EvalCase["workspace"],directory:string) { return config?.mode === "copy" && config.copyRoot ? {...config,copyRoot:path.resolve(directory,config.copyRoot)} : config; }
+
 function resolveApiKey(apiKeyEnv: string | undefined): string | undefined {
 	if (!apiKeyEnv) return undefined;
 	const apiKey = process.env[apiKeyEnv];
@@ -184,13 +186,16 @@ export async function runEvalSuite(input: {
 	onDiagnostic?: (event: unknown) => void;
 	onActivity?: (event: unknown) => void;
 	signal?: AbortSignal;
+	/** Worker runs an already-prepared workspace and never isolates recursively. */
+	executionOnly?: boolean;
 }): Promise<EvalReport> {
 	const { suite, suitePath, overrides, onCaseStart, onCaseComplete } = input;
 	const startedAt = new Date();
 	const suiteDirectory = path.dirname(suitePath);
 	resolveApiKey(overrides.apiKeyEnv ?? suite.defaults.apiKeyEnv);
 	for (const definition of suite.cases) preflightFunctionCall(definition, {...suite.defaults,...(overrides.providerId?{providerId:overrides.providerId}:{}),...(overrides.modelId?{modelId:overrides.modelId}:{}),...(overrides.apiKeyEnv?{apiKeyEnv:overrides.apiKeyEnv}:{})});
-	const cline = suite.cases.some(c=>c.replayMode !== "function-call" && !c.grading) ? await ClineCore.create({
+	const shouldIsolate = (c:EvalCase) => !input.executionOnly && (!!c.grading || c.replayMode === "full-task" && !!(c.workspace ?? suite.defaults.workspace));
+	const cline = suite.cases.some(c=>c.replayMode !== "function-call" && !shouldIsolate(c)) ? await ClineCore.create({
 		clientName: "agent-eval",
 		backendMode: "local",
 		capabilities: {
@@ -228,8 +233,8 @@ export async function runEvalSuite(input: {
 		for (const caseDefinition of suite.cases) {
 			input.signal?.throwIfAborted();
 			onCaseStart?.(caseDefinition);
-			const result = caseDefinition.grading ? await runIsolated({
-				definition: { ...caseDefinition, ...(overrides.tools ? { tools: overrides.tools } : {}), cwd: overrides.cwd ? path.resolve(overrides.cwd) : caseDefinition.cwd ?? suite.defaults.cwd ? resolveWorkspace(caseDefinition.cwd ?? suite.defaults.cwd, suiteDirectory) : undefined },
+			const result = shouldIsolate(caseDefinition) ? await runIsolated({
+				definition: { ...caseDefinition, ...(overrides.tools ? { tools: overrides.tools } : {}), workspace: resolveWorkspaceConfig(caseDefinition.workspace ?? suite.defaults.workspace,suiteDirectory), cwd: overrides.cwd ? path.resolve(overrides.cwd) : caseDefinition.cwd ?? suite.defaults.cwd ? resolveWorkspace(caseDefinition.cwd ?? suite.defaults.cwd, suiteDirectory) : undefined },
 				defaults: { ...suite.defaults, ...(overrides.providerId ? { providerId: overrides.providerId } : {}), ...(overrides.modelId ? { modelId: overrides.modelId } : {}), ...(overrides.apiKeyEnv ? { apiKeyEnv: overrides.apiKeyEnv } : {}), ...(overrides.tools ? { tools: overrides.tools } : {}) },
 				directory: path.join(path.resolve(process.env.EVAL_DATA_DIR ?? path.join(suiteDirectory, ".eval-data")), "runs", gradingRunId, randomUUID()), signal: input.signal,
 				onText: text => { if (overrides.stream) process.stderr.write(text); input.onText?.(text); }, onWorkspace: workspace => process.stderr.write(`[workspace] ${workspace}\n`),

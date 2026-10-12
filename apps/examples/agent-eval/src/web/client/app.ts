@@ -1,3 +1,5 @@
+import { workspaceEditor } from "./workspace-editor.js";
+const workspaceEditors = new Map<string, ReturnType<typeof workspaceEditor>>();
 import { modelResponse } from "./model-response.js";
 import { functionCallEditor } from "./function-call-editor.js";
 import { replyEditor } from "./reply-editor.js";
@@ -153,7 +155,7 @@ function panelTabs(id: string, entries: Array<[string, HTMLElement]>): HTMLEleme
 
 const TOOL_OPTIONS: Array<[ToolMode, string]> = [
 	["read-only", "read-only（只读）"],
-	["full", "full（可写，需隔离工作区）"],
+	["full", "full（可写，可执行命令）"],
 	["none", "none（无工具）"],
 ];
 
@@ -478,14 +480,14 @@ function appendConfigFields(parent: HTMLElement, prefix: string, initial: EvalDe
 	if (modelOnly) return;
 	section = h("section", { class: "ConfigSection" }, h("div", { class: "section-title" }, "执行参数"));
 	grid.append(section);
-	fg("工具范围", select(`${prefix}-tools`, TOOL_OPTIONS, initial.tools ?? "read-only"), "full 模式可执行命令、修改文件，务必使用隔离工作区");
+	fg("工具范围", select(`${prefix}-tools`, TOOL_OPTIONS, initial.tools ?? "read-only"), "full 模式可执行命令、修改文件；请按任务需要选择工作区执行方式");
 	fg("最大迭代次数", input(`${prefix}-maxiter`, initial.maxIterations ?? 10, "number"));
 	fg("超时（毫秒）", input(`${prefix}-timeout`, initial.timeoutMs ?? 300000, "number"));
 	fg("系统提示词", textarea(`${prefix}-sysprompt`, initial.systemPrompt, false), "留空使用默认提示词");
-	if (withCwd) fg("Fixture 目录", input(`${prefix}-cwd`, initial.cwd), "初始工作区目录（须为绝对路径）；留空表示使用空工作区");
+	if (withCwd) { const editor = workspaceEditor(prefix,initial.cwd,initial.workspace); workspaceEditors.set(prefix,editor); section.append(editor.element); }
 }
 
-function readConfig(prefix: string, withCwd: boolean): EvalDefaults {
+function readConfig(prefix: string, withCwd: boolean, validateWorkspace = true): EvalDefaults {
 	const optional = (id: string): string | undefined => {
 		const v = val(id).trim();
 		return v || undefined;
@@ -505,6 +507,7 @@ function readConfig(prefix: string, withCwd: boolean): EvalDefaults {
 	const systemPrompt = optional(`${prefix}-sysprompt`);
 	if (systemPrompt) defaults.systemPrompt = systemPrompt;
 	if (withCwd) {
+		defaults.workspace = workspaceEditors.get(prefix)?.read(validateWorkspace);
 		const cwd = optional(`${prefix}-cwd`);
 		if (cwd) defaults.cwd = cwd;
 	}
@@ -576,7 +579,7 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
 	const savedList = caseListState.get(moduleId ?? "");
 	const searchBox = input("case-search", savedList?.search ?? "", "text");
 	searchBox.setAttribute("placeholder", "按名称、ID 或标签筛选…");
-	const replayFilter = select("case-replay", [["", "全部回放方式"], ["single-turn", "单轮回放"], ["full-task", "多轮回放（完整任务）"], ["function-call", "单轮函数调用（仅检查格式）"]], "");
+	const replayFilter = select("case-replay", [["", "全部回放方式"], ["single-turn", "单轮回放"], ["full-task", "多轮回放（完整任务）"], ["function-call", "单轮函数调用"]], "");
 	const resultFilter = select("case-result", [["", "全部结果"], ["passed", "通过"], ["failed", "失败"], ["error", "执行错误"], ["inconclusive", "无法判定"], ["none", "未运行"]], "");
 	(replayFilter as HTMLSelectElement).value = savedList?.replay ?? "";
 	(resultFilter as HTMLSelectElement).value = savedList?.result ?? "";
@@ -968,7 +971,7 @@ function fieldDocs(): HTMLElement {
  box.append(h("div", { class: "Box-header" }, "字段说明"));
  const body = h("div", { class: "Box-body" });
  body.append(h("p", { class: "form-hint" }, "支持案例集对象、案例数组和 JSONL（每行一个案例），每次 1–1000 个。示例可直接导入，无需填写模型密钥。执行时仍需有效的运行配置。"));
- body.append(h("p", { class: "form-hint" }, "cwd、tools、maxIterations、timeoutMs、systemPrompt 可写在案例中或 defaults 中。单轮固定禁用工具、最多一次响应，不使用多轮工作区和迭代配置。"));
+ body.append(h("p", { class: "form-hint" }, "cwd、workspace、tools、maxIterations、timeoutMs、systemPrompt 可写在案例中或 defaults 中。单轮固定禁用工具、最多一次响应，不使用多轮工作区和迭代配置。"));
  const table = h("table", { class: "Table" }, h("thead", {}, h("tr", {}, ...["字段 / 类型", "说明", "示例"].map((label) => h("th", {}, label)))));
  table.append(h("tbody", {}, ...IMPORT_FIELDS.map(([name, type, description, example]) => h("tr", {},
   h("td", {}, h("code", {}, name), h("div", { class: "muted small" }, type)), h("td", {}, description), h("td", {}, h("code", {}, example))))));
@@ -1017,7 +1020,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 		assertions: { finishReason: "completed" },
 	};
 	const defaults: EvalDefaults = { ...(existing?.defaults ?? s.settings) };
-	for (const key of ["cwd", "systemPrompt", "tools", "maxIterations", "timeoutMs"] as const) {
+	for (const key of ["cwd", "workspace", "systemPrompt", "tools", "maxIterations", "timeoutMs"] as const) {
 		if (definition[key] !== undefined) Object.assign(defaults, { [key]: definition[key] });
 	}
 	let replayMode: ReplayMode = definition.replayMode ?? "single-turn";
@@ -1110,11 +1113,12 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 	));
 	form.append(formBody);
 
+	const caseWorkspace = workspaceEditor("f",defaults.cwd,defaults.workspace); workspaceEditors.set("f",caseWorkspace);
 	const envBox = h("div", { class: "Box mt-3 CaseConfig-environment" });
 	const envBody = h("div", { class: "Box-body" });
 	envBody.append(
 		h("div", { class: "section-title" }, h("span", {}, "环境与执行配置")),
-		field("工作区初始目录", input("f-cwd", defaults.cwd), "多轮专用，例如 D:/eval-fixtures/demo。服务端绝对路径；留空使用空工作区，每次运行从独立副本启动。"),
+		caseWorkspace.element,
 		h("div", { class: "form-row" },
 			field("工具范围", select("f-tools", TOOL_OPTIONS, defaults.tools ?? "read-only")),
 			field("最大迭代次数", input("f-maxiter", defaults.maxIterations ?? 10, "number"), "正整数，例如 30；达到此上限后结束任务。"),
@@ -1232,6 +1236,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 			grading: validateGrading ? taskGrading.read(replayMode) : definition.grading,
 			...readHeaderEditor("f-case-headers"),
 			cwd: val("f-cwd").trim() || undefined,
+			workspace: replayMode === "full-task" ? caseWorkspace.read(validateGrading) : definition.workspace ?? defaults.workspace,
 			tools: val("f-tools") as ToolMode,
 			maxIterations: replayMode !== "full-task" && (!Number.isInteger(Number(val("f-maxiter"))) || Number(val("f-maxiter")) <= 0) ? defaults.maxIterations ?? 10 : Number(val("f-maxiter")),
 			timeoutMs: Number(val("f-timeout")),
@@ -1242,7 +1247,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 
 	const readAssertionsFromForm = (): EvalAssertions | undefined => replyChecks.read();
 
-	const readDefaultsFromForm = (): EvalDefaults => readConfig("f", true);
+	const readDefaultsFromForm = (): EvalDefaults => readConfig("f", true, replayMode === "full-task");
 	const savedForm = JSON.stringify({ definition: readDefinitionFromForm(false), defaults: readDefaultsFromForm() });
 	function transferSaved(operation: "copy" | "move") {
 		if (!existing) return;
@@ -1276,7 +1281,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 			first.focus();
 			return false;
 		}
-		try { if(replayMode === "function-call") functionChecks.read(); replyChecks.read(); taskGrading.read(replayMode); } catch (error) { toast(error instanceof Error ? error.message : String(error), "error"); return false; }
+		try { if(replayMode === "function-call") functionChecks.read(); if(replayMode === "full-task")caseWorkspace.read(); replyChecks.read(); taskGrading.read(replayMode); } catch (error) { toast(error instanceof Error ? error.message : String(error), "error"); return false; }
 		return !first;
 	};
 
@@ -2001,6 +2006,7 @@ function createItemInspector(runId: string, initial: RunItem) {
 		meta.replaceChildren(h("span", {}, `v${item.snapshot.revision} · ${item.snapshot.defaults.modelId} · ${replayLabel(item.snapshot.definition.replayMode)}`), sessionIdLabel(item.sessionId ?? item.result?.sessionId));
 		const expanded = progress.querySelector("details")?.open;
 		progress.replaceChildren(executionStatus(item));
+		if(item.snapshot.definition.replayMode === "full-task" && item.workspace) { const mode = item.result?.workspaceInfo?.mode ?? (item.snapshot.definition.workspace ?? item.snapshot.defaults.workspace)?.mode ?? "copy"; progress.append(h("p", {class:"muted small"}, `${mode === "direct" ? "直接执行" : "复制后执行"} · 实际目录：${item.workspace}`)); }
 		const details = progress.querySelector("details"); if (details && expanded) details.open = true;
 	};
 	const renderTab = async () => {
@@ -2026,7 +2032,7 @@ function createItemInspector(runId: string, initial: RunItem) {
 		} else if (tab === "verification") {
 			trial ??= verifierTrial({ runId, itemId: item.id }); content.append(trial.element); trial.resume();
 		} else if (tab === "input") {
-			content.append(h("div", { class: "section-title" }, "输入快照"), h("pre", { class: "code" }, JSON.stringify(item.snapshot.definition, null, 2)), h("div", { class: "section-title mt-3" }, "最终生效配置"), h("pre", { class: "code" }, JSON.stringify({ ...item.snapshot.defaults, ...Object.fromEntries(Object.entries(item.snapshot.definition).filter(([key, value]) => ["timeoutMs", "systemPrompt", "cwd"].includes(key) && value !== undefined)), ...replayConfig(item.snapshot.definition, item.snapshot.defaults), cwd: item.workspace ?? item.snapshot.definition.cwd ?? item.snapshot.defaults.cwd }, null, 2)));
+			content.append(h("div", { class: "section-title" }, "输入快照"), h("pre", { class: "code" }, JSON.stringify(item.snapshot.definition, null, 2)), h("div", { class: "section-title mt-3" }, "最终生效配置"), h("pre", { class: "code" }, JSON.stringify({ ...item.snapshot.defaults, ...Object.fromEntries(Object.entries(item.snapshot.definition).filter(([key, value]) => ["timeoutMs", "systemPrompt", "cwd"].includes(key) && value !== undefined)), ...replayConfig(item.snapshot.definition, item.snapshot.defaults), workspace: item.result?.workspaceInfo ?? item.snapshot.definition.workspace ?? item.snapshot.defaults.workspace ?? {mode:"copy"}, cwd: item.workspace ?? item.snapshot.definition.cwd ?? item.snapshot.defaults.cwd }, null, 2)));
 		} else if (tab === "tools") {
 			content.append(h("p", { class: "muted small" }, item.snapshot.definition.replayMode === "function-call" ? "这里是模型本轮生成的调用请求，没有执行任何工具。原始响应已固定归档，可在脚本试验证的输入数据中查看。" : "这里展示 SDK 保存的工具诊断；请求与结果通知不证明工具实际执行。运行中的通知可在最近活动和会话记录中查看。"));
 			if (!result?.toolCalls.length) content.append(h("div", { class: "empty" }, ["queued", "running"].includes(item.status) ? "执行结束后展示已记录的工具轨迹。" : "本次执行没有工具调用。"));

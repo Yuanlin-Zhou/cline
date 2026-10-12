@@ -13,6 +13,7 @@ export const caseIndexes = [
 ] as const;
 export const moduleIndexes = [{ key: { nameKey: 1 }, name: "active_module_name_unique", unique: true, partialFilterExpression: { archived: false } }] as const;
 const string = { bsonType: "string", minLength: 1 };
+const workspaceValidator = { oneOf: [{properties:{mode:{enum:["copy"]}}},{properties:{mode:{enum:["direct"]}},not:{required:["copyRoot"]}}], bsonType: "object", required: ["mode"], additionalProperties: false, properties: {mode: {enum:["copy","direct"]},copyRoot: string} };
 const integer = { bsonType: ["int", "long", "double"], minimum: 1, multipleOf: 1 };
 export const caseValidator = { $jsonSchema: {
 	bsonType: "object", required: ["_id", "schemaVersion", "moduleId", "revision", "archived", "createdAt", "updatedAt", "definition", "defaults"],
@@ -20,12 +21,12 @@ export const caseValidator = { $jsonSchema: {
 		_id: string, schemaVersion: { enum: [1] }, moduleId: string, revision: integer,
 		archived: { bsonType: "bool" }, createdAt: { bsonType: "date" }, updatedAt: { bsonType: "date" },
 		definition: { bsonType: "object", required: ["id", "replayMode", "prompt", "history"], properties: {
-			id: string, replayMode: { enum: ["single-turn", "full-task", "function-call"] }, prompt: string,
+			id: string, workspace: workspaceValidator, replayMode: { enum: ["single-turn", "full-task", "function-call"] }, prompt: string,
 			functionCall: { bsonType: "object", required: ["tools"], additionalProperties: false, properties: { tools: { bsonType: "array", minItems: 1, maxItems: 6, uniqueItems: true, items: { enum: ["read_files", "search_codebase", "run_commands", "fetch_web_content", "editor", "skills"] } }, toolChoice: { enum: ["auto", "required", "read_files", "search_codebase", "run_commands", "fetch_web_content", "editor", "skills"] } } },
 			tags: { bsonType: "array", items: string },
 			history: { bsonType: "array", items: { bsonType: "object", required: ["role", "content"], properties: { role: { enum: ["user", "assistant"] }, content: string } } },
 		} },
-		defaults: { bsonType: "object", required: ["providerId", "modelId"], properties: { providerId: string, modelId: string } },
+		defaults: { bsonType: "object", required: ["providerId", "modelId"], properties: { providerId: string, modelId: string, workspace: workspaceValidator } },
 	},
 } };
 export const moduleValidator = { $jsonSchema: {

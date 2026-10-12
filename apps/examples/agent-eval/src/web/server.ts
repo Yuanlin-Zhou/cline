@@ -1,3 +1,4 @@
+import { access } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { CatalogError, SqliteCatalog, type CatalogRepository } from "./catalog.js";
 import { MongoCatalog, mongoConfig, type MongoConfig } from "./mongo-catalog.js";
@@ -8,7 +9,7 @@ import { parseEvalSuite } from "../schema.js";
 import { EvalStore, type RunSource } from "./store.js";
 import { EvalQueue, type Executor } from "./queue.js";
 import { summarize, type Module, type Run, type RunItem, type SavedCase } from "./types.js";
-import { artifacts, artifactText } from "./workspace.js";
+import { artifacts, artifactText, archivedArtifacts, archivedArtifactText } from "./workspace.js";
 import { buildRepeatReport, repeatReportMarkdown } from "./repeat-report.js";
 import { loadVerifiers, publicVerifier, resolveVerifiers, uploadedPlaceholder } from "../grading/verifiers.js";
 import { MongoVerifiers, SqliteVerifiers, publicUploaded, type VerifierRepository } from "../grading/uploaded-verifiers.js";
@@ -24,6 +25,11 @@ import { VerifierTests } from "./verifier-tests.js";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
 const client = fileURLToPath(new URL("client/", import.meta.url));
+function validateWorkspacePaths(definition:import("../types.js").EvalCase,defaults:import("../types.js").EvalDefaults){
+ const paths:Array<[string,string|undefined]>=[["工作区目录",definition.cwd],["默认工作区目录",defaults.cwd],["副本保存根目录",definition.workspace?.mode === "copy" ? definition.workspace.copyRoot:undefined],["默认副本保存根目录",defaults.workspace?.mode === "copy" ? defaults.workspace.copyRoot:undefined]];
+ for(const [name,value]of paths)if(value&&!path.isAbsolute(value))throw Error(`${name}须为服务端绝对路径`);
+ if(definition.replayMode==="full-task"&&(definition.workspace??defaults.workspace)?.mode==="direct"&&!(definition.cwd??defaults.cwd))throw Error("直接执行必须填写执行目录 cwd");
+}
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const csvCell = (value: unknown) => `"${String(value ?? "").replace(/^[=+@\-\t\r]/, "'$&").replaceAll('"', '""')}"`;
 
@@ -146,13 +152,14 @@ export async function createEvalServer(options: { directory?: string; port?: num
 				if (route === "/api/settings" && method === "PUT") {
 					const body = await request.json(); const settings = parseEvalSuite({ defaults: body, cases: [{ id: "settings", prompt: "settings" }] }).defaults;
 					if (settings.cwd && !path.isAbsolute(settings.cwd)) throw new Error("网页 fixture 目录须填写绝对路径");
-					store.put("settings", "default", settings); return json(settings);
+					validateWorkspacePaths({id:"settings",prompt:"settings",history:[],replayMode:"full-task"},settings); store.put("settings", "default", settings); return json(settings);
 				}
 				if (["/api/import/preview", "/api/import"].includes(route) && method === "POST") {
 					const body = await request.json();
 					if (!await catalog.getModule(body.moduleId)) throw new CatalogError("模块不存在", 404);
 					if (typeof body.content !== "string") throw new Error("缺少导入内容");
 					const suite = store.parseImport(body.content, body.format, body.replayMode);
+					for(const definition of suite.cases)validateWorkspacePaths(definition,suite.defaults);
 					for (const cwd of [suite.defaults.cwd, ...suite.cases.map(c => c.cwd)]) if (cwd && !path.isAbsolute(cwd)) throw new Error("上传文件的相对 cwd 无法确定，请改为服务端 fixture 绝对路径或删除 cwd 使用空工作区");
 					if (route.endsWith("preview")) { const existing = (await catalog.snapshot()).cases.filter(c => c.moduleId === body.moduleId); return json({ suite, cases: suite.cases.map(c => ({ id: c.id, description: c.description, replayMode: c.replayMode, duplicate: existing.some(e => e.definition.id === c.id) })) }); }
 					return json(await catalog.importCases(body.moduleId, suite, body.policy));
@@ -161,6 +168,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					const body = await request.json();
 					if (!body.moduleId) throw new Error("缺少目标模块");
 					const suite = parseEvalSuite({ defaults: body.defaults, cases: [body.definition] });
+					validateWorkspacePaths(suite.cases[0],suite.defaults);
 					for (const cwd of [suite.defaults.cwd, suite.cases[0].cwd]) if (cwd && !path.isAbsolute(cwd)) throw new Error("fixture 目录须为绝对路径");
 					return json(await catalog.createCase(body.moduleId, suite.defaults, suite.cases[0]), 201);
 				}
@@ -196,6 +204,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 				if (caseMatch && method === "PUT") {
 					const body = await request.json();
 					const suite = parseEvalSuite({ defaults: body.defaults, cases: [body.definition] });
+					validateWorkspacePaths(suite.cases[0],suite.defaults);
 					for (const cwd of [suite.defaults.cwd, suite.cases[0].cwd]) if (cwd && !path.isAbsolute(cwd)) throw new Error("fixture 目录须为绝对路径");
 					return json(await catalog.updateCase(caseMatch[1], body.revision, suite.defaults, suite.cases[0]));
 				}
@@ -252,7 +261,13 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					if (action === "cancel" && method === "POST") { queue.cancel(id); return json(store.detail(id)); }
 					if (method === "GET") {
 						const run = store.detail(id);
-						if (action === "artifacts") { const item = run.items.find(i => i.id === url.searchParams.get("item")); if (!item?.workspace) throw new Error("运行工作区尚未建立"); const directory = path.dirname(item.workspace); return json(url.searchParams.has("file") ? await artifactText(directory, url.searchParams.get("file")!) : await artifacts(directory)); }
+						if (action === "artifacts") {
+ const item = run.items.find(i => i.id === url.searchParams.get("item"));if(!item?.workspace)throw Error("运行工作区尚未建立");
+ const directory=path.join(store.directory,"runs",run.id,item.id);
+ let modern=!!item.result?.workspaceInfo;try{await access(path.join(directory,"workspace.json"));modern=true;}catch{}
+ if(modern){if(!item.result?.evidence)throw Error("运行尚未结束，产物归档后可查看");if(!item.result.evidence.complete)throw Error("产物归档不完整，不能可靠展示文件差异，请查看归档提示。");return json(url.searchParams.has("file")?await archivedArtifactText(directory,item.result.evidence,url.searchParams.get("file")!):await archivedArtifacts(directory,item.result.evidence));}
+ const legacy=path.dirname(item.workspace);return json(url.searchParams.has("file")?await artifactText(legacy,url.searchParams.get("file")!):await artifacts(legacy));
+ }
 						if (action === "export") {
 							if (url.searchParams.get("format") === "markdown") return new Response(repeatReportMarkdown(run), { headers: { "Content-Type": "text/markdown; charset=utf-8", "Content-Disposition": `attachment; filename="eval-${id}-repeat-report.md"` } });
 							if (url.searchParams.get("format") === "csv") {

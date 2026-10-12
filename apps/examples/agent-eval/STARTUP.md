@@ -282,6 +282,10 @@ MongoDB 已有部署需要使用准备账号再次执行 `bun run mongo:prepare`
 
 ## 单轮函数调用格式评测
 
-新增“单轮函数调用（仅检查格式）”，一次请求模型并固定保存原始响应，不执行工具。首期配置 providerId 为 `openai-compatible`，填写模型 ID、兼容服务 `baseUrl` 和密钥环境变量。六个验证器、上传绑定与可导入案例见 [function-calls/README.md](examples/function-calls/README.md)。
+新增“单轮函数调用”，一次请求模型并固定保存原始响应，不执行工具。首期配置 providerId 为 `openai-compatible`，填写模型 ID、兼容服务 `baseUrl` 和密钥环境变量。六个验证器、上传绑定与可导入案例见 [function-calls/README.md](examples/function-calls/README.md)。
 
 已有 MongoDB 部署升级时运行 `bun run mongo:prepare` 更新案例集合校验器，允许 `function-call` 回放方式及工具配置；SQLite 无需结构迁移。旧文字单轮和完整任务方式保持原语义。
+
+## 完整任务工作区选项
+
+案例“配置”及全局“运行配置”中可选择复制后执行（默认）或直接在指定目录执行。复制方式可指定副本保存根目录；直接方式修改保留在原目录，重复运行不恢复初始状态。同一进程内相同/重叠目录任务串行。新历史产物使用固定归档。详见 [工作区执行说明](docs/workspace-execution.md)。已有 MongoDB 部署升级需运行 `bun run mongo:prepare` 更新 workspace 配置合同，SQLite 无需迁移。

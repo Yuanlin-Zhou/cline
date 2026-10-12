@@ -26,6 +26,7 @@ export type EvalDefaults = HeaderConfig & {
 	apiKeyEnv?: string;
 	baseUrl?: string;
 	cwd?: string;
+	workspace?: import("./workspace-config.js").WorkspaceConfig;
 	systemPrompt?: string;
 	maxIterations?: number;
 	timeoutMs?: number;
@@ -41,6 +42,7 @@ export type EvalCase = HeaderConfig & {
 	history: EvalMessage[];
 	prompt: string;
 	cwd?: string;
+	workspace?: import("./workspace-config.js").WorkspaceConfig;
 	systemPrompt?: string;
 	maxIterations?: number;
 	timeoutMs?: number;
@@ -70,6 +72,7 @@ export type AssertionResult = {
 };
 
 export type EvalCaseResult = {
+	workspaceInfo?: import("./workspace-config.js").WorkspaceInfo;
 	functionCallResponse?: import("./function-call.js").FunctionCallResponse;
 	id: string;
 	description?: string;

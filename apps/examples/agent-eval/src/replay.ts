@@ -4,7 +4,7 @@ export type ReplayMode = "single-turn" | "full-task" | "function-call";
 
 export const REPLAY_MODES: Array<{ value: ReplayMode; label: string; description: string; prompt: string }> = [
 	{ value: "single-turn", label: "单轮回放", description: "提供历史上下文和本轮问题，只生成一次模型回复，不调用工具。", prompt: "安装项目依赖应该执行什么命令？" },
-	{ value: "function-call", label: "单轮函数调用（仅检查格式）", description: "公布所选工具，只请求一次模型，保存原始调用；不执行工具。需要 OpenAI-compatible 服务。", prompt: "请调用 read_files 读取 /project/README.md 的第 1 至 10 行。" },
+	{ value: "function-call", label: "单轮函数调用", description: "公布所选工具，只请求一次模型，保存原始调用；不执行工具。需要 OpenAI-compatible 服务。", prompt: "请调用 read_files 读取 /project/README.md 的第 1 至 10 行。" },
 	{ value: "full-task", label: "多轮回放（完整任务）", description: "提供初始任务，Agent 可调用工具连续执行，直到完成或达到限制；历史消息不是逐轮执行脚本。", prompt: "实现 TypeScript slugify 函数，编写并使用 Bun 运行测试，失败后修复，最后总结结果。" },
 ];
 
