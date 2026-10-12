@@ -213,3 +213,7 @@ bun run web
 ## 原生函数调用格式评测
 
 [六工具 Python 验证器及操作说明](function-calls/README.md)提供单轮函数调用专用回放、六个可独立上传的验证器，以及 `importable/function-call-basic.json`（6 个单工具案例）与 `importable/function-call-multi.json`（2 个多调用/历史案例）。先运行准备脚本上传并绑定验证器 ID，再导入生成的 JSON；需要配置 OpenAI-compatible 服务。该模式不执行工具，原文字单轮模式保持不变。
+
+## editor 历史上下文与参数正确性案例
+
+[editor 单轮历史案例](editor-single-turn/README.md)补充 6 个新建、局部替换、按行插入、末尾追加、本轮覆盖旧计划和同轮双文件编辑场景。每个案例包含两轮历史消息与本轮输入，专用 Python 脚本自动核对路径、内容、换行和操作参数。先用该目录的 `prepare.py` 上传绑定，再导入生成的 JSON；不执行真实文件操作。

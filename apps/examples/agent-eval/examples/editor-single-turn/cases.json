@@ -1,0 +1,401 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "editor-history-create",
+      "description": "从历史约定恢复目标路径和完整文件内容",
+      "replayMode": "function-call",
+      "functionCall": {
+        "tools": [
+          "editor"
+        ],
+        "toolChoice": "auto"
+      },
+      "systemPrompt": "你正在进行工具调用参数评测。只根据历史消息和本轮问题生成原生 editor 调用；本模式不执行工具。不要把调用写成普通文字或 JSON 代码块。历史中已提供所需文件内容和行数，不需要读取文件。",
+      "tags": [
+        "editor",
+        "历史上下文",
+        "参数正确性"
+      ],
+      "history": [
+        {
+          "role": "user",
+          "content": "项目根目录是 /project。请记住：稍后需要创建 /project/docs/start.txt，该文件目前不存在。"
+        },
+        {
+          "role": "assistant",
+          "content": "记住了目标文件尚不存在。"
+        },
+        {
+          "role": "user",
+          "content": "文件内容必须精确为两行：第一行“安装依赖：bun install”，第二行“运行测试：bun run test”。每行末尾均使用一个 LF 换行，第二行末尾也有换行。"
+        },
+        {
+          "role": "assistant",
+          "content": "明白，使用 Bun，并保留最后一个换行。"
+        }
+      ],
+      "prompt": "请按刚才约定创建文件。只调用一次 editor，不要添加其他内容。",
+      "grading": {
+        "version": 1,
+        "rules": [
+          {
+            "id": "editor-expected",
+            "kind": "script",
+            "verifierId": "example-editor-scenarios",
+            "required_inputs": [
+              "execution",
+              "diagnostics"
+            ],
+            "params": {
+              "expected_count": 1,
+              "expected_total_calls": 1,
+              "allowed_tools": [
+                "editor"
+              ],
+              "expected_calls": [
+                {
+                  "path": "/project/docs/start.txt",
+                  "new_text": "安装依赖：bun install\n运行测试：bun run test\n",
+                  "old_text": null,
+                  "insert_line": null
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "editor-history-replace",
+      "description": "保留其他行，只替换历史提供的准确旧片段",
+      "replayMode": "function-call",
+      "functionCall": {
+        "tools": [
+          "editor"
+        ],
+        "toolChoice": "auto"
+      },
+      "systemPrompt": "你正在进行工具调用参数评测。只根据历史消息和本轮问题生成原生 editor 调用；本模式不执行工具。不要把调用写成普通文字或 JSON 代码块。历史中已提供所需文件内容和行数，不需要读取文件。",
+      "tags": [
+        "editor",
+        "历史上下文",
+        "参数正确性"
+      ],
+      "history": [
+        {
+          "role": "user",
+          "content": "文件 /project/config/app.env 已存在，完整内容如下。每行均以 LF 结束，包括最后一行：\n```text\nMODE=dev\nPORT=3000\nLOG_LEVEL=debug\n```"
+        },
+        {
+          "role": "assistant",
+          "content": "已知这三行配置，每行均以 LF 结束。"
+        },
+        {
+          "role": "user",
+          "content": "本次只允许把端口从 3000 改为 8080，MODE 和 LOG_LEVEL 必须保持不变。"
+        },
+        {
+          "role": "assistant",
+          "content": "我会通过匹配原端口行进行局部替换。"
+        }
+      ],
+      "prompt": "现在执行这项修改。只发出一次 editor 替换调用，old_text 必须只包含原端口行（含换行），不要重写整份文件。",
+      "grading": {
+        "version": 1,
+        "rules": [
+          {
+            "id": "editor-expected",
+            "kind": "script",
+            "verifierId": "example-editor-scenarios",
+            "required_inputs": [
+              "execution",
+              "diagnostics"
+            ],
+            "params": {
+              "expected_count": 1,
+              "expected_total_calls": 1,
+              "allowed_tools": [
+                "editor"
+              ],
+              "expected_calls": [
+                {
+                  "path": "/project/config/app.env",
+                  "new_text": "PORT=8080\n",
+                  "old_text": "PORT=3000\n",
+                  "insert_line": null
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "editor-history-insert",
+      "description": "依据历史行号，在指定行之前插入并保留原行",
+      "replayMode": "function-call",
+      "functionCall": {
+        "tools": [
+          "editor"
+        ],
+        "toolChoice": "auto"
+      },
+      "systemPrompt": "你正在进行工具调用参数评测。只根据历史消息和本轮问题生成原生 editor 调用；本模式不执行工具。不要把调用写成普通文字或 JSON 代码块。历史中已提供所需文件内容和行数，不需要读取文件。",
+      "tags": [
+        "editor",
+        "历史上下文",
+        "参数正确性"
+      ],
+      "history": [
+        {
+          "role": "user",
+          "content": "文件 /project/src/steps.txt 已存在，完整内容如下。共 3 行，每行以 LF 结束，包括最后一行：\n```text\nprepare\nbuild\nrelease\n```"
+        },
+        {
+          "role": "assistant",
+          "content": "已知共有 3 行。"
+        },
+        {
+          "role": "user",
+          "content": "我们需要在 build 之前插入新的一行 test，原来的 build 和 release 仍保留。"
+        },
+        {
+          "role": "assistant",
+          "content": "明白，应在原第 2 行之前插入。"
+        }
+      ],
+      "prompt": "请执行刚才的插入。使用 editor 的 insert_line，只调用一次；插入内容只能是 test 加一个 LF。",
+      "grading": {
+        "version": 1,
+        "rules": [
+          {
+            "id": "editor-expected",
+            "kind": "script",
+            "verifierId": "example-editor-scenarios",
+            "required_inputs": [
+              "execution",
+              "diagnostics"
+            ],
+            "params": {
+              "expected_count": 1,
+              "expected_total_calls": 1,
+              "allowed_tools": [
+                "editor"
+              ],
+              "expected_calls": [
+                {
+                  "path": "/project/src/steps.txt",
+                  "new_text": "test\n",
+                  "old_text": null,
+                  "insert_line": 2
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "editor-history-append",
+      "description": "依据历史文件行数计算追加边界 line_count + 1",
+      "replayMode": "function-call",
+      "functionCall": {
+        "tools": [
+          "editor"
+        ],
+        "toolChoice": "auto"
+      },
+      "systemPrompt": "你正在进行工具调用参数评测。只根据历史消息和本轮问题生成原生 editor 调用；本模式不执行工具。不要把调用写成普通文字或 JSON 代码块。历史中已提供所需文件内容和行数，不需要读取文件。",
+      "tags": [
+        "editor",
+        "历史上下文",
+        "参数正确性"
+      ],
+      "history": [
+        {
+          "role": "user",
+          "content": "文件 /project/CHANGELOG.txt 已存在，有且只有两行。每行以 LF 结束，包括最后一行，没有额外空白行：\n```text\nv1: init\nv2: fix\n```"
+        },
+        {
+          "role": "assistant",
+          "content": "已知行数为 2。"
+        },
+        {
+          "role": "user",
+          "content": "待添加的变更项精确为 v3: improve，并以一个 LF 换行结束。旧内容保持不变。"
+        },
+        {
+          "role": "assistant",
+          "content": "明白，只追加这一行。"
+        }
+      ],
+      "prompt": "现在用一次 editor 插入调用追加到文件末尾。请根据历史中的行数填写 insert_line。",
+      "grading": {
+        "version": 1,
+        "rules": [
+          {
+            "id": "editor-expected",
+            "kind": "script",
+            "verifierId": "example-editor-scenarios",
+            "required_inputs": [
+              "execution",
+              "diagnostics"
+            ],
+            "params": {
+              "expected_count": 1,
+              "expected_total_calls": 1,
+              "allowed_tools": [
+                "editor"
+              ],
+              "expected_calls": [
+                {
+                  "path": "/project/CHANGELOG.txt",
+                  "new_text": "v3: improve\n",
+                  "old_text": null,
+                  "insert_line": 3
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "editor-history-latest-request",
+      "description": "本轮明确覆盖历史中的旧路径和旧内容",
+      "replayMode": "function-call",
+      "functionCall": {
+        "tools": [
+          "editor"
+        ],
+        "toolChoice": "auto"
+      },
+      "systemPrompt": "你正在进行工具调用参数评测。只根据历史消息和本轮问题生成原生 editor 调用；本模式不执行工具。不要把调用写成普通文字或 JSON 代码块。历史中已提供所需文件内容和行数，不需要读取文件。",
+      "tags": [
+        "editor",
+        "历史上下文",
+        "参数正确性"
+      ],
+      "history": [
+        {
+          "role": "user",
+          "content": "我们原计划新建 /project/docs/old.txt，内容精确为 OLD 加一个 LF。目标文件不存在。"
+        },
+        {
+          "role": "assistant",
+          "content": "记住了这个原计划。"
+        },
+        {
+          "role": "user",
+          "content": "先不要执行，后续我可能调整路径和内容。"
+        },
+        {
+          "role": "assistant",
+          "content": "好的，等待本轮最终要求。"
+        }
+      ],
+      "prompt": "原计划取消。现在只创建 /project/docs/final.txt，内容精确为 FINAL 后接一个 LF 换行。不要操作 old.txt，不要使用旧内容。只发出一次 editor 新建调用。",
+      "grading": {
+        "version": 1,
+        "rules": [
+          {
+            "id": "editor-expected",
+            "kind": "script",
+            "verifierId": "example-editor-scenarios",
+            "required_inputs": [
+              "execution",
+              "diagnostics"
+            ],
+            "params": {
+              "expected_count": 1,
+              "expected_total_calls": 1,
+              "allowed_tools": [
+                "editor"
+              ],
+              "expected_calls": [
+                {
+                  "path": "/project/docs/final.txt",
+                  "new_text": "FINAL\n",
+                  "old_text": null,
+                  "insert_line": null
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "editor-history-two-files",
+      "description": "历史提供两个文件，本轮要求同一响应按指定顺序局部替换",
+      "replayMode": "function-call",
+      "functionCall": {
+        "tools": [
+          "editor"
+        ],
+        "toolChoice": "auto"
+      },
+      "systemPrompt": "你正在进行工具调用参数评测。只根据历史消息和本轮问题生成原生 editor 调用；本模式不执行工具。不要把调用写成普通文字或 JSON 代码块。历史中已提供所需文件内容和行数，不需要读取文件。",
+      "tags": [
+        "editor",
+        "历史上下文",
+        "参数正确性"
+      ],
+      "history": [
+        {
+          "role": "user",
+          "content": "有两个已存在的文件，内容如下，每行以 LF 结束，包括末行。\n/project/a.env：\n```text\nNAME=alpha\nENABLED=false\n```\n/project/b.env：\n```text\nNAME=beta\nENABLED=false\n```"
+        },
+        {
+          "role": "assistant",
+          "content": "知道了两个文件及其原内容。"
+        },
+        {
+          "role": "user",
+          "content": "要求两个文件各自只替换 ENABLED=false 加 LF 为 ENABLED=true 加 LF；NAME 行保持不变。"
+        },
+        {
+          "role": "assistant",
+          "content": "明白，只替换开关行。"
+        }
+      ],
+      "prompt": "请在本轮同一个模型响应中返回两个 editor 调用：第一个修改 a.env，第二个修改 b.env。每个文件只调用一次，使用 old_text 局部替换，不要使用 insert_line 或重写整份文件。",
+      "grading": {
+        "version": 1,
+        "rules": [
+          {
+            "id": "editor-expected",
+            "kind": "script",
+            "verifierId": "example-editor-scenarios",
+            "required_inputs": [
+              "execution",
+              "diagnostics"
+            ],
+            "params": {
+              "expected_count": 2,
+              "expected_total_calls": 2,
+              "allowed_tools": [
+                "editor"
+              ],
+              "expected_calls": [
+                {
+                  "path": "/project/a.env",
+                  "new_text": "ENABLED=true\n",
+                  "old_text": "ENABLED=false\n",
+                  "insert_line": null
+                },
+                {
+                  "path": "/project/b.env",
+                  "new_text": "ENABLED=true\n",
+                  "old_text": "ENABLED=false\n",
+                  "insert_line": null
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

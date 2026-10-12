@@ -119,3 +119,16 @@ apps/examples/agent-eval/examples/importable/function-call-basic.json 提供至�
 - 使用相同结果查看组件，适用于案例调试和历史/批次结果；已有原始归档数据无需重新评测。未改后端、SDK 或数据字段。
 
 验证：类型检查与 git diff --check 通过；Chromium 通过四类真实 worker/验证器场景：字符串行号导致验证失败、仅文字无调用、非法响应 JSON、HTTP 503 正文。确认响应区域在检查结论前，原始 arguments 和思考内容可读，完整原文查看/复制/下载与模拟服务返回内容一致，390px 无横向溢出，页面无错误且未产生额外模型请求。
+
+
+## 8. 用户要求的 editor 历史案例补充（2026-10-12）
+
+用户要求在 examples 构造多个包含历史输入、本轮输入的 editor 函数调用案例，验证模型是否返回正确调用。按已有函数调用回放/Python 验证接口补充案例与示例专用脚本；未增加或改变应用功能、SDK、通用六工具验证器的判分语义或存储合同。
+
+位置：examples/editor-single-turn/。cases.json 含 6 例，每例 4 条 user/assistant 历史消息及 prompt，覆盖创建、局部替换、指定行插入、基于 line_count+1 追加、本轮覆盖历史旧计划和同一响应按序修改两个文件。只公布 editor，选择方式 auto，不执行文件修改。历史明确说明已知内容/行数/存在状态。
+
+现有通用 editor 验证器只保证格式正确，无法检查具体路径/内容。示例独立 verify_editor_scenarios.py 内嵌当前 editor 格式校验基线，先验证原生调用，再按 params.expected_calls 严格核对 path/new_text/old_text/insert_line 和调用顺序/数量；可选 null 字段允许省略，真实 LF 不被 trim 或替换。格式正确而参数不符返回 fail，缺少原生响应返回 insufficient。
+
+prepare.py 只上传这一个专用脚本，并生成已绑定真实 ID 的可导入 JSON；原 cases.json 占位 ID 必须先绑定。说明文档给出六例目的、运行方式、判分边界与维护方式。本次仅做案例内容和示例脚本补充，不改变默认格式检查能力。
+
+验证：标准库 test_examples.py 的 3 组测试通过，覆盖六例正确参数/可选字段省略、24 类字段错误、末尾换行、旧计划、双调用顺序/数量和原始响应缺失；Schema 与通用 editor 基线一致。真实 Web 服务 + 本地 mock 模型验证 prepare.py 只上传一脚本、绑定并 HTTP 导入六例、历史与本轮请求内容完全一致、六正例通过、旧路径/内容端到端反例失败；总计 7 次请求，工具未执行。现有 importable-examples.test.ts 2 通过/49 次断言；git diff --check 通过。没有真实模型请求。
