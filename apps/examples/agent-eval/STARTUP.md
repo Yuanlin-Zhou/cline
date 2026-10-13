@@ -289,3 +289,18 @@ MongoDB 已有部署需要使用准备账号再次执行 `bun run mongo:prepare`
 ## 完整任务工作区选项
 
 案例“配置”及全局“运行配置”中可选择复制后执行（默认）或直接在指定目录执行。复制方式可指定副本保存根目录；直接方式修改保留在原目录，重复运行不恢复初始状态。同一进程内相同/重叠目录任务串行。新历史产物使用固定归档。详见 [工作区执行说明](docs/workspace-execution.md)。已有 MongoDB 部署升级需运行 `bun run mongo:prepare` 更新 workspace 配置合同，SQLite 无需迁移。
+
+## 每次模型请求携带独立 ID
+
+在“请求头”中添加固定值，例如头名 `request_id`、值 `{{requestId}}`。每次发送模型 HTTP 请求（含重试）都会生成新的 UUID；同一请求内所有引用使用相同值。适用于 Web 和 CLI 的三个评测模式。`{{sessionId}}` 关联会话，`{{evaluationId}}` 标识案例执行，两者在同次执行中保持不变。请求 ID 与 SDK 消息 ID 不同。环境变量值不做模板展开。
+
+```json
+{
+  "headers": {
+    "session_id": "{{sessionId}}",
+    "request_id": "{{requestId}}"
+  }
+}
+```
+
+运行快照保留模板，最终请求 ID 在发送时填入，不额外写入结果日志。无需修改数据库配置或运行 `mongo:prepare`。

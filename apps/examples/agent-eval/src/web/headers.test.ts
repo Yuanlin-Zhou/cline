@@ -11,10 +11,15 @@ test("Web editor preserves literals, empty values and environment references and
 		headersFromRows([
 			{ name: "Authorization", source: "env", value: "AUTH" },
 			{ name: "X-ID", source: "literal", value: "{{sessionId}}" },
+			{ name: "request_id", source: "literal", value: "{{requestId}}" },
 			{ name: "x-empty", source: "literal", value: "" },
 		]),
 	).toEqual({
-		headers: { "x-id": "{{sessionId}}", "x-empty": "" },
+		headers: {
+			"x-id": "{{sessionId}}",
+			"x-empty": "",
+			request_id: "{{requestId}}",
+		},
 		headersEnv: { authorization: "AUTH" },
 	});
 	expect(() =>
@@ -37,7 +42,7 @@ test("imports, case revisions, repeated run snapshots and worker-shaped suites r
 	try {
 		const defaults = {
 			...store.settings(),
-			headers: { "x-session-id": "{{sessionId}}" },
+			headers: { "x-session-id": "{{sessionId}}", request_id: "{{requestId}}" },
 			headersEnv: { authorization: "AUTH" },
 		};
 		store.put("settings", "default", defaults);

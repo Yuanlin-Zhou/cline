@@ -68,15 +68,15 @@ export function headerEditor(
 	envHint.textContent =
 		"Authorization 等凭据请选择环境变量，填写服务端变量名。";
 	const templateHint = document.createElement("p");
-	templateHint.append("固定值模板：");
-	for (const template of ["{{sessionId}}", "{{caseId}}", "{{evaluationId}}"]) {
+	templateHint.append("请求头模板：");
+	for (const template of ["{{sessionId}}", "{{caseId}}", "{{evaluationId}}", "{{requestId}}"]) {
 		const code = document.createElement("code");
 		code.textContent = template;
 		templateHint.append(code, " ");
 	}
 	const executionHint = document.createElement("p");
 	executionHint.textContent =
-		"evaluationId 标识一次案例执行，完整任务中的模型调用复用该值。";
+		"requestId 每次模型 HTTP 请求（含重试）生成新值；sessionId、evaluationId 在同一次执行中保持不变。";
 	help.append(envHint, templateHint, executionHint);
 	const refresh = () => {
 		empty.hidden = rows.children.length > 0;

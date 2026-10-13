@@ -1,5 +1,5 @@
 import { runFunctionCall, preflightFunctionCall } from "./function-call.js";
-import { resolveHeaders } from "./headers.js";
+import { prepareRequestHeaders } from "./request-headers.js";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { runIsolated } from "./grading/run.js";
@@ -85,8 +85,14 @@ async function runCase(input: {
 		void cline.stop(sessionId).catch(() => undefined);
 	}, timeoutMs);
 
+	let request: ReturnType<typeof prepareRequestHeaders> | undefined;
 	try {
-		const headers = resolveHeaders(defaults, caseDefinition, { sessionId, caseId: caseDefinition.id, evaluationId: randomUUID() });
+		request = prepareRequestHeaders(defaults, caseDefinition, {
+			sessionId,
+			caseId: caseDefinition.id,
+			evaluationId: randomUUID(),
+		});
+		const headers = request.headers;
 		const cwd = overrides.cwd
 			? path.resolve(overrides.cwd)
 			: resolveWorkspace(caseDefinition.cwd ?? defaults.cwd, suiteDirectory);
@@ -105,6 +111,13 @@ async function runCase(input: {
 				apiKey: resolveApiKey(overrides.apiKeyEnv ?? defaults.apiKeyEnv),
 				baseUrl: defaults.baseUrl,
 				...(headers ? { headers } : {}),
+				...(request.dynamic ? {
+					providerConfig: {
+						providerId: overrides.providerId ?? defaults.providerId,
+						modelId: overrides.modelId ?? defaults.modelId,
+						fetch: request.fetch,
+					},
+				} : {}),
 				cwd,
 				workspaceRoot: cwd,
 				mode: toolMode === "full" ? "yolo" : "act",
@@ -170,6 +183,7 @@ async function runCase(input: {
 				: errorMessage(error),
 		};
 	} finally {
+		request?.dispose();
 		clearTimeout(timeout);
 		input.signal?.removeEventListener("abort", abort);
 	}

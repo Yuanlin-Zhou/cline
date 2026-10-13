@@ -34,7 +34,8 @@ Use `defaults.headers` for non-secret header values and `defaults.headersEnv` fo
 {
   "headers": {
     "x-session-id": "{{sessionId}}",
-    "x-message-id": "{{evaluationId}}"
+    "x-evaluation-id": "{{evaluationId}}",
+    "x-request-id": "{{requestId}}"
   },
   "headersEnv": { "Authorization": "EVAL_AUTHORIZATION" }
 }
@@ -44,7 +45,7 @@ Set `EVAL_AUTHORIZATION` securely in the environment of the CLI or Web server **
 
 In **运行配置** and **案例配置**, add rows under **自定义模型请求头**, choosing **固定值** or **环境变量**. The separate **案例请求头覆盖** section takes precedence over default rows, including when changing the value source. Removing a case override restores inheritance; empty objects do not delete inherited headers. An empty literal value is supported.
 
-Literal values support `{{sessionId}}` (the SDK session ID shown in result details), `{{caseId}}` and `{{evaluationId}}` (a new UUID per case execution, including repeats and reruns). A full-task's successive model calls reuse these values. Thus `x-message-id: {{evaluationId}}` identifies an evaluation execution, **not each HTTP request or retry**. Environment variable values are not templated.
+Literal values support `{{sessionId}}` (the SDK session ID shown in result details), `{{caseId}}` and `{{evaluationId}}` (a new UUID per case execution, including repeats and reruns). A full-task's successive model calls reuse these values. `{{requestId}}` generates a new UUID for each model HTTP send, including retries. All references within one request share that UUID. Configure the header name required by your service, such as `request_id` or `X-Request-ID`; this ID is independent of SDK message IDs. Environment variable values are not templated.
 
 OpenAI-compatible endpoints support explicit `Authorization` overriding the API key header; other providers keep their SDK authentication behavior. `apiKeyEnv` remains available. Transport headers such as `Host`, `Content-Type` and `Content-Length`, invalid names/values, unknown templates and duplicate names within one layer are rejected. No CLI `--header` flags or request-body/query parameters are added.
 

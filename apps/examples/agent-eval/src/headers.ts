@@ -20,7 +20,7 @@ const credentials = new Set([
 	"x-api-key",
 	"api-key",
 ]);
-const templates = new Set(["sessionId", "caseId", "evaluationId"]);
+const templates = new Set(["sessionId", "caseId", "evaluationId", "requestId"]);
 
 function validateName(name: string, path: string): string {
 	if (
@@ -88,7 +88,7 @@ export function parseHeaderConfig(
 
 function validateTemplates(value: string, path: string): void {
 	const remaining = value.replace(
-		/\{\{(sessionId|caseId|evaluationId)\}\}/g,
+		/\{\{(sessionId|caseId|evaluationId|requestId)\}\}/g,
 		"",
 	);
 	if (remaining.includes("{{") || remaining.includes("}}"))
@@ -113,7 +113,12 @@ function mergedEntries(
 export function resolveHeaders(
 	defaults: HeaderConfig,
 	definition: HeaderConfig,
-	context: { sessionId: string; caseId: string; evaluationId: string },
+	context: {
+		sessionId: string;
+		caseId: string;
+		evaluationId: string;
+		requestId?: string;
+	},
 	env: Record<string, string | undefined> = process.env,
 ): Record<string, string> | undefined {
 	const resolved: Array<[string, string]> = [];
@@ -127,12 +132,29 @@ export function resolveHeaders(
 				);
 			value = supplied;
 		} else {
-			value = entry.value.replace(/\{\{(\w+)\}\}/g, (_, key: string) =>
-				templates.has(key) ? context[key as keyof typeof context] : "",
-			);
+			value = entry.value.replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
+				const replacement = templates.has(key)
+					? context[key as keyof typeof context]
+					: undefined;
+				if (replacement === undefined)
+					throw new Error(
+						`header ${name}: ${key} must be resolved at request sending`,
+					);
+				return replacement;
+			});
 		}
 		validateValue(name, value, `header ${name}`);
 		resolved.push([name, value]);
 	}
 	return resolved.length ? Object.fromEntries(resolved) : undefined;
+}
+
+/** Only literal sources can contain a dynamic request template. */
+export function requestIdHeaderNames(
+	defaults: HeaderConfig,
+	definition: HeaderConfig,
+): string[] {
+	return [...mergedEntries(defaults, definition)]
+		.filter(([, entry]) => !entry.env && entry.value.includes("{{requestId}}"))
+		.map(([name]) => name);
 }

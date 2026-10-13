@@ -3,12 +3,25 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { runIsolated } from "./grading/run.js";
+import { runFunctionCall } from "./function-call.js";
+import { runEvalSuite } from "./runner.js";
 import { parseEvalSuite } from "./schema.js";
 
 test("real SDK requests carry explicit auth and isolated execution IDs while saved suites retain references", async () => {
 	const directory = await mkdtemp(
 		path.join(os.tmpdir(), "eval-headers-integration-"),
 	);
+	const runtimeEnv = {
+		CLINE_DATA_DIR: path.join(directory, "cli-data"),
+		CLINE_SESSION_DATA_DIR: path.join(directory, "cli-data", "sessions"),
+		CLINE_SANDBOX: "1",
+		CLINE_SANDBOX_DATA_DIR: path.join(directory, "cli-data"),
+		CLINE_LOG_ENABLED: "0",
+	};
+	const previousRuntime = Object.fromEntries(
+		Object.keys(runtimeEnv).map((k) => [k, process.env[k]]),
+	);
+	Object.assign(process.env, runtimeEnv);
 	const previous = process.env.EVAL_HEADERS_INTEGRATION_AUTH;
 	const previousKey = process.env.EVAL_HEADERS_INTEGRATION_KEY;
 	process.env.EVAL_HEADERS_INTEGRATION_KEY = "fake-default-api-key";
@@ -16,12 +29,32 @@ test("real SDK requests carry explicit auth and isolated execution IDs while sav
 		"Bearer custom-header-test-secret";
 	const requests: Headers[] = [];
 	const counts = new Map<string, number>();
+	let retried = false;
 	const server = Bun.serve({
 		hostname: "127.0.0.1",
 		port: 0,
 		async fetch(request) {
 			requests.push(new Headers(request.headers));
-			const body = (await request.json()) as { messages: unknown[] };
+			const body = (await request.json()) as {
+				messages: unknown[];
+				stream?: boolean;
+			};
+			if (request.headers.get("x-case") === "a" && !retried) {
+				retried = true;
+				return Response.json(
+					{ error: { message: "retry", type: "rate_limit" } },
+					{ status: 429 },
+				);
+			}
+			if (body.stream === false)
+				return Response.json({
+					choices: [
+						{
+							message: { role: "assistant", content: "Done" },
+							finish_reason: "stop",
+						},
+					],
+				});
 			if (JSON.stringify(body).includes("HEADER_ERROR"))
 				return Response.json(
 					{
@@ -36,7 +69,7 @@ test("real SDK requests carry explicit auth and isolated execution IDs while sav
 			const count = (counts.get(session) ?? 0) + 1;
 			counts.set(session, count);
 			const delta =
-				count === 1
+				count === 1 && !JSON.stringify(body).includes("HEADER_SINGLE")
 					? {
 							role: "assistant",
 							tool_calls: [
@@ -60,7 +93,10 @@ test("real SDK requests carry explicit auth and isolated execution IDs while sav
 						{
 							index: 0,
 							delta: {},
-							finish_reason: count === 1 ? "tool_calls" : "stop",
+							finish_reason:
+								count === 1 && !JSON.stringify(body).includes("HEADER_SINGLE")
+									? "tool_calls"
+									: "stop",
 						},
 					],
 					usage: { prompt_tokens: body.messages.length, completion_tokens: 1 },
@@ -87,6 +123,8 @@ test("real SDK requests carry explicit auth and isolated execution IDs while sav
 					"x-session-id": "{{sessionId}}",
 					"x-message-id": "{{evaluationId}}",
 					"x-case": "{{caseId}}",
+					"x-request-id": "{{requestId}}",
+					"x-trace": "req/{{requestId}}/{{requestId}}",
 				},
 				headersEnv: { Authorization: "EVAL_HEADERS_INTEGRATION_AUTH" },
 				tools: "read-only",
@@ -123,7 +161,10 @@ test("real SDK requests carry explicit auth and isolated execution IDs while sav
 			const calls = requests.filter(
 				(headers) => headers.get("x-session-id") === result.sessionId,
 			);
-			expect(calls).toHaveLength(2);
+			expect(calls).toHaveLength(result.id === "a" ? 3 : 2);
+			expect(new Set(calls.map((h) => h.get("x-request-id"))).size).toBe(
+				calls.length,
+			);
 			expect(
 				new Set(calls.map((headers) => headers.get("x-message-id"))).size,
 			).toBe(1);
@@ -132,11 +173,52 @@ test("real SDK requests carry explicit auth and isolated execution IDs while sav
 					"Bearer custom-header-test-secret",
 				);
 				expect(headers.get("x-case")).toBe(result.id);
+				const id = headers.get("x-request-id")!;
+				expect(id).toMatch(/^[0-9a-f-]{36}$/);
+				expect(headers.get("x-trace")).toBe(`req/${id}/${id}`);
 			}
 		}
 		expect(
 			new Set(requests.map((headers) => headers.get("x-message-id"))).size,
 		).toBe(2);
+		const single = {
+			...suite.cases[0],
+			id: "single",
+			prompt: "HEADER_SINGLE",
+			replayMode: "single-turn" as const,
+		};
+		const singleResult = await runIsolated({
+			definition: single,
+			defaults: suite.defaults,
+			directory: path.join(directory, "single"),
+		});
+		expect(singleResult.status).toBe("passed");
+		const cli = await runEvalSuite({
+			suite: { ...suite, cases: [{ ...single, id: "cli" }] },
+			suitePath: path.join(directory, "suite.json"),
+			overrides: { stream: false },
+		});
+		expect(cli.cases[0].status).toBe("passed");
+		const fc = await runFunctionCall({
+			definition: {
+				...single,
+				id: "fc",
+				replayMode: "function-call",
+				functionCall: { tools: ["editor"] },
+			},
+			defaults: suite.defaults,
+		});
+		expect(fc.status).toBe("passed");
+		for (const result of [singleResult, cli.cases[0], fc]) {
+			const calls = requests.filter(
+				(h) => h.get("x-session-id") === result.sessionId,
+			);
+			expect(calls).toHaveLength(1);
+			expect(calls[0].get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/);
+		}
+		expect(new Set(requests.map((h) => h.get("x-request-id"))).size).toBe(
+			requests.length,
+		);
 		const failed = await runIsolated({
 			definition: { ...suite.cases[0], prompt: "HEADER_ERROR" },
 			defaults: suite.defaults,
@@ -156,6 +238,10 @@ test("real SDK requests carry explicit auth and isolated execution IDs while sav
 		}
 	} finally {
 		server.stop(true);
+		for (const [key, value] of Object.entries(previousRuntime)) {
+			if (value === undefined) delete process.env[key];
+			else process.env[key] = value;
+		}
 		if (previous === undefined)
 			delete process.env.EVAL_HEADERS_INTEGRATION_AUTH;
 		else process.env.EVAL_HEADERS_INTEGRATION_AUTH = previous;

@@ -6,7 +6,8 @@
     "baseUrl": "https://gateway.example.com/v1",
     "headers": {
       "x-session-id": "{{sessionId}}",
-      "x-message-id": "{{evaluationId}}"
+      "x-evaluation-id": "{{evaluationId}}",
+      "x-request-id": "{{requestId}}"
     },
     "headersEnv": { "Authorization": "EVAL_AUTHORIZATION" }
   },

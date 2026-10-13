@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { resolveHeaders } from "./headers.js";
+import { prepareRequestHeaders } from "./request-headers.js";
 import { evaluateAssertions } from "./assertions.js";
 import {
 	parseFunctionCall,
@@ -79,12 +79,14 @@ export async function runFunctionCall(input: {
 		toolCalls: [],
 		assertions: [],
 	};
+	let request: ReturnType<typeof prepareRequestHeaders> | undefined;
 	try {
-		const headers = resolveHeaders(defaults, definition, {
+		request = prepareRequestHeaders(defaults, definition, {
 			sessionId,
 			caseId: definition.id,
 			evaluationId: randomUUID(),
 		});
+		const headers = request.headers;
 		const requestHeaders = new Headers({ "Content-Type": "application/json" });
 		if (defaults.apiKeyEnv)
 			requestHeaders.set(
@@ -105,7 +107,7 @@ export async function runFunctionCall(input: {
 			...definition.history,
 			{ role: "user", content: definition.prompt },
 		];
-		const response = await fetch(
+		const response = await request.fetch(
 			`${defaults.baseUrl!.replace(/\/$/, "")}/chat/completions`,
 			{
 				method: "POST",
@@ -211,6 +213,7 @@ export async function runFunctionCall(input: {
 					: String(error);
 		result.finishReason = input.signal?.aborted ? "aborted" : "error";
 	} finally {
+		request?.dispose();
 		clearTimeout(timeout);
 		input.signal?.removeEventListener("abort", abort);
 		result.durationMs = Date.now() - started;
