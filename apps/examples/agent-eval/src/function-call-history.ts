@@ -344,10 +344,12 @@ export function readHistoryDocument(source: string): HistoryDocument {
 		}),
 		hasThinking: messages.some(
 			(m) =>
-				Array.isArray(m.content) &&
-				m.content.some((b: any) =>
-					["thinking", "redacted_thinking"].includes(b?.type),
-				),
+				(typeof m.reasoning_content === "string" &&
+					!!m.reasoning_content.trim()) ||
+				(Array.isArray(m.content) &&
+					m.content.some((b: any) =>
+						["thinking", "redacted_thinking"].includes(b?.type),
+					)),
 		),
 		hasInstructions: messages.some((m) =>
 			["system", "developer"].includes(m.role),
@@ -494,8 +496,34 @@ export function convertHistoryDocument(
 			options.systemSource === "file"
 		)
 			return;
+		if (m.reasoning_content !== undefined) {
+			if (m.role !== "assistant")
+				throw Error(`${p}.reasoning_content 只能用于 assistant`);
+			if (
+				m.reasoning_content !== null &&
+				typeof m.reasoning_content !== "string"
+			)
+				throw Error(`${p}.reasoning_content 必须为字符串或 null`);
+			if (
+				typeof m.reasoning_content === "string" &&
+				m.reasoning_content.trim()
+			) {
+				if (!options.ignoreThinking)
+					throw Error(
+						`${p}.reasoning_content 含思考内容，请明确选择“不发送思考块”后继续`,
+					);
+				dropped++;
+			} else notices.push(`${p}.reasoning_content 为空，未导入`);
+		}
 		if (doc.format !== "cline" || !Array.isArray(m.content)) {
-			const allowed = ["role", "content", "name", "tool_calls", "tool_call_id"];
+			const allowed = [
+				"role",
+				"content",
+				"name",
+				"tool_calls",
+				"tool_call_id",
+				"reasoning_content",
+			];
 			if (doc.format === "cline")
 				allowed.push(
 					"id",
@@ -527,6 +555,7 @@ export function convertHistoryDocument(
 				"metadata",
 				"modelInfo",
 				"metrics",
+				"reasoning_content",
 			],
 			p,
 		);
@@ -627,7 +656,7 @@ export function convertHistoryDocument(
 		} else flush();
 	});
 	if (dropped)
-		notices.push(`按用户选择省略 ${dropped} 个思考块，不发送思考及签名`);
+		notices.push(`按用户选择省略 ${dropped} 段思考内容，不发送思考及签名`);
 	if (doc.format === "cline")
 		notices.push(
 			"Cline 消息元数据不发送给模型；这是上下文转换，不是原 SDK 请求逐字节重放",

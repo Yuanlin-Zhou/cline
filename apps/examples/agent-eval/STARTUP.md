@@ -318,3 +318,5 @@ Cline 的 `tool_use`/`tool_result` 会转换为兼容服务的标准工具消息
 Python 验证器的 `ctx["case"]["history"]` 是固定的有效历史，`ctx["case"]["function_call"]` 包含原生历史及来源信息；`ctx["diagnostics"]["tool_calls"]` 仍只包含本轮响应，不混入历史调用。历史试验证继续读取本次执行冻结的输入。
 
 SQLite 无需表迁移；已有 MongoDB 部署升级后运行 `bun run mongo:prepare`，更新 functionCall.history/historySource 集合校验合同。旧案例继续使用原来的纯文本历史。
+
+历史导入也接受助手消息的 `reasoning_content` 字符串或 null：空白值直接省略，非空思考需明确选择“不发送思考块”。其内容不拼入助手正文，也不随请求发送或持久化；不影响原工具调用和结果。示例见 `examples/history-import/openai-reasoning-messages.json`。

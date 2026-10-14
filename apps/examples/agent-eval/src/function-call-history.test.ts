@@ -19,6 +19,63 @@ import {
 } from "./web/mongo-schema.js";
 
 const native = () => structuredClone(clineHistoryExample) as any;
+test("reasoning_content accepts empty fields and requires consent for actual reasoning across formats", () => {
+	for (const example of historyImportExamples) {
+		for (const value of [null, "", "\n", "private reasoning"]) {
+			const raw = JSON.parse(example.value);
+			const index = example.label === "Cline 原生记录" ? 1 : 2;
+			const message = raw.messages[index].data ?? raw.messages[index];
+			message.reasoning_content = value;
+			const doc = readHistoryDocument(JSON.stringify(raw));
+			expect(doc.hasThinking).toBe(value === "private reasoning");
+			if (doc.hasThinking)
+				expect(() => convertHistoryDocument(doc)).toThrow(
+					`messages[${index}].reasoning_content`,
+				);
+			const imported = convertHistoryDocument(doc, {
+				ignoreThinking: doc.hasThinking,
+			});
+			expect(JSON.stringify(imported.history)).not.toContain(
+				"reasoning_content",
+			);
+			expect(JSON.stringify(imported)).not.toContain("private reasoning");
+			expect(
+				imported.history.some((m) => m.tool_calls?.[0].id === "call_1"),
+			).toBe(true);
+			expect(
+				parseFunctionCall({
+					tools: ["editor"],
+					history: imported.history,
+					historySource: imported.source,
+				}).history,
+			).toEqual(imported.history);
+		}
+	}
+});
+
+test("reasoning_content validates type and role without changing tool-chain requirements", () => {
+	for (const value of [false, 1, {}, []]) {
+		const raw = JSON.parse(historyImportExamples[1].value);
+		raw.messages[2].reasoning_content = value;
+		expect(() =>
+			convertHistoryDocument(readHistoryDocument(JSON.stringify(raw)), {
+				ignoreThinking: true,
+			}),
+		).toThrow("必须为字符串或 null");
+	}
+	const wrongRole = native();
+	wrongRole.messages[0].reasoning_content = "";
+	expect(() =>
+		convertHistoryDocument(readHistoryDocument(JSON.stringify(wrongRole))),
+	).toThrow("只能用于 assistant");
+	const pending = JSON.parse(historyImportExamples[1].value);
+	pending.messages[2].reasoning_content = "\n";
+	pending.messages.splice(3);
+	expect(() =>
+		convertHistoryDocument(readHistoryDocument(JSON.stringify(pending))),
+	).toThrow("结尾缺少工具结果");
+});
+
 test("selected current question is validated; only later messages are excluded", () => {
 	const raw = native();
 	raw.messages[3].content[0].unexpected = "bad";
