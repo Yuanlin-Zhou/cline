@@ -6,23 +6,127 @@ import {
 	type HistorySource,
 } from "../../function-call-history.js";
 import { historyImportExamples } from "../../history-import-examples.js";
-import { node, action, row, fold, verifierDialog } from "./verifier-ui.js";
+import { node, action, row, verifierDialog } from "./verifier-ui.js";
 
+const roleLabels = {
+	system: "系统指令",
+	developer: "开发者指令",
+	user: "用户",
+	assistant: "助手",
+	tool: "工具返回",
+};
+const formatLabels = {
+	cline: "Cline 原生记录",
+	openai: "标准 messages",
+	"type-data": "type/data 记录",
+};
+
+function viewJson(title: string, value: unknown) {
+	const body = node("div");
+	body.append(node("pre", JSON.stringify(value, null, 2), "code"));
+	return verifierDialog(title, body, { wide: true });
+}
+function sourceButton(source?: HistorySource) {
+	return action("查看来源与转换说明", () =>
+		viewJson("历史来源与转换说明", source ?? {}),
+	);
+}
+function readableText(text: string) {
+	const body = node("div", "", "HistoryMessage-text");
+	const content = node(
+		"p",
+		text.length > 600 ? text.slice(0, 600) + "…" : text,
+	);
+	body.append(content);
+	if (text.length > 600) {
+		let expanded = false;
+		const button = action("展开全文", () => {
+			expanded = !expanded;
+			content.textContent = expanded ? text : text.slice(0, 600) + "…";
+			button.textContent = expanded ? "收起全文" : "展开全文";
+			button.setAttribute("aria-expanded", String(expanded));
+		});
+		button.setAttribute("aria-expanded", "false");
+		content.id = `history-text-${crypto.randomUUID()}`;
+		button.setAttribute("aria-controls", content.id);
+		body.append(button);
+	}
+	return body;
+}
 function messageCards(messages: NativeHistoryMessage[]) {
 	const list = node("div", "", "HistoryImport-cards");
+	const toolNames = new Map(
+		messages.flatMap((m) =>
+			(m.tool_calls ?? []).map((c) => [c.id, c.function.name] as const),
+		),
+	);
 	messages.forEach((m, i) => {
-		const card = fold(
-			`${i + 1}. ${m.role}${m.tool_calls?.length ? ` · ${m.tool_calls.length} 个工具调用` : ""}${m.tool_call_id ? ` · ${m.tool_call_id}` : ""}`,
+		const card = node(
+			"article",
+			"",
+			`HistoryMessage HistoryMessage--${m.role}`,
 		);
-		const summary = node(
-			"p",
-			typeof m.content === "string"
-				? m.content.slice(0, 180)
-				: (m.tool_calls?.map((c) => c.function.name).join("、") ?? ""),
-			"form-hint",
+		const heading = node("div", "", "HistoryMessage-heading");
+		heading.append(
+			node("span", String(i + 1), "HistoryMessage-number"),
+			node("strong", roleLabels[m.role]),
 		);
-		const detail = node("pre", JSON.stringify(m, null, 2), "code");
-		card.append(summary, detail);
+		if (m.tool_calls?.length)
+			heading.append(
+				node(
+					"span",
+					`调用 ${m.tool_calls.length} 个工具`,
+					"HistoryMessage-tag",
+				),
+			);
+		heading.append(
+			action("查看 JSON", () =>
+				viewJson(`第 ${i + 1} 条 · ${roleLabels[m.role]} · 原始消息 JSON`, m),
+			),
+		);
+		card.append(heading);
+		if (m.tool_call_id) {
+			const tool = node("div", "", "HistoryMessage-tool-ref");
+			tool.append(
+				node("code", toolNames.get(m.tool_call_id) ?? "工具"),
+				node("span", `调用 ID：${m.tool_call_id}`),
+			);
+			card.append(tool);
+		}
+		if (typeof m.content === "string" && m.content.length)
+			card.append(readableText(m.content));
+		for (const call of m.tool_calls ?? []) {
+			const tool = node("section", "", "HistoryMessage-call"),
+				head = node("div", "", "HistoryMessage-call-head");
+			const params = node("pre", "", "code");
+			params.hidden = true;
+			params.id = `history-params-${crypto.randomUUID()}`;
+			const button = action("查看参数", () => {
+				params.hidden = !params.hidden;
+				button.textContent = params.hidden ? "查看参数" : "收起参数";
+				button.setAttribute("aria-expanded", String(!params.hidden));
+				if (!params.hidden && !params.textContent) {
+					try {
+						params.textContent = JSON.stringify(
+							JSON.parse(call.function.arguments),
+							null,
+							2,
+						);
+					} catch {
+						params.textContent = call.function.arguments;
+					}
+				}
+			});
+			button.setAttribute("aria-expanded", "false");
+			button.setAttribute("aria-controls", params.id);
+			head.append(node("code", call.function.name), button);
+			tool.append(
+				head,
+				node("p", `调用 ID：${call.id}`, "HistoryMessage-call-id"),
+				params,
+			);
+			card.append(tool);
+		}
 		list.append(card);
 	});
 	return list;
@@ -148,11 +252,10 @@ export function historyImportEditor(
 				converted.source.notices.forEach((n) =>
 					preview.append(node("p", n, "form-hint")),
 				);
-				const provenance = fold("来源索引与转换说明");
-				provenance.append(
-					node("pre", JSON.stringify(converted.source, null, 2), "code"),
+				preview.append(
+					messageCards(messages),
+					row(sourceButton(converted.source)),
 				);
-				preview.append(messageCards(messages), provenance);
 				apply.disabled = false;
 			} catch (e) {
 				status.textContent = `识别为 ${doc.format}，尚未导入。`;
@@ -259,32 +362,33 @@ export function historyImportEditor(
 		saved.replaceChildren();
 		saved.hidden = mode !== "function-call" || history === undefined;
 		if (history !== undefined) {
-			saved.append(
+			const overview = node("div", "", "HistoryImport-overview");
+			overview.append(
+				node("strong", `${history.length} 条历史消息`),
 				node(
-					"p",
-					`已导入 ${history.length} 条原生历史 · ${source?.format ?? "标准消息"}${source?.sessionId ? ` · 来源会话 ${source.sessionId}` : ""}`,
+					"span",
+					source ? formatLabels[source.format] : "标准消息",
 					"form-hint",
 				),
 			);
-			if (history.some((m) => ["system", "developer"].includes(m.role)))
-				saved.append(
-					node(
-						"p",
-						"本案例使用导入的系统指令，配置中的系统提示词不叠加。",
-						"form-hint",
-					),
+			if (history.some((m) => ["system", "developer"].includes(m.role))) {
+				const instruction = node(
+					"span",
+					"使用导入的系统指令",
+					"HistoryMessage-tag",
 				);
-			const provenance = fold("来源索引与转换说明");
-			provenance.append(
-				node("pre", JSON.stringify(source ?? {}, null, 2), "code"),
-			);
-			saved.append(messageCards(history), provenance);
+				instruction.title = "配置中的系统提示词不重复叠加。";
+				overview.append(instruction);
+			}
+			saved.append(overview, messageCards(history));
+			if (source) saved.append(row(sourceButton(source)));
 		}
 		modeHint.textContent =
 			mode !== "function-call" && history !== undefined
 				? "原生历史已保留，仅用于单轮函数调用；当前模式不会使用这些内容。"
 				: "支持 Cline 原生记录和标准 function call JSON；导入前可预览调用链并选择本轮输入。";
-		modeHint.hidden = mode !== "function-call" && history === undefined;
+		modeHint.hidden =
+			mode === "function-call" ? history !== undefined : history === undefined;
 	}
 	element.append(buttons, modeHint, saved);
 	render();

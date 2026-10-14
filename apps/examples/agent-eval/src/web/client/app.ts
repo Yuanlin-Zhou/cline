@@ -1077,7 +1077,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 		field("标签", tagsEditor.element, "新增或选择已有标签，保存后生效。"),
 	);
 
-	const historyBox = h("details", { class: "Box mt-3", open: replayMode === "function-call" || definition.history.length > 0 || definition.functionCall?.history !== undefined });
+	const historyBox = h("details", { class: "Box mt-3 HistoryPanel", open: replayMode === "function-call" || definition.history.length > 0 || definition.functionCall?.history !== undefined });
 	historyBox.append(h("summary", { class: "Box-header", id:"history-title" }, "历史消息（可选）"));
 	const historyBody = h("div", { class: "Box-body" });
 	const legacyHistoryControls = h("div", { class: "section-title" },
@@ -1197,7 +1197,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 		const single = replayMode !== "full-task";
 		functionChecks.element.hidden = replayMode !== "function-call";
 		nativeHistory.setMode(replayMode);
-		document.getElementById("history-title")!.textContent = replayMode === "function-call" ? "历史对话（可粘贴 JSON 导入）" : "历史消息（可选）";
+		document.getElementById("history-title")!.textContent = replayMode === "function-call" ? "历史对话" : "历史消息（可选）";
 		const hasNative = replayMode === "function-call" && nativeHistory.read().history !== undefined;
 		legacyHistoryControls.hidden = hasNative;historyRows.hidden = hasNative;
 		taskGrading.setMode(replayMode);
@@ -1209,6 +1209,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 		document.getElementById("case-run")!.textContent = `运行${replayLabel(replayMode)}`;
 		document.getElementById("prompt-title")!.textContent = single ? "本轮问题 *" : "任务指令 *";
 		document.getElementById("prompt-hint")!.textContent = `示例：${caseExample(replayMode).prompt}`;
+		document.getElementById("history-hint")!.hidden = hasNative;
 		document.getElementById("history-hint")!.textContent = single ? "可选，为本轮问题提供上下文。例如用户：项目使用 Bun。留空则只发送本轮问题。" : "可选，作为任务初始背景；不会依次重放这些消息。";
 		if (!inlineRunId) resultBody.replaceChildren(h("p", { class: "muted" }, `点击「运行${replayLabel(replayMode)}」开始调试，结果将在此显示。`));
 	};

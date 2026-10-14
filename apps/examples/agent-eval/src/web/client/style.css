@@ -702,4 +702,34 @@ button, input, select, textarea, a, summary { scroll-margin: 20px; }
 
 .WorkspaceEditor [hidden] { display: none !important; }
 .WorkspaceEditor { min-width: 0; }
+
+/* Imported histories read like a conversation; JSON is a secondary action. */
+.HistoryPanel > summary { list-style: none; }
+.HistoryPanel > summary::-webkit-details-marker { display: none; }
+.HistoryPanel > summary::before, .HistoryPanel[open] > summary::before { content: none; }
+.HistoryPanel > summary::after { content: "展开"; font-size: 12px; font-weight: 400; color: var(--color-accent-fg); }
+.HistoryPanel[open] > summary::after { content: "收起"; }
+.HistoryImport, .HistoryImport-panel { min-width: 0; }
+.HistoryImport-overview { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin: 14px 0 12px; }
+.HistoryImport-overview .form-hint { margin: 0; }
+.HistoryImport-cards { display: grid; gap: 10px; }
+.HistoryMessage { padding: 12px 14px; border: 1px solid var(--color-border-default); border-left: 3px solid var(--color-border-default); border-radius: var(--radius); min-width: 0; }
+.HistoryMessage--user { border-left-color: var(--color-accent-emphasis); background: #f6faff; }
+.HistoryMessage--assistant { border-left-color: #8250df; }
+.HistoryMessage--system, .HistoryMessage--developer { background: var(--color-canvas-subtle); }
+.HistoryMessage--tool { border-left-color: #1a7f37; }
+.HistoryMessage-heading, .HistoryMessage-call-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.HistoryMessage-heading { margin-bottom: 8px; }
+.HistoryMessage-heading > .btn { margin-left: auto; }
+.HistoryMessage-number { color: var(--color-fg-muted); font-size: 12px; }
+.HistoryMessage-tag { font-size: 12px; border-radius: 4px; padding: 2px 6px; background: var(--color-canvas-subtle); color: var(--color-fg-muted); }
+.HistoryMessage-text p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.HistoryMessage-text > .btn { margin-top: 8px; }
+.HistoryMessage-call { margin-top: 8px; padding: 10px 12px; background: var(--color-canvas-subtle); border-radius: 6px; min-width: 0; }
+.HistoryMessage-call-head > code { flex: 1; overflow-wrap: anywhere; }
+.HistoryMessage-call-id, .HistoryMessage-tool-ref { margin: 6px 0 0; color: var(--color-fg-muted); font-size: 12px; overflow-wrap: anywhere; }
+.HistoryMessage-tool-ref { display: flex; gap: 8px 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.HistoryMessage-call pre { margin: 10px 0 0; max-height: 320px; overflow: auto; }
+.HistoryMessage .btn { font-size: 12px; }
+@media (max-width: 480px) { .HistoryMessage { padding: 10px; } .HistoryMessage-call { padding: 8px; } }
 .WorkspaceEditor .form-hint { overflow-wrap: anywhere; line-height: 1.6; }
