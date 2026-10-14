@@ -1,0 +1,35 @@
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "你是代码助手。需要修改文件时使用 editor 工具。"
+    },
+    {
+      "role": "user",
+      "content": "读取 demo.py"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_1",
+          "type": "function",
+          "function": {
+            "name": "read_files",
+            "arguments": "{\"paths\":[\"demo.py\"]}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_1",
+      "content": "print('hello')\n"
+    },
+    {
+      "role": "user",
+      "content": "把 demo.py 中的 hello 改成 world，使用 editor 工具。"
+    }
+  ]
+}

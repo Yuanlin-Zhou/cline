@@ -10,7 +10,7 @@ import { safeRelative } from "./schema.js";
 export type InputSection = { status: string; completeness: string; issues: string[] };
 export type ValidationContext = {
 	context_version: 2; run: { run_id?: string; item_id: string; round: number; session_id: string };
-	case: { id: string; prompt: string; history: unknown[]; replay_mode: string };
+	case: { id: string; prompt: string; history: unknown[]; replay_mode: string; function_call?: EvalCase["functionCall"] };
 	execution: InputSection & { text: string; finish_reason?: string; error?: string; duration_ms: number; iterations: number; usage: unknown };
 	conversation: InputSection & { source: string; scope: string; messages: Array<{ id: string; index: number; role: string; blocks: Array<Record<string, unknown>> }> };
 	diagnostics: InputSection & { tool_calls: unknown[]; capabilities: EvidenceManifest["capabilities"]; events_ref?: string; function_call_response?: EvalCaseResult["functionCallResponse"] };
@@ -40,7 +40,7 @@ export async function freezeValidationInput(input: { directory: string; definiti
 	const executionStatus = result.execution?.status ?? (result.status === "error" ? "error" : "completed");
 	const ctx: ValidationContext = {
 		context_version: 2, run: { run_id: input.runId, item_id: input.itemId ?? path.basename(directory), round: input.round ?? 1, session_id: result.sessionId },
-		case: { id: definition.id, prompt: definition.prompt, history: definition.history ?? [], replay_mode: definition.replayMode ?? "single-turn" },
+		case: { id: definition.id, prompt: definition.prompt, history: definition.replayMode === "function-call" ? definition.functionCall?.history ?? definition.history ?? [] : definition.history ?? [], ...(definition.replayMode === "function-call" && definition.functionCall ? {function_call:definition.functionCall} : {}), replay_mode: definition.replayMode ?? "single-turn" },
 		execution: { ...complete(executionStatus), text: result.text, finish_reason: result.finishReason, error: result.error, duration_ms: result.durationMs, iterations: result.iterations, usage: result.usage },
 		conversation: { status: session.status, completeness: session.completeness, issues: session.issues, source: "sdk_saved_context", scope: "main_session", messages: session.messages.map((m, index) => ({ id: `${result.sessionId}:${index}`, index, role: String(m.role ?? "unknown"), blocks: contentBlocks(m.content) })) },
 		diagnostics: { ...complete(diagnostic || result.toolCalls.length || result.functionCallResponse ? "ready" : "missing", "unknown", ["工具通知仅供诊断，不证明实际执行或审批；事件记录可能截断。"]), ...(result.functionCallResponse ? { function_call_response: result.functionCallResponse } : {}), tool_calls: result.toolCalls, capabilities: { ...evidence.capabilities }, events_ref: diagnostic?.id },

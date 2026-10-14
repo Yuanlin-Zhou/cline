@@ -95,16 +95,16 @@ export async function runFunctionCall(input: {
 			);
 		for (const [name, value] of Object.entries(headers ?? {}))
 			requestHeaders.set(name, value);
+		const history = config.history ?? definition.history;
+		const importedInstructions = history.some(
+			(m) => m.role === "system" || m.role === "developer",
+		);
+		const systemPrompt = definition.systemPrompt ?? defaults.systemPrompt;
 		const messages = [
-			...((definition.systemPrompt ?? defaults.systemPrompt)
-				? [
-						{
-							role: "system",
-							content: definition.systemPrompt ?? defaults.systemPrompt,
-						},
-					]
+			...(!importedInstructions && systemPrompt
+				? [{ role: "system", content: systemPrompt }]
 				: []),
-			...definition.history,
+			...history,
 			{ role: "user", content: definition.prompt },
 		];
 		const response = await request.fetch(

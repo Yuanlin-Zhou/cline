@@ -68,9 +68,20 @@ export function functionCallEditor(initial?: FunctionCallConfig) {
 	);
 	return {
 		element,
+		setHistory(
+			history: FunctionCallConfig["history"],
+			source?: FunctionCallConfig["historySource"],
+		) {
+			config.history = history;
+			config.historySource = source;
+		},
 		read() {
 			try {
 				const result = parseFunctionCall({
+					...(config.history !== undefined ? { history: config.history } : {}),
+					...(config.historySource
+						? { historySource: config.historySource }
+						: {}),
 					tools: inputs.filter((i) => i.checked).map((i) => i.value),
 					toolChoice: choice.value,
 				});

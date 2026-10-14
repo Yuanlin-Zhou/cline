@@ -221,3 +221,5 @@ bun run web
 ## 完整任务工作区执行方式
 
 [workspace-execution/suite.json](workspace-execution/suite.json)展示复制后执行与直接目录执行两种配置。将占位路径换成服务器实际绝对路径后导入；具体默认值、并发、历史产物与 CLI 兼容见 [工作区执行说明](../docs/workspace-execution.md)。
+
+历史对话粘贴示例及已转换的单轮函数调用案例见 [history-import](history-import/README.md)。提供 Cline 原生、标准 messages 和 type/data 三种格式。

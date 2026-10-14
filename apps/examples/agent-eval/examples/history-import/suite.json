@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "defaults": {
+    "providerId": "openai-compatible",
+    "modelId": "your-model",
+    "baseUrl": "http://127.0.0.1:8000/v1"
+  },
+  "cases": [
+    {
+      "id": "editor-with-cline-history",
+      "description": "从 Cline 原生历史生成 editor 调用，不执行历史工具",
+      "replayMode": "function-call",
+      "prompt": "把 demo.py 中的 hello 改成 world，使用 editor 工具。",
+      "history": [],
+      "functionCall": {
+        "tools": [
+          "editor"
+        ],
+        "toolChoice": "auto",
+        "history": [
+          {
+            "role": "system",
+            "content": "你是代码助手。需要修改文件时使用 editor 工具。"
+          },
+          {
+            "role": "user",
+            "content": "读取 demo.py"
+          },
+          {
+            "role": "assistant",
+            "content": "先查看文件。",
+            "tool_calls": [
+              {
+                "id": "call_1",
+                "type": "function",
+                "function": {
+                  "name": "read_files",
+                  "arguments": "{\"paths\":[\"demo.py\"]}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "content": "print('hello')\n",
+            "tool_call_id": "call_1"
+          }
+        ],
+        "historySource": {
+          "format": "cline",
+          "sessionId": "original-session",
+          "notices": [
+            "第 4 条作为本轮输入，后续 0 条不导入",
+            "Cline 消息元数据不发送给模型；这是上下文转换，不是原 SDK 请求逐字节重放"
+          ],
+          "messages": [
+            {
+              "index": 0,
+              "sourceIndex": 0
+            },
+            {
+              "index": 1,
+              "sourceIndex": 0,
+              "id": "m1"
+            },
+            {
+              "index": 2,
+              "sourceIndex": 1,
+              "id": "m2"
+            },
+            {
+              "index": 3,
+              "sourceIndex": 2,
+              "blockIndex": 0,
+              "id": "m3"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { historyImportEditor } from "./history-import.js";
 import { workspaceEditor } from "./workspace-editor.js";
 const workspaceEditors = new Map<string, ReturnType<typeof workspaceEditor>>();
 import { modelResponse } from "./model-response.js";
@@ -1076,15 +1077,21 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 		field("标签", tagsEditor.element, "新增或选择已有标签，保存后生效。"),
 	);
 
-	const historyBox = h("details", { class: "Box mt-3", open: definition.history.length > 0 });
-	historyBox.append(h("summary", { class: "Box-header" }, "历史消息（可选）"));
+	const historyBox = h("details", { class: "Box mt-3", open: replayMode === "function-call" || definition.history.length > 0 || definition.functionCall?.history !== undefined });
+	historyBox.append(h("summary", { class: "Box-header", id:"history-title" }, "历史消息（可选）"));
 	const historyBody = h("div", { class: "Box-body" });
-	historyBody.append(
-		h("div", { class: "section-title" },
+	const legacyHistoryControls = h("div", { class: "section-title" },
 			h("span", {}, "历史消息"),
 			...(["user", "assistant"] as const).map((role) => h("button", { class: "btn btn-sm", onclick: () => { definition.history.push({ role, content: "" }); renderHistory(); } }, role === "user" ? "＋ 用户消息" : "＋ 助手消息")),
-		),
-	);
+		);
+	const nativeHistory = historyImportEditor(definition.functionCall ?? {}, value => {
+		definition.history = [];
+		definition.functionCall = {...(definition.functionCall ?? {tools: ["read_files","search_codebase","run_commands","fetch_web_content","editor","skills"]}),history:value.history,historySource:value.historySource};
+		functionChecks.setHistory(value.history,value.historySource);
+		if(value.prompt!==undefined)(document.getElementById("f-prompt") as HTMLTextAreaElement).value=value.prompt;
+		historyBox.toggleAttribute("open",true);updateMode();renderHistory();
+	},()=>definition.history.length);
+	historyBody.append(nativeHistory.element,legacyHistoryControls);
 	const historyRows = h("div", { id: "history-rows" });
 	historyBody.append(historyRows, h("div", { class: "form-hint", id: "history-hint" }));
 	historyBox.append(historyBody);
@@ -1098,7 +1105,9 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 				const sample = caseExample(replayMode);
 				(document.getElementById("f-prompt") as HTMLTextAreaElement).value = sample.prompt;
 				if (!val("f-id")) (document.getElementById("f-id") as HTMLInputElement).value = sample.id;
-				definition.history = structuredClone(sample.history); renderHistory();
+				nativeHistory.reset();functionChecks.setHistory(undefined);
+				if(definition.functionCall){definition.functionCall.history=undefined;definition.functionCall.historySource=undefined;}
+				definition.history = structuredClone(sample.history);updateMode(); renderHistory();
 				historyBox.toggleAttribute("open", sample.history.length > 0);
 				(document.getElementById("a-contains") as HTMLTextAreaElement).value = (sample.assertions?.contains ?? []).join("\n");
 				replyChecks.refresh();
@@ -1187,6 +1196,10 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 	const updateMode = (): void => {
 		const single = replayMode !== "full-task";
 		functionChecks.element.hidden = replayMode !== "function-call";
+		nativeHistory.setMode(replayMode);
+		document.getElementById("history-title")!.textContent = replayMode === "function-call" ? "历史对话（可粘贴 JSON 导入）" : "历史消息（可选）";
+		const hasNative = replayMode === "function-call" && nativeHistory.read().history !== undefined;
+		legacyHistoryControls.hidden = hasNative;historyRows.hidden = hasNative;
 		taskGrading.setMode(replayMode);
 		fileGoal.classList.toggle("Grading-goal--restricted", single); fileGoal.title = single ? "文件检查需要完整任务，可点击切换并选择检查类型。" : "添加文件检查";
 		envBox.hidden = single;

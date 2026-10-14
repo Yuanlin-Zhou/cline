@@ -304,3 +304,17 @@ MongoDB 已有部署需要使用准备账号再次执行 `bun run mongo:prepare`
 ```
 
 运行快照保留模板，最终请求 ID 在发送时填入，不额外写入结果日志。无需修改数据库配置或运行 `mongo:prepare`。
+
+## 单轮函数调用：粘贴历史对话
+
+在案例“输入 → 历史对话 → 粘贴 JSON 导入”粘贴 Cline 原生 `.messages.json`、标准 `messages` 或 `type/data` 包装，先解析预览，再导入到草稿并保存。示例见 [examples/history-import](examples/history-import/README.md)。
+
+默认仅替换历史、保留本轮输入；可以选择最后一条或指定的纯文本用户消息作为本轮输入。选择中间消息时，此前作为历史、此后的助手答案等内容不导入。原生 user/tool_result 不算用户问题，不能作为本轮输入。
+
+Cline 的 `tool_use`/`tool_result` 会转换为兼容服务的标准工具消息，调用 ID 和结果一一关联；结构化工具返回编码为 JSON 文本。使用导入的系统指令时，不重复叠加配置中的系统提示词。历史工具不会执行，原 sessionId 不覆盖本次执行 ID。转换提示和来源索引随案例/快照保存，完整粘贴文件及排除的后续内容不额外持久化。
+
+首期仅支持文本和工具轨迹；思考块需明确选择不发送，图片/媒体会阻止导入。压缩导致调用缺失、未闭合工具链等会给出具体路径错误，不补造结果。上限 1 MiB、500 条消息；取消或失败不改变草稿。切换其他评测模式保留配置，但不使用这份原生历史。
+
+Python 验证器的 `ctx["case"]["history"]` 是固定的有效历史，`ctx["case"]["function_call"]` 包含原生历史及来源信息；`ctx["diagnostics"]["tool_calls"]` 仍只包含本轮响应，不混入历史调用。历史试验证继续读取本次执行冻结的输入。
+
+SQLite 无需表迁移；已有 MongoDB 部署升级后运行 `bun run mongo:prepare`，更新 functionCall.history/historySource 集合校验合同。旧案例继续使用原来的纯文本历史。

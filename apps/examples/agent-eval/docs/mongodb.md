@@ -107,3 +107,7 @@ The script library uses `agent_eval_verifiers` in the same MongoDB database (ove
 Each document contains string `_id`, `schemaVersion: 1`, `label`, `filename`, `extension`, UTF-8 `content`, SHA-256 `sha256`/`version`, `timeoutMs: 60000`, and BSON `createdAt`. The upload API performs byte-size, filename, protocol metadata and digest validation. Uploaded source is immutable; uploading the same filename creates a new ID. Do not directly edit these documents in place.
 
 Run submission copies referenced source and metadata into the SQLite RunItem snapshot in the same local transaction that commits the run. Execution materializes that frozen source outside the Agent fixture. A MongoDB outage blocks new script-library reads/uploads, but does not block accepted runs, history or snapshot reruns. SQLite deployments use the existing records store for the script library and do not need MongoDB. CLI JSON suites referencing uploaded IDs use the matching EVAL_CASE_STORAGE and database configuration (or the SQLite EVAL_DATA_DIR).
+
+## Native function-call histories
+
+Function-call cases may store normalized Chat Completions messages in `definition.functionCall.history` and bounded provenance in `historySource`. This is separate from the legacy user/assistant text history. Upgrade existing deployments with `bun run mongo:prepare` to accept the new fields. The application validates tool-call/result pairing, argument JSON, and size limits in addition to the collection shape validator. No existing case data migration is required.
