@@ -322,3 +322,14 @@ SQLite 无需表迁移；已有 MongoDB 部署升级后运行 `bun run mongo:pre
 历史导入也接受助手消息的 `reasoning_content` 字符串或 null：空白值直接省略，非空思考需明确选择“不发送思考块”。其内容不拼入助手正文，也不随请求发送或持久化；不影响原工具调用和结果。示例见 `examples/history-import/openai-reasoning-messages.json`。
 
 Windows 上 Python 上传/测试出现 GBK 解码错误：更新后测试文件显式使用 UTF-8，服务端语法检查按 UTF-8 解码 stdin 字节；更新后需重启 Web 服务。旧测试可临时用 `python -X utf8 examples/function-calls/test_verifiers.py`。客户端 UTF-8 开关不能代替服务端修复，服务端 Python -I 也不会读取 PYTHONUTF8。prepare.py 现在显示 HTTP 错误正文，排查步骤见 [六工具验证器说明](examples/function-calls/README.md#windowsgbk-解码错误或上传返回-http-400)。
+
+
+## 单轮函数调用：批量导入历史对话文件
+
+进入 **案例集 → 导入案例 → 历史对话 JSON（批量生成案例）**，选择目标模块并多选独立 JSON 文件，校验预览后确认导入。每份文件生成一个单轮函数调用案例，可统一选择本轮工具、绑定已上传的 Python 验证器，逐文件修改案例 ID 和续接文案。同名案例可跳过或创建新版本。
+
+以文件实际末尾为准：普通文本用户消息直接作为本轮输入；助手回复或已闭合工具结果结尾则保留完整历史，追加用户“继续”（可修改）。不会向前搜索用户问题并截断其后的原始历史；未闭合工具链须先补齐结果。非空思考内容须明确选择不发送。
+
+有错误文件时整批不写入，须修复或明确移除后重新预览。单批最多 100 文件，单文件 1 MiB/500 条消息，内容合计和请求各限 20 MiB，仅支持 UTF-8 JSON。预览和导入不请求模型或执行工具；运行配置在打开导入页时固定，更新配置后需重新打开页面。MongoDB/SQLite 复用现有事务，无新增数据库迁移。
+
+示例及说明见 [examples/batch-conversations](examples/batch-conversations/README.md)。原“案例集 JSON / JSONL”导入方式保持可用。

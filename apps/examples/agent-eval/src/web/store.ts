@@ -131,7 +131,7 @@ export class EvalStore {
 		return suite;
 	}
 	importCases(moduleId: string, suite: EvalSuite, policy: string) {
-		this.require<Module>("module", moduleId);
+		if (this.require<Module>("module", moduleId).archived) throw new Error("目标模块已归档");
 		if (!["skip", "version"].includes(policy)) throw new Error("重复项策略无效");
 		const existing = this.activeCases().filter(c => c.moduleId === moduleId);
 		let created = 0; let updated = 0; let skipped = 0;

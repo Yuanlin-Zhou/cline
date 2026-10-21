@@ -1,3 +1,4 @@
+import { batchConversationImport } from "./batch-conversations.js";
 import { historyImportEditor } from "./history-import.js";
 import { workspaceEditor } from "./workspace-editor.js";
 const workspaceEditors = new Map<string, ReturnType<typeof workspaceEditor>>();
@@ -797,7 +798,7 @@ async function renderImport(app: HTMLElement): Promise<void> {
 	app.replaceChildren();
 	app.append(h("div", { class: "page-head" },
 		h("h1", { class: "page-title" }, "导入案例"),
-		h("p", { class: "page-desc" }, "上传 JSON/JSONL 或粘贴内容，校验后导入到目标模块"),
+		h("p", { class: "page-desc" }, "导入案例集，或将多个历史对话 JSON 批量生成案例"),
 	));
 
 	let step = 1;
@@ -812,7 +813,17 @@ async function renderImport(app: HTMLElement): Promise<void> {
 
 	const stepsEl = h("div", { class: "Steps" });
 	const bodyEl = h("div", {});
-	app.append(stepsEl, bodyEl);
+	const batch = batchConversationImport({modules:s.modules,settings:s.settings,initialModule:moduleId,api,onDone:(target,result)=>{toast(`已新建 ${result.created} 个、更新 ${result.updated} 个、跳过 ${result.skipped} 个案例`,"success");navigate(`#/cases/${target}`);}});
+	const sourceBar=h("div",{class:"ImportSource",role:"group","aria-label":"导入来源"});
+	const chooseSource=(conversation:boolean)=>{
+		if(batch.isBusy()){toast("正在处理文件或导入，请稍候。","error");return;}
+		stepsEl.hidden=conversation;bodyEl.hidden=conversation;batch.element.hidden=!conversation;
+		caseSource.setAttribute("aria-pressed",String(!conversation));historySource.setAttribute("aria-pressed",String(conversation));caseSource.classList.toggle("btn-primary",!conversation);historySource.classList.toggle("btn-primary",conversation);
+	};
+	const caseSource=h("button",{class:"btn btn-primary",type:"button","aria-pressed":"true",onclick:()=>chooseSource(false)},"案例集 JSON / JSONL");
+	const historySource=h("button",{class:"btn",type:"button","aria-pressed":"false",onclick:()=>chooseSource(true)},"历史对话 JSON（批量生成案例）");
+	sourceBar.append(caseSource,historySource);batch.element.hidden=true;
+	app.append(sourceBar,stepsEl,bodyEl,batch.element);
 
 	const renderSteps = (): void => {
 		stepsEl.replaceChildren(

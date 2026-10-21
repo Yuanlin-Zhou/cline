@@ -1,0 +1,39 @@
+{
+  "messages": [
+    {
+      "type": "system",
+      "data": {
+        "content": "你是代码助手。需要修改文件时使用 editor 工具。"
+      }
+    },
+    {
+      "type": "user",
+      "data": {
+        "content": "读取 demo.py"
+      }
+    },
+    {
+      "type": "assistant",
+      "data": {
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "call_1",
+            "type": "function",
+            "function": {
+              "name": "read_files",
+              "arguments": "{\"paths\":[\"demo.py\"]}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "tool",
+      "data": {
+        "tool_call_id": "call_1",
+        "content": "print('hello')\n"
+      }
+    }
+  ]
+}

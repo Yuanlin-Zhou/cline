@@ -53,7 +53,7 @@ function readableText(text: string) {
 	}
 	return body;
 }
-function messageCards(messages: NativeHistoryMessage[]) {
+export function historyMessageCards(messages: NativeHistoryMessage[]) {
 	const list = node("div", "", "HistoryImport-cards");
 	const toolNames = new Map(
 		messages.flatMap((m) =>
@@ -253,7 +253,7 @@ export function historyImportEditor(
 					preview.append(node("p", n, "form-hint")),
 				);
 				preview.append(
-					messageCards(messages),
+					historyMessageCards(messages),
 					row(sourceButton(converted.source)),
 				);
 				apply.disabled = false;
@@ -380,7 +380,7 @@ export function historyImportEditor(
 				instruction.title = "配置中的系统提示词不重复叠加。";
 				overview.append(instruction);
 			}
-			saved.append(overview, messageCards(history));
+			saved.append(overview, historyMessageCards(history));
 			if (source) saved.append(row(sourceButton(source)));
 		}
 		modeHint.textContent =

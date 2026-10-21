@@ -1,3 +1,5 @@
+import { previewConversations, BATCH_BYTE_LIMIT } from "../batch-conversations.js";
+import { readJsonBody } from "./json-body.js";
 import { access } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { CatalogError, SqliteCatalog, type CatalogRepository } from "./catalog.js";
@@ -49,7 +51,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 	const build = await Bun.build({ entrypoints: [path.join(client, "app.ts")], target: "browser", minify: false });
 	if (!build.success) throw new Error(build.logs.map(String).join("\n"));
 	const js = await build.outputs[0].text();
-	const server = Bun.serve({ hostname: "127.0.0.1", port: options.port ?? Number(process.env.EVAL_PORT ?? 3130), maxRequestBodySize: 8 * 1024 * 1024,
+	const server = Bun.serve({ hostname: "127.0.0.1", port: options.port ?? Number(process.env.EVAL_PORT ?? 3130), maxRequestBodySize: BATCH_BYTE_LIMIT,
 		async fetch(request) {
 			const url = new URL(request.url);
 			if (!["127.0.0.1", "localhost"].includes(url.hostname)) return json({ error: "仅支持本机访问" }, 403);
@@ -81,7 +83,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 				}
 				if (route === "/api/verifiers/runtime-status" && method === "GET") return json(await pythonRuntimeStatus());
 				if (route === "/api/verifiers" && method === "POST") {
-					const body = await request.json(); const parsed = parseUpload(body); const runtime = parsed.extension === ".py" ? await pythonRuntimeStatus() : undefined;
+					const body = await readJsonBody(request); const parsed = parseUpload(body); const runtime = parsed.extension === ".py" ? await pythonRuntimeStatus() : undefined;
 					if (runtime?.ready) await validatePythonSource(parsed.content, await pythonEnvironment());
 					return json({ ...publicUploaded(await verifierRepository.create(body)), syntaxStatus: parsed.extension === ".py" ? runtime?.ready ? "checked" : "pending" : "not_applicable" }, 201);
 				}
@@ -98,7 +100,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 						const preview = JSON.stringify(value.context, null, 2); return json({ text: preview.slice(0, 200000), truncated: preview.length > 200000, sha256: value.sha256 });
 					}
 					if (kind === "verifier-tests" && !testId && method === "POST") {
-						const body = await request.json(); const rule = parseGrading({ version: 1, rules: [{ id: "python-test", kind: "script", verifierId: body.verifierId, params: body.params, required_inputs: body.required_inputs, require_complete: body.require_complete }] })!.rules[0] as Extract<import("../grading/types.js").Rule, { kind: "script" }>;
+						const body = await readJsonBody(request); const rule = parseGrading({ version: 1, rules: [{ id: "python-test", kind: "script", verifierId: body.verifierId, params: body.params, required_inputs: body.required_inputs, require_complete: body.require_complete }] })!.rules[0] as Extract<import("../grading/types.js").Rule, { kind: "script" }>;
 						if (Object.keys(body).some(k => !["verifierId", "params", "required_inputs", "require_complete"].includes(k))) throw new Error("试验证参数包含未知字段");
 						const v = item.verifierSnapshots?.find(v => v.id === body.verifierId) ?? await verifierRepository.get(body.verifierId); if (!v) return json({ error: "脚本不存在" }, 404);
 						return json(await verifierTests.create(item, v, rule), 202);
@@ -137,7 +139,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					const bytes = await readEvidence(path.join(store.directory, "runs", runId, itemId), ref, 4 * 1024 * 1024);
 					return json({ id: ref.id, label: ref.label, text: bytes.includes(0) ? "二进制文件，无法文本预览" : bytes.toString("utf8"), sha256: ref.sha256 });
 				}
-				if (route === "/api/modules" && method === "POST") { const body = await request.json(); return json(await catalog.createModule(body.name, body.description, body.tags), 201); }
+				if (route === "/api/modules" && method === "POST") { const body = await readJsonBody(request); return json(await catalog.createModule(body.name, body.description, body.tags), 201); }
 				if (route === "/api/modules" && method === "GET") return json((await catalog.snapshot()).modules);
 
 				const moduleMatch = route.match(/^\/api\/modules\/([^/]+)(?:\/(archive|unarchive))?$/);
@@ -146,16 +148,32 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					if (method === "GET" && !action) { const module = await catalog.getModule(id); if (!module) throw new CatalogError("模块不存在", 404); return json(module); }
 					if (action === "archive" && method === "POST") { await catalog.archiveModule(id); return json({ archived: true }); }
 					if (action === "unarchive" && method === "POST") { await catalog.setArchived("module", id, false); return json({ archived: false }); }
-					if (method === "PUT") return json(await catalog.updateModule(id, await request.json()));
+					if (method === "PUT") return json(await catalog.updateModule(id, await readJsonBody(request)));
 					return json({ error: "接口不存在" }, 404);
 				}
 				if (route === "/api/settings" && method === "PUT") {
-					const body = await request.json(); const settings = parseEvalSuite({ defaults: body, cases: [{ id: "settings", prompt: "settings" }] }).defaults;
+					const body = await readJsonBody(request); const settings = parseEvalSuite({ defaults: body, cases: [{ id: "settings", prompt: "settings" }] }).defaults;
 					if (settings.cwd && !path.isAbsolute(settings.cwd)) throw new Error("网页 fixture 目录须填写绝对路径");
 					validateWorkspacePaths({id:"settings",prompt:"settings",history:[],replayMode:"full-task"},settings); store.put("settings", "default", settings); return json(settings);
 				}
+				if (["/api/import/conversations/preview", "/api/import/conversations"].includes(route) && method === "POST") {
+					const body = await readJsonBody(request, BATCH_BYTE_LIMIT);
+					const preview = previewConversations(body);
+					const module = await catalog.getModule(body.moduleId);
+					if (!module || module.archived) throw new CatalogError("目标模块不存在或已归档", 404);
+					for (const definition of preview.suite.cases) validateWorkspacePaths(definition, preview.suite.defaults);
+					if (body.options.verifierId) {
+						const verifier = await verifierRepository.get(body.options.verifierId);
+						if (!verifier || verifier.extension !== ".py") throw new CatalogError("所选 Python 验证器不存在或类型不正确，请刷新选择", 422);
+					}
+					const existing = (await catalog.snapshot()).cases.filter(c => c.moduleId === body.moduleId);
+					for (const row of preview.rows) row.duplicate = existing.some(c => c.definition.id === row.caseId);
+					if (route.endsWith("/preview")) return json(preview);
+					if (preview.rows.some(row => row.error)) return json({ error: "存在未通过校验的文件，未写入任何案例；请修正或移除错误文件", rows: preview.rows }, 422);
+					return json(await catalog.importCases(body.moduleId, preview.suite, body.policy), 201);
+				}
 				if (["/api/import/preview", "/api/import"].includes(route) && method === "POST") {
-					const body = await request.json();
+					const body = await readJsonBody(request);
 					if (!await catalog.getModule(body.moduleId)) throw new CatalogError("模块不存在", 404);
 					if (typeof body.content !== "string") throw new Error("缺少导入内容");
 					const suite = store.parseImport(body.content, body.format, body.replayMode);
@@ -165,15 +183,15 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					return json(await catalog.importCases(body.moduleId, suite, body.policy));
 				}
 				if (route === "/api/cases" && method === "POST") {
-					const body = await request.json();
+					const body = await readJsonBody(request);
 					if (!body.moduleId) throw new Error("缺少目标模块");
 					const suite = parseEvalSuite({ defaults: body.defaults, cases: [body.definition] });
 					validateWorkspacePaths(suite.cases[0],suite.defaults);
 					for (const cwd of [suite.defaults.cwd, suite.cases[0].cwd]) if (cwd && !path.isAbsolute(cwd)) throw new Error("fixture 目录须为绝对路径");
 					return json(await catalog.createCase(body.moduleId, suite.defaults, suite.cases[0]), 201);
 				}
-				if (route === "/api/cases/transfer/preview" && request.method === "POST") return json(await catalog.previewTransfer(await request.json()));
-				if (route === "/api/cases/transfer" && request.method === "POST") return json(await catalog.transferCases(await request.json()));
+				if (route === "/api/cases/transfer/preview" && request.method === "POST") return json(await catalog.previewTransfer(await readJsonBody(request)));
+				if (route === "/api/cases/transfer" && request.method === "POST") return json(await catalog.transferCases(await readJsonBody(request)));
 
 				const caseActionMatch = route.match(/^\/api\/cases\/([^/]+)\/(duplicate|archive|unarchive)$/);
 				if (caseActionMatch && method === "POST") {
@@ -202,7 +220,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					await catalog.deleteCase(caseMatch[1]); return json({ deleted: true });
 				}
 				if (caseMatch && method === "PUT") {
-					const body = await request.json();
+					const body = await readJsonBody(request);
 					const suite = parseEvalSuite({ defaults: body.defaults, cases: [body.definition] });
 					validateWorkspacePaths(suite.cases[0],suite.defaults);
 					for (const cwd of [suite.defaults.cwd, suite.cases[0].cwd]) if (cwd && !path.isAbsolute(cwd)) throw new Error("fixture 目录须为绝对路径");
@@ -215,7 +233,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 				if (route === "/api/settings" && method === "GET") return json(store.settings());
 
 				if (route === "/api/runs" && method === "POST") {
-					const body = await request.json();
+					const body = await readJsonBody(request);
 					if (body.defaults) {
 						const parsed = parseEvalSuite({ defaults: body.defaults, cases: [{ id: "run-defaults", prompt: "run-defaults" }] }).defaults;
 						if (parsed.cwd && !path.isAbsolute(parsed.cwd)) throw new Error("fixture 目录须为绝对路径");
@@ -280,7 +298,13 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					}
 				}
 				return json({ error: "接口不存在" }, 404);
-			} catch (error) { return json({ error: error instanceof Error ? error.message : String(error) }, error instanceof TransferError || error instanceof CatalogError ? error.status : 400); }
+			} catch (error) {
+				const status = error instanceof TransferError || error instanceof CatalogError ? error.status : 400;
+				const response = json({ error: error instanceof Error ? error.message : String(error) }, status);
+				// A rejected body may still be arriving; never reuse that HTTP connection.
+				if (status === 413) response.headers.set("Connection", "close");
+				return response;
+			}
 		},
 	});
 	let closing: Promise<void> | undefined;

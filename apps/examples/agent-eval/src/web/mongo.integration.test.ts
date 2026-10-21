@@ -7,7 +7,7 @@ import { MongoVerifiers } from "../grading/uploaded-verifiers.js";
 import { replyTemplate } from "../grading/verifier-guide.js";
 import { MongoClient } from "mongodb";
 import { MongoCatalog, mongoFailure, type MongoConfig } from "./mongo-catalog.js";
-import { prepareMongoCollections, caseToDocument } from "./mongo-schema.js";
+import { prepareMongoCollections, caseToDocument, caseValidator } from "./mongo-schema.js";
 import { EvalStore } from "./store.js";
 import { createEvalServer } from "./server.js";
 import { migrateSqliteCatalog } from "./mongo/migrate.js";
@@ -32,6 +32,22 @@ describe("MongoDB replica-set catalog (set EVAL_TEST_MONGODB_URI)", () => {
 			await cleanup.db("admin").command({ configureFailPoint: "failCommand", mode: "off" }).catch(() => {});
 			await cleanup.db(config.database).dropDatabase();
 		} finally { await cleanup.close(); await repository.close(); rmSync(directory, { recursive: true, force: true }); }
+	});
+	mongoTest("batch conversation imports roll back all cases on Mongo validation failure", async () => {
+		const module = await repository.createModule("batch conversations");
+		const app = await createEvalServer({directory,port:0,storage:"mongodb",catalog:repository});
+		const body = {moduleId:module.id,files:[{filename:"first.json",content:'{"messages":[{"role":"assistant","content":"context"}]}'},{filename:"blocked.json",content:'{"messages":[{"role":"user","content":"actual question"}]}'}],options:{tools:["editor"],continuation:"继续"},defaults:{providerId:"openai-compatible",modelId:"mock",baseUrl:"http://localhost/v1"},policy:"skip"};
+		const post = () => fetch(`http://127.0.0.1:${app.server.port}/api/import/conversations`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+		try {
+			await repository.db.command({collMod:config.caseCollection,validator:{$and:[caseValidator,{"definition.id":{$ne:"blocked"}}]},validationLevel:"strict",validationAction:"error"});
+			expect((await post()).status).toBe(422);
+			expect((await repository.snapshot()).cases).toHaveLength(0);
+			await repository.db.command({collMod:config.caseCollection,validator:caseValidator,validationLevel:"strict",validationAction:"error"});
+			expect(await(await post()).json()).toEqual({created:2,updated:0,skipped:0});
+			const saved=(await repository.snapshot()).cases;
+			expect(saved.find(c=>c.definition.id==="first")?.definition.prompt).toBe("继续");
+			expect(saved.find(c=>c.definition.id==="blocked")?.definition.prompt).toBe("actual question");
+		} finally {await app.close();}
 	});
 	mongoTest("uploaded scripts persist in Mongo and snapshots rerun after the connection closes", async () => {
 		const scripts = new MongoVerifiers(repository.db, "agent_eval_verifiers"); await scripts.preflight();

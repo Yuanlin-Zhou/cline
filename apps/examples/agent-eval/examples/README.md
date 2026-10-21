@@ -22,6 +22,10 @@ export EVAL_VERIFIERS_FILE="$PWD/examples/grading/verifiers.json"
 bun run web
 ```
 
+## 批量导入原始历史对话
+
+[batch-conversations](batch-conversations/README.md) 提供三份可多选的原始会话 JSON，覆盖用户、助手和工具结果结尾。进入“导入案例 → 历史对话 JSON（批量生成案例）”使用，一份文件生成一个单轮函数调用案例。
+
 ## 三层验收
 
 | 层次 | 配置位置 | 验收对象 | 适合检查 |

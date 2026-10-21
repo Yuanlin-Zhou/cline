@@ -710,6 +710,18 @@ button, input, select, textarea, a, summary { scroll-margin: 20px; }
 .HistoryPanel > summary::after { content: "展开"; font-size: 12px; font-weight: 400; color: var(--color-accent-fg); }
 .HistoryPanel[open] > summary::after { content: "收起"; }
 .HistoryImport, .HistoryImport-panel { min-width: 0; }
+.ImportSource { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 20px; }
+.BatchHistory { min-width: 0; }
+.BatchHistory > .form-group { margin-top: 20px; }
+.BatchHistory-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px 20px; margin-top: 14px; }
+.BatchHistory-grid .form-group { margin: 0; min-width: 0; }
+.BatchHistory .form-control { width: 100%; min-width: 0; }
+.BatchHistory-files { display: grid; gap: 12px; }
+.BatchHistory-file { padding: 14px; border: 1px solid var(--color-border-default); border-radius: var(--radius); min-width: 0; }
+.BatchHistory-file-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.BatchHistory-file-head strong, .BatchHistory .form-hint { overflow-wrap: anywhere; }
+.BatchHistory-error { color: var(--color-danger-fg); }
+@media (max-width: 600px) { .BatchHistory-grid { grid-template-columns: minmax(0,1fr); } }
 .HistoryImport-overview { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin: 14px 0 12px; }
 .HistoryImport-overview .form-hint { margin: 0; }
 .HistoryImport-cards { display: grid; gap: 10px; }
