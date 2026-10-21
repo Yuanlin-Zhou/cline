@@ -137,3 +137,17 @@ prepare.py 只上传这一个专用脚本，并生成已绑定真实 ID 的可�
 ## 9. 模式名称文字更正（2026-10-12）
 
 用户明确要求列表名称不再限定“仅检查格式”。将共享模式名称及列表筛选名称统一为“单轮函数调用”，模式卡片、结果标题和列表随共享名称更新；保留一次请求、不执行工具的说明。回放配置值、验证器及执行行为不变。这是既有内容验证能力的文案更正，工作区执行策略另见 SPEC-015。源码检索确认无旧限制性名称，git diff --check 通过。
+
+
+## 10. Windows UTF-8 与上传 400 诊断修复（2026-10-21）
+
+用户在 Windows Python 3.12 上执行 test_verifiers.py，读取 fixtures 时出现 GBK UnicodeDecodeError；prepare.py 的 HTTP 400 堆栈没有显示响应正文。按既有验证器上传/测试范围修复：
+
+- test_verifiers.py 的 manifest 和三个 fixture 读取位置显式指定 UTF-8，不依赖本机默认编码。
+- python-runtime.ts 的语法预检原先用 sys.stdin.read() 读取 Bun 发送的 UTF-8；Windows GBK stdin 可拒绝或错误解码源码。改为读取 stdin.buffer 并明确 utf-8-sig 解码，支持 UTF-8 BOM；仍只做 AST/verify 入口检查，不执行上传代码，不改变验证协议。因 Python -I 隔离模式忽略 PYTHON* 环境变量，不能仅靠 PYTHONUTF8 解决服务端问题。
+- prepare.py 捕获 HTTPError，输出失败脚本名、状态码及有界 UTF-8 错误正文；支持 JSON error 和非 JSON 代理正文。HTTP 失败仍中止，不覆盖旧绑定案例文件。
+- 补充 Windows 临时命令、服务端重启说明及继续排查 400 的方法。没有完整响应正文，不能断定用户环境中的 400 必定由编码造成。
+
+验证：六工具 Python 5 项测试通过；模拟默认文件编码 GBK 后同样 5 项通过。prepare.py 的 2 项标准库 HTTP 测试覆盖六脚本绑定成功、JSON/HTML 400 正文与旧输出保留。新增 GBK stdin 回归 1 项证明旧读取失败、新检查接受中文/特殊字符/BOM且不执行源码，语法及入口错误仍拒绝。既有 Python 6 项回归及原生函数调用 3 项集成通过，含真实上传六脚本、绑定案例、Python 判定和冻结历史；类型检查、构建、git diff --check 通过。
+
+首次与构建并行执行时，既有 100ms Python 超时用例在准备阶段超时失败；无实现改动，单独重跑完整 6 项 Python 回归通过。没有真实 Windows 主机验证；使用 CPython 强制 GBK stdin 与文件默认编码模拟。数据库合同及 SDK 未修改。

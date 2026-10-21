@@ -33,8 +33,10 @@ export async function pythonRuntimeStatus() {
 	try { const env = await pythonEnvironment(); return { ready: true, version: env.version, environmentId: env.environmentId }; }
 	catch (error) { return { ready: false, message: error instanceof Error ? error.message : String(error) }; }
 }
+// Bun writes UTF-8 bytes to the pipe; Windows' default stdin codec may be GBK.
+export const pythonSourceCheck = 'import ast,sys; tree=ast.parse(sys.stdin.buffer.read().decode("utf-8-sig"),filename="verify.py"); assert any(isinstance(n,ast.FunctionDef) and n.name=="verify" for n in tree.body), "需要定义 def verify(ctx)"';
 export async function validatePythonSource(content: string, env: PythonEnvironment) {
-	const result = await runProcess(env.command, ["-I", "-c", 'import ast,sys; tree=ast.parse(sys.stdin.read(),filename="verify.py"); assert any(isinstance(n,ast.FunctionDef) and n.name=="verify" for n in tree.body), "需要定义 def verify(ctx)"'], { cwd: os.tmpdir(), env: processEnvironment(), timeoutMs: 5000, stdin: content });
+	const result = await runProcess(env.command, ["-I", "-c", pythonSourceCheck], { cwd: os.tmpdir(), env: processEnvironment(), timeoutMs: 5000, stdin: content });
 	if (result.code !== 0 || result.timedOut) throw new Error(`Python 脚本语法或入口无效：${result.stderr.slice(-4000)}`);
 }
 export async function preparePythonUpload<T extends { extension: string; content: string; pythonEnvironment?: PythonEnvironment }>(value: T): Promise<T> {

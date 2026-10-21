@@ -2,7 +2,7 @@
 
 覆盖 `read_files`、`search_codebase`、`run_commands`、`fetch_web_content`、`editor`、`skills`。每个 `verify_<工具名>.py` 是一个独立的标准库脚本，入口为 `verify(ctx)`，可直接上传，无需安装 Python 第三方包或管理员注册。
 
-使用 **单轮函数调用（仅检查格式）**：发送一次带所选工具 Schema 的 OpenAI-compatible Chat Completions 请求，保存原始响应，随后执行验证器。不会读取任务文件、执行命令、访问目标网页、调用技能或启动 Agent 工具执行。`toolChoice=auto` 检查自动选择；`required` 或指定工具名只适合强制调用格式测试。
+使用 **单轮函数调用**：发送一次带所选工具 Schema 的 OpenAI-compatible Chat Completions 请求，保存原始响应，随后执行验证器。不会读取任务文件、执行命令、访问目标网页、调用技能或启动 Agent 工具执行。`toolChoice=auto` 检查自动选择；`required` 或指定工具名只适合强制调用格式测试。
 
 ## 快速使用
 
@@ -81,3 +81,24 @@ bun run scripts/generate-function-call-verifiers.ts --check
 SDK Schema 变更后，从源码仓库运行 `bun run scripts/generate-function-call-verifiers.ts` 刷新六个独立脚本和快照，再运行测试、重新上传并绑定。`manifest.json` 记录来源及 SHA-256；脚本内嵌 Schema，运行时不依赖相邻文件。生成器仅用于开发维护，读取 SDK 源码，发行包用户直接使用生成的 `.py` 文件。
 
 已有 MongoDB 部署升级后，运行 `bun run mongo:prepare` 更新案例校验器以接受新增模式；SQLite 不需要结构迁移。验证脚本库仍沿用部署选择的存储方式。
+
+
+## Windows：GBK 解码错误或上传返回 HTTP 400
+
+文件均为 UTF-8。Windows Python 3.12 可能默认按 GBK 打开文本，旧版 test_verifiers.py 的 read_text() 会失败；修复版明确传入 encoding="utf-8"。旧版可从 agent-eval 根目录临时执行：
+
+```powershell
+python -X utf8 .\examples\function-calls\test_verifiers.py
+```
+
+上传 400 需看服务端响应内容，不能仅凭 HTTPError 堆栈断定原因。已知旧版服务端 validatePythonSource 使用 sys.stdin.read()，也可能按 GBK 解码 Bun 发来的 UTF-8 源码，导致语法检查拒绝上传；修复版从 sys.stdin.buffer 读取并使用 utf-8-sig 明确解码。更新服务端代码后需要重启 Web 服务，若运行编译产物还需先重新构建。
+
+注意：服务端以 Python -I 隔离模式启动语法检查，单独设置 PYTHONUTF8 环境变量不能代替服务端修复。客户端使用 python -X utf8 也不会改变另一进程内的服务端检查行为。
+
+修复后的 prepare.py 会显示失败文件名、HTTP 状态码及服务端错误正文；失败时不覆盖旧的绑定案例输出。重启服务后，从 agent-eval 根目录重试：
+
+```powershell
+python -X utf8 .\examples\function-calls\prepare.py --url http://127.0.0.1:3130 --output .\function-call-basic-bound.json
+```
+
+若仍报错，按新输出的具体 error 定位：Python 语法/入口错误检查脚本及服务端解释器；集合文档校验错误检查 MongoDB 合同是否已准备；HTML 正文或代理错误检查 URL 是否为 agent-eval Web 地址而非模型服务。更改端口时同步 --url。

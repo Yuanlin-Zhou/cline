@@ -320,3 +320,5 @@ Python 验证器的 `ctx["case"]["history"]` 是固定的有效历史，`ctx["ca
 SQLite 无需表迁移；已有 MongoDB 部署升级后运行 `bun run mongo:prepare`，更新 functionCall.history/historySource 集合校验合同。旧案例继续使用原来的纯文本历史。
 
 历史导入也接受助手消息的 `reasoning_content` 字符串或 null：空白值直接省略，非空思考需明确选择“不发送思考块”。其内容不拼入助手正文，也不随请求发送或持久化；不影响原工具调用和结果。示例见 `examples/history-import/openai-reasoning-messages.json`。
+
+Windows 上 Python 上传/测试出现 GBK 解码错误：更新后测试文件显式使用 UTF-8，服务端语法检查按 UTF-8 解码 stdin 字节；更新后需重启 Web 服务。旧测试可临时用 `python -X utf8 examples/function-calls/test_verifiers.py`。客户端 UTF-8 开关不能代替服务端修复，服务端 Python -I 也不会读取 PYTHONUTF8。prepare.py 现在显示 HTTP 错误正文，排查步骤见 [六工具验证器说明](examples/function-calls/README.md#windowsgbk-解码错误或上传返回-http-400)。

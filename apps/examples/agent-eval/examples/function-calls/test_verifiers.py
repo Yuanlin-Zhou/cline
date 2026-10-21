@@ -4,13 +4,13 @@ from pathlib import Path
 import runpy
 import unittest
 ROOT = Path(__file__).resolve().parent
-NAMES = json.loads((ROOT / "manifest.json").read_text())["tools"]
+NAMES = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))["tools"]
 
 
 class VerifierTests(unittest.TestCase):
     def setup_for(self, name):
         self.verify = runpy.run_path(str(ROOT / ("verify_" + name + ".py")))["verify"]
-        self.ctx = json.loads((ROOT / "fixtures" / (name + "-pass.json")).read_text())
+        self.ctx = json.loads((ROOT / "fixtures" / (name + "-pass.json")).read_text(encoding="utf-8"))
 
     def mutate(self, change):
         ctx = copy.deepcopy(self.ctx)
@@ -25,9 +25,9 @@ class VerifierTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.setup_for(name)
                 self.assertEqual(self.verify(self.ctx)["verdict"], "pass")
-                bad = json.loads((ROOT / "fixtures" / (name + "-fail.json")).read_text())
+                bad = json.loads((ROOT / "fixtures" / (name + "-fail.json")).read_text(encoding="utf-8"))
                 self.assertEqual(self.verify(bad)["verdict"], "fail")
-                self.assertEqual(self.verify(json.loads((ROOT / "fixtures/missing.json").read_text()))["verdict"], "insufficient")
+                self.assertEqual(self.verify(json.loads((ROOT / "fixtures/missing.json").read_text(encoding="utf-8")))["verdict"], "insufficient")
 
     def test_envelope_and_json_errors(self):
         self.setup_for("read_files")
