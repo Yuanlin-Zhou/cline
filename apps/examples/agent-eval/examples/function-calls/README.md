@@ -4,6 +4,10 @@
 
 使用 **单轮函数调用**：发送一次带所选工具 Schema 的 OpenAI-compatible Chat Completions 请求，保存原始响应，随后执行验证器。不会读取任务文件、执行命令、访问目标网页、调用技能或启动 Agent 工具执行。`toolChoice=auto` 检查自动选择；`required` 或指定工具名只适合强制调用格式测试。
 
+## 不限制工具调用次数的六个新脚本
+
+[unrestricted/](unrestricted/README.md) 提供另外六份独立验证器：不限制精确次数、范围、总次数，也移除了 15 条处理上限。参数可用 `{}`；仍要求出现目标工具并逐条校验全部调用，报告采用汇总与失败优先明细。旧案例中的次数参数在该版本忽略，原脚本行为不变。
+
 ## 快速使用
 
 1. 启动 agent-eval Web 服务；在“运行配置”中选择 **OpenAI-compatible**，填写模型 ID、`baseUrl`（如 `https://兼容服务/v1`）和密钥环境变量。支持该协议的 DeepSeek 等服务可用此入口。先在服务器设置密钥环境变量。

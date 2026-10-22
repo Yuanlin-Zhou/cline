@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { zodToJsonSchema } from "../../../../sdk/packages/shared/src/parse/zod.ts";
@@ -57,22 +57,29 @@ files.set(
 		2,
 	) + "\n",
 );
-for (const [name, schema] of Object.entries(exported))
+const unrestricted = await readFile(new URL("scripts/function-call-verifier-unrestricted.py", root), "utf8");
+for (const [name, schema] of Object.entries(exported)) {
 	files.set(
 		`examples/function-calls/verify_${name}.py`,
 		template
 			.replace("__TOOL_LITERAL__", JSON.stringify(name))
 			.replace("__SCHEMA_LITERAL__", JSON.stringify(JSON.stringify(schema))),
 	);
+	files.set(
+		`examples/function-calls/unrestricted/verify_${name}.py`,
+		unrestricted.replace("__TOOL_LITERAL__", JSON.stringify(name))
+			.replace("__SCHEMA_LITERAL__", JSON.stringify(JSON.stringify(schema))),
+	);
+}
 for (const [relative, content] of files) {
 	const target = new URL(relative, root);
 	if (process.argv.includes("--check")) {
 		if ((await readFile(target, "utf8")) !== content)
 			throw Error(`Generated file differs: ${fileURLToPath(target)}`);
-	} else await writeFile(target, content);
+	} else { await mkdir(new URL(".", target), { recursive: true }); await writeFile(target, content); }
 }
 console.log(
 	process.argv.includes("--check")
-		? "Function call schemas and six verifiers are current."
-		: "Generated six standalone Python verifiers and schema snapshots.",
+		? "Function call schemas and twelve verifiers are current."
+		: "Generated twelve standalone Python verifiers and schema snapshots.",
 );
