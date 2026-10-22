@@ -12,6 +12,7 @@
 | `importable/registered-verifier.json` | 1 | 文件规则与独立验证脚本组合 | 另需配置 `grading/verifiers.json` |
 | `importable/function-call-basic.json` | 6 | 六工具单轮原生调用格式 | 先用准备脚本上传绑定 Python 验证器，配置 OpenAI-compatible |
 | `importable/function-call-multi.json` | 2 | 多调用及历史上下文 | 同上 |
+| `importable/function-call-editor-flexible.json` | 2 | 指定 editor，允许一次或多次调用，含历史输入 | 用 prepare.py 指定本模板，绑定新版 Python 脚本 |
 
 原有四个案例集合计 20 个唯一案例，覆盖旧 `examples/*.json`、判分示例、Web 导入页内置示例和 `multi-turn.ts` 的对话场景。`multi-turn-project-requirements` 将已完成的前两轮写入 `history`，只运行最后一个 `prompt`；它验证上下文回放，不会重新调用模型执行历史轮次。
 

@@ -81,6 +81,88 @@ class VerifierTests(unittest.TestCase):
         self.assertEqual(self.mutate(duplicate)["verdict"], "pass")
         self.assertEqual(self.verify(self.ctx)["verdict"], "fail")
 
+    def repeated(self, count, change=None):
+        def build(body):
+            first = body["choices"][0]["message"]["tool_calls"][0]
+            calls = [copy.deepcopy(first) for _ in range(count)]
+            for index, call in enumerate(calls):
+                call["id"] = "call_" + str(index)
+            body["choices"][0]["message"]["tool_calls"] = calls
+            if change:
+                change(calls)
+        return self.mutate(build)
+
+    def test_variable_counts_for_all_six_and_legacy_default(self):
+        for name in NAMES:
+            with self.subTest(name=name):
+                self.setup_for(name)
+                self.ctx["params"] = {"min_count": 1, "allowed_tools": [name]}
+                for count in (1, 2, 5, 15):
+                    result = self.repeated(count)
+                    self.assertEqual(result["verdict"], "pass")
+                    check = next(c for c in result["checks"] if c["id"] == "target-count")
+                    self.assertEqual(check["actual"], count)
+                    self.assertIn("实际 %d 次" % count, check["message"])
+                self.assertEqual(self.repeated(0)["verdict"], "fail")
+                self.assertEqual(self.repeated(16)["verdict"], "insufficient")
+                self.ctx["params"] = {}
+                self.assertEqual(self.repeated(1)["verdict"], "pass")
+                self.assertEqual(self.repeated(2)["verdict"], "fail")
+                self.ctx["params"] = {"expected_count": 2}
+                self.assertEqual(self.repeated(2)["verdict"], "pass")
+                self.assertEqual(self.repeated(3)["verdict"], "fail")
+
+    def test_range_bounds_and_total_count(self):
+        self.setup_for("editor")
+        self.ctx["params"] = {"min_count": 2, "max_count": 4}
+        for count, verdict in ((1, "fail"), (2, "pass"), (4, "pass"), (5, "fail")):
+            self.assertEqual(self.repeated(count)["verdict"], verdict)
+        self.ctx["params"] = {"max_count": 3}
+        self.assertEqual(self.repeated(1)["verdict"], "pass")
+        self.assertEqual(self.repeated(4)["verdict"], "fail")
+        self.ctx["params"] = {"min_count": 1, "expected_total_calls": 2}
+        self.assertEqual(self.repeated(2)["verdict"], "pass")
+        self.assertEqual(self.repeated(1)["verdict"], "fail")
+
+    def test_variable_count_still_checks_every_call(self):
+        for name in NAMES:
+            with self.subTest(name=name):
+                self.setup_for(name)
+                self.ctx["params"] = {"min_count": 1, "allowed_tools": [name]}
+                for change in (
+                    lambda calls: calls[1]["function"].update(arguments="{}"),
+                    lambda calls: calls[1].update(id=calls[0]["id"]),
+                    lambda calls: calls[1]["function"].update(name="unknown"),
+                    lambda calls: calls[1]["function"].update(arguments="not JSON"),
+                    lambda calls: calls[1]["function"].pop("arguments"),
+                ):
+                    self.assertEqual(self.repeated(2, change)["verdict"], "fail")
+        # An advertised but disallowed second tool must not sneak past the target count.
+        self.setup_for("editor")
+        other = json.loads((ROOT / "fixtures/read_files-pass.json").read_text(encoding="utf-8"))
+        self.ctx["diagnostics"]["function_call_response"]["request_tools"] += other["diagnostics"]["function_call_response"]["request_tools"]
+        self.ctx["params"] = {"min_count": 1, "allowed_tools": ["editor"]}
+        self.assertEqual(self.repeated(2, lambda calls: calls[1]["function"].update(name="read_files"))["verdict"], "fail")
+
+    def test_invalid_count_policies(self):
+        self.setup_for("editor")
+        invalids = [
+            {"expected_count": 1, "min_count": 1}, {"expected_count": 1, "max_count": 3},
+            {"min_count": 0}, {"min_count": -1}, {"min_count": True}, {"min_count": "1"},
+            {"min_count": None}, {"min_count": 1.5}, {"max_count": None},
+            {"max_count": False}, {"max_count": "2"}, {"max_count": 0},
+            {"min_count": 3, "max_count": 2}, {"min_count": 2, "expected_total_calls": 1},
+            {"min_count": 1, "expected_total_calls": True},
+            {"min_count": 1, "expected_total_calls": None},
+            {"min_count": 1, "max_count": 2, "allowed_tools": ["editor"], "expected_total_calls": 3},
+            {"expected_count": 2, "expected_total_calls": 1},
+        ]
+        for params in invalids:
+            with self.subTest(params=params):
+                self.ctx["params"] = params
+                with self.assertRaises(ValueError):
+                    self.verify(self.ctx)
+
 
 if __name__ == "__main__":
     unittest.main()

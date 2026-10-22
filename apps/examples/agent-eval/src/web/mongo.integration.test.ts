@@ -1,9 +1,10 @@
+import { moduleDeletion } from "./resource-management.js";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { MongoVerifiers } from "../grading/uploaded-verifiers.js";
+import { MongoVerifiers, verifierToken } from "../grading/uploaded-verifiers.js";
 import { replyTemplate } from "../grading/verifier-guide.js";
 import { MongoClient } from "mongodb";
 import { MongoCatalog, mongoFailure, type MongoConfig } from "./mongo-catalog.js";
@@ -33,6 +34,34 @@ describe("MongoDB replica-set catalog (set EVAL_TEST_MONGODB_URI)", () => {
 			await cleanup.db(config.database).dropDatabase();
 		} finally { await cleanup.close(); await repository.close(); rmSync(directory, { recursive: true, force: true }); }
 	});
+	mongoTest("resource deletion is atomic, serializes against changed previews and Python updates use CAS", async () => {
+		const module = await repository.createModule("delete module");
+		const a = await repository.createCase(module.id, defaults, { id: "a", prompt: "a" });
+		const b = await repository.createCase(module.id, defaults, { id: "b", prompt: "b" });
+		let preview = moduleDeletion(module.id, await repository.allResources());
+		await repository.setArchived("case", b.id, true);
+		await expect(repository.deleteModule(module.id, { name: module.name, expectedToken: preview.token })).rejects.toThrow("清单已变化");
+		preview = moduleDeletion(module.id, await repository.allResources());
+		const original = repository.cases.deleteMany.bind(repository.cases);
+		(repository.cases as any).deleteMany = async (...args: any[]) => { await (original as any)(...args); throw Error("injected after delete"); };
+		await expect(repository.deleteModule(module.id, { name: module.name, expectedToken: preview.token })).rejects.toThrow();
+		expect(await repository.getCase(a.id)).toBeDefined(); expect(await repository.getModule(module.id)).toBeDefined();
+		(repository.cases as any).deleteMany = original;
+		await expect(repository.deleteCases({ items: [{ id: a.id, revision: 1 }, { id: b.id, revision: 1 }] })).rejects.toThrow("已变化");
+		expect(await repository.deleteCases({ items: [{ id: a.id, revision: 1 }] })).toEqual({ deleted: 1 });
+		preview = moduleDeletion(module.id, await repository.allResources());
+		expect(await repository.deleteModule(module.id, { name: module.name, expectedToken: preview.token })).toEqual({ deleted: 1 });
+		expect(await repository.getModule(module.id)).toBeUndefined(); expect(await repository.getCase(b.id)).toBeUndefined();
+		const scripts = new MongoVerifiers(repository.db, "agent_eval_verifiers"); await scripts.preflight();
+		const input = { filename: "verify.py", label: "old", content: 'def verify(ctx):\n    return {"verdict":"pass","message":"ok"}\n' };
+		const script = await scripts.create(input);
+		const results = await Promise.allSettled([scripts.update(script.id, verifierToken(script), { ...input, label: "one" }), scripts.update(script.id, verifierToken(script), { ...input, label: "two" })]);
+		expect(results.filter(r => r.status === "fulfilled")).toHaveLength(1);
+		await expect(scripts.delete(script.id, verifierToken(script))).rejects.toThrow("已被其他页面修改");
+		const current = (await scripts.get(script.id))!; expect(current.sha256).toBe(script.sha256);
+		await scripts.delete(script.id, verifierToken(current)); expect(await scripts.get(script.id)).toBeUndefined();
+	});
+
 	mongoTest("batch conversation imports roll back all cases on Mongo validation failure", async () => {
 		const module = await repository.createModule("batch conversations");
 		const app = await createEvalServer({directory,port:0,storage:"mongodb",catalog:repository});

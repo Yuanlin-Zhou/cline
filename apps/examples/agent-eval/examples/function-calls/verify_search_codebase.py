@@ -143,12 +143,26 @@ def verify(ctx):
     if TOOL not in advertised or advertised[TOOL] != SCHEMA:
         return insufficient("公布的目标 Schema 与验证器版本不一致，请重新生成/上传验证器。")
     params = ctx.get("params", {})
-    count = params.get("expected_count", 1)
-    if type(count) is not int or count < 1:
-        raise ValueError("expected_count 须为正整数")
+    if not isinstance(params, dict):
+        raise ValueError("脚本参数须为 JSON 对象")
+    ranged = "min_count" in params or "max_count" in params
+    if ranged and "expected_count" in params:
+        raise ValueError("expected_count 不能与 min_count/max_count 同时配置")
+    lower = params.get("min_count", 1) if ranged else params.get("expected_count", 1)
+    upper = params.get("max_count") if ranged else lower
+    if type(lower) is not int or lower < 1:
+        raise ValueError(("min_count" if ranged else "expected_count") + " 须为正整数")
+    if ranged and "max_count" in params and (type(upper) is not int or upper < lower):
+        raise ValueError("max_count 须为不小于 min_count 的正整数")
+    total = params.get("expected_total_calls")
+    if "expected_total_calls" in params and (type(total) is not int or total < lower):
+        raise ValueError("expected_total_calls 须为正整数且不能小于目标工具调用数下限")
     allowed = params.get("allowed_tools", list(advertised))
     if not isinstance(allowed, list) or any(not isinstance(v, str) for v in allowed):
         raise ValueError("allowed_tools 须为工具名数组")
+    if (total is not None and set(allowed) == {TOOL} and
+            upper is not None and total > upper):
+        raise ValueError("仅允许目标工具时，expected_total_calls 不能超过目标调用数上限")
     ids = set()
     found = 0
     for index, call in enumerate(calls):
@@ -183,11 +197,12 @@ def verify(ctx):
         if not isinstance(value, dict):
             errors.insert(0, "$: 参数根须为对象")
         check(prefix + "-schema", not errors, "参数符合公开 Schema" if not errors else "; ".join(errors[:8]), advertised.get(name) if isinstance(name, str) else None, value)
-    check("target-count", found == count, "目标工具调用数须符合期望", count, found)
-    if "expected_total_calls" in params:
-        total = params["expected_total_calls"]
-        if type(total) is not int or total < 1:
-            raise ValueError("expected_total_calls 须为正整数")
+    requirement = ("准确 %d 次" % lower if not ranged else
+                   "至少 %d 次" % lower if upper is None else "%d–%d 次" % (lower, upper))
+    expected = {"min_count": lower, **({"max_count": upper} if upper is not None else {})} if ranged else lower
+    check("target-count", found >= lower and (upper is None or found <= upper),
+          "目标工具 %s %s，实际 %d 次" % (TOOL, requirement, found), expected, found)
+    if total is not None:
         check("total-count", len(calls) == total, "本轮总调用数须符合期望", total, len(calls))
     passed = all(item["status"] == "pass" for item in checks)
     return {"verdict": "pass" if passed else "fail", "message": TOOL + (" 原生格式及参数结构正确" if passed else " 调用格式或参数结构不符"), "checks": checks}

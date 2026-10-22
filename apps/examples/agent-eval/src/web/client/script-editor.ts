@@ -87,7 +87,11 @@ export function scriptEditor(rule: Record<string, unknown>, options: {
 		body.append(options.field("选择脚本文件", file, "UTF-8 编码，单文件最大 1 MiB；也兼容 .js/.mjs/.ts。"), options.field("脚本显示名称（可选）", name), node("p", "脚本会在评测服务器执行，只上传可信代码。Python 可使用标准库和服务端已有依赖，不自动安装；文件副本不是系统沙箱。", "form-hint"), message);
 		const modal = verifierDialog("上传验证脚本", body, { footer: row(action("取消", () => modal.close()), submit), canClose: () => !busy });
 	});
-	const selectField = options.field("验证脚本", selection); const controlRow = row(selection, upload); selectField.querySelector("label")!.after(controlRow);
+	const selectField = options.field("验证脚本", selection); const manage = node("a", "管理脚本", "btn btn-sm"); manage.href = "#/verifiers"; manage.target = "_blank"; manage.rel = "noopener";
+	const controlRow = row(selection, upload, manage); selectField.querySelector("label")!.after(controlRow);
+	const reloadOnFocus = () => { void options.reload(); };
+	const reloadOnStorage = (event: StorageEvent) => { if (event.key === "eval-verifiers-changed") reloadOnFocus(); };
+	window.addEventListener("focus", reloadOnFocus); window.addEventListener("storage", reloadOnStorage);
 	root.append(selectField, summary, status, row(test, guide, refresh), advance);
-	return { element: root, read, dispose() { unsubscribe(); trialDialog?.close(); trial?.dispose(); } };
+	return { element: root, read, dispose() { window.removeEventListener("focus", reloadOnFocus); window.removeEventListener("storage", reloadOnStorage); unsubscribe(); trialDialog?.close(); trial?.dispose(); } };
 }

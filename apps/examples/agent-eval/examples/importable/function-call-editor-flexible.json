@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "fc-editor-at-least-once",
+      "description": "指定 editor，接受本轮一次或多次调用，逐条验证格式",
+      "replayMode": "function-call",
+      "functionCall": {
+        "tools": [
+          "editor"
+        ],
+        "toolChoice": "editor"
+      },
+      "history": [],
+      "prompt": "请使用 editor 创建 /project/hello.txt，内容为 hello world 并以换行结尾。允许拆成多条 editor 调用，不要以文字代替工具调用。",
+      "grading": {
+        "version": 1,
+        "rules": [
+          {
+            "id": "editor-format",
+            "kind": "script",
+            "verifierId": "example-fc-editor",
+            "required_inputs": [
+              "execution",
+              "diagnostics"
+            ],
+            "params": {
+              "min_count": 1,
+              "allowed_tools": [
+                "editor"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "fc-editor-history-multiple",
+      "description": "指定 editor，接受本轮一次或多次调用，逐条验证格式",
+      "replayMode": "function-call",
+      "functionCall": {
+        "tools": [
+          "editor"
+        ],
+        "toolChoice": "required"
+      },
+      "history": [
+        {
+          "role": "user",
+          "content": "请将 /project/a.txt 和 /project/b.txt 中的 hello 改成 world。这两个文件当前均只有 hello 一行。"
+        },
+        {
+          "role": "assistant",
+          "content": "已了解这两个文件的内容，接下来使用 editor 修改。"
+        }
+      ],
+      "prompt": "请按历史要求修改两个文件，使用 editor，允许在本次响应中返回多条工具调用。",
+      "grading": {
+        "version": 1,
+        "rules": [
+          {
+            "id": "editor-format",
+            "kind": "script",
+            "verifierId": "example-fc-editor",
+            "required_inputs": [
+              "execution",
+              "diagnostics"
+            ],
+            "params": {
+              "min_count": 1,
+              "allowed_tools": [
+                "editor"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

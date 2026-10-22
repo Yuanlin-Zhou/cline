@@ -11,7 +11,7 @@ export function functionCallEditor(initial?: FunctionCallConfig) {
 		node("strong", "本轮公布哪些工具？"),
 		node(
 			"p",
-			"只让模型生成调用格式，不执行文件、命令、网页或技能操作。需要在配置中选择 OpenAI-compatible 并填写服务地址。",
+			"本轮只请求一次模型，响应可以包含多条工具调用；不实际执行工具。需要配置 OpenAI-compatible 服务。",
 			"form-hint",
 		),
 	);
@@ -61,9 +61,10 @@ export function functionCallEditor(initial?: FunctionCallConfig) {
 		choice,
 		node(
 			"p",
-			"强制选择用于参数格式测试，不能据此声称模型自动选对了工具。验证器还会检查实际工具名与调用数。",
+			"要指定一个工具，可只勾选它，再选择“必须调用任意所选工具”；也可强制指定工具（服务需支持）。强制选择不代表自动选对工具。",
 			"form-hint",
 		),
+		node("p", '允许同一工具调用一次或多次：使用新版六工具 Python 验证器，参数填 {"min_count":1,"allowed_tools":["editor"]}，工具名按需替换。每条调用都会检查，最多 15 条；旧脚本需重新上传并选择新版本。', "form-hint"),
 		error,
 	);
 	return {

@@ -356,3 +356,55 @@ test("upload six validators, import eight examples, reject invalid native argume
 		await rm(directory, { recursive: true, force: true });
 	}
 }, 60000);
+
+test("editor flexible examples use one request each, preserve history and grade every returned call", async () => {
+	const directory = await mkdtemp(path.join(os.tmpdir(), "eval-editor-flexible-"));
+	const requests: any[] = [];
+	const mock = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {
+		const body = await req.json();
+		requests.push(body);
+		const count = body.tool_choice === "required" ? 3 : 1;
+		return Response.json({ choices: [{ finish_reason: "tool_calls", message: {
+			role: "assistant", content: null, tool_calls: Array.from({ length: count }, (_, i) => ({
+				id: `call_${i}`, type: "function", function: { name: "editor", arguments: JSON.stringify({ path: path.join(directory, `${i}.txt`), new_text: "world\n" }) },
+			})),
+		} }] });
+	} });
+	const app = await createEvalServer({ directory, port: 0, storage: "sqlite" });
+	const base = `http://127.0.0.1:${app.server.port}`;
+	const post = (route: string, body: unknown) => fetch(base + route, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+	try {
+		const upload = await post("/api/verifiers", { filename: "verify_editor.py", content: await readFile(new URL("function-calls/verify_editor.py", examples), "utf8") });
+		expect(upload.status).toBe(201);
+		const verifier = await upload.json();
+		const suite = parseEvalSuite(JSON.parse(await readFile(new URL("importable/function-call-editor-flexible.json", examples), "utf8")));
+		suite.defaults = { providerId: "openai-compatible", modelId: "mock", baseUrl: `http://127.0.0.1:${mock.port}/v1`, tools: "none" };
+		for (const c of suite.cases) (c.grading!.rules[0] as any).verifierId = verifier.id;
+		const imported = await post("/api/import", { moduleId: app.store.activeModules()[0].id, content: JSON.stringify(suite), format: "json", replayMode: "function-call", policy: "skip" });
+		expect(imported.status).toBe(200);
+		expect((await imported.json()).created).toBe(2);
+		const started = await post("/api/runs", { caseIds: app.store.list<any>("case").map(c => c.id), concurrency: 1 });
+		expect(started.status).toBe(202);
+		const run = await started.json();
+		await app.queue.idle();
+		expect(requests).toHaveLength(2);
+		for (const body of requests) expect(body.tools.map((t: any) => t.function.name)).toEqual(["editor"]);
+		expect(requests[0].tool_choice).toEqual({ type: "function", function: { name: "editor" } });
+		expect(requests[1].tool_choice).toBe("required");
+		expect(requests[1].messages.slice(-3)).toEqual([...suite.cases[1].history, { role: "user", content: suite.cases[1].prompt }]);
+		const items = app.store.items(run.id);
+		expect(items).toHaveLength(2);
+		for (const item of items) {
+			expect(item.status).toBe("passed");
+			const count = item.snapshot.definition.functionCall!.toolChoice === "required" ? 3 : 1;
+			expect(item.result!.toolCalls).toHaveLength(count);
+			expect(item.result!.toolCalls.every(c => (c.output as any).not_executed)).toBe(true);
+			const checks = item.result!.grading!.results[0].checks!;
+			expect(checks.find(c => c.id === "target-count")?.actual).toBe(count);
+			expect(checks.filter(c => c.id.endsWith("-schema"))).toHaveLength(count);
+		}
+		expect(await Bun.file(path.join(directory, "0.txt")).exists()).toBe(false);
+	} finally {
+		await app.close(); mock.stop(true); await rm(directory, { recursive: true, force: true });
+	}
+}, 30000);

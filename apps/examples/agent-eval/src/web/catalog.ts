@@ -1,3 +1,4 @@
+import { confirmModuleDeletion, checkDeletion } from "./resource-management.js";
 import type { EvalCase, EvalDefaults, EvalSuite } from "../types.js";
 import type { Module, SavedCase } from "./types.js";
 import { EvalStore } from "./store.js";
@@ -11,6 +12,9 @@ export type TransferResult = { cases: SavedCase[]; copied: number; moved: number
 type Awaitable<T> = T | Promise<T>;
 export interface CatalogRepository {
 	snapshot(): Awaitable<CatalogSnapshot>;
+	allResources(): Awaitable<CatalogSnapshot>;
+	deleteModule(id: string, input: unknown): Awaitable<{ deleted: number }>;
+	deleteCases(input: unknown): Awaitable<{ deleted: number }>;
 	getCase(id: string): Awaitable<SavedCase | undefined>;
 	getModule(id: string): Awaitable<Module | undefined>;
 	createModule(name: string, description?: string, tags?: string[]): Awaitable<Module>;
@@ -29,13 +33,30 @@ export interface CatalogRepository {
 export class SqliteCatalog implements CatalogRepository {
 	constructor(readonly store: EvalStore) {}
 	snapshot() { return this.store.db.transaction(() => ({ modules: this.store.activeModules(), cases: this.store.activeCases() }))(); }
+	allResources() { return this.store.db.transaction(() => ({ modules: this.store.list<Module>("module"), cases: this.store.list<SavedCase>("case") }))(); }
+	deleteModule(id: string, input: unknown) {
+		return this.store.db.transaction(() => {
+			const preview = confirmModuleDeletion(id, this.allResources(), input);
+			for (const c of preview.items) this.store.deleteCase(c.id);
+			this.store.db.query("DELETE FROM records WHERE kind='module' AND id=?").run(id);
+			return { deleted: preview.count };
+		}).immediate();
+	}
+	deleteCases(input: unknown) {
+		return this.store.db.transaction(() => {
+			const cases = checkDeletion(input, this.allResources().cases);
+			for (const c of cases) this.store.deleteCase(c.id);
+			return { deleted: cases.length };
+		}).immediate();
+	}
+
 	getCase(id: string) { return this.store.get<SavedCase>("case", id); }
 	getModule(id: string) { return this.store.get<Module>("module", id); }
 	createModule(name: string, description?: string, tags?: string[]) { return this.store.createModule(name, description, tags); }
-	updateModule(id: string, input: { name?: string; description?: string; tags?: string[] }) { return this.store.updateModule(id, input); }
-	archiveModule(id: string) { this.store.archiveModule(id); }
-	setArchived(kind: "case" | "module", id: string, archived: boolean) { this.store.setArchived(kind, id, archived); }
-	createCase(moduleId: string, defaults: EvalDefaults, definition: EvalCase) { return this.store.createCase(moduleId, defaults, definition); }
+	updateModule(id: string, input: { name?: string; description?: string; tags?: string[] }) { return this.store.db.transaction(() => this.store.updateModule(id, input)).immediate(); }
+	archiveModule(id: string) { this.store.db.transaction(() => this.store.archiveModule(id)).immediate(); }
+	setArchived(kind: "case" | "module", id: string, archived: boolean) { this.store.db.transaction(() => this.store.setArchived(kind, id, archived)).immediate(); }
+	createCase(moduleId: string, defaults: EvalDefaults, definition: EvalCase) { return this.store.db.transaction(() => this.store.createCase(moduleId, defaults, definition)).immediate(); }
 	updateCase(id: string, revision: number, defaults: EvalDefaults, definition: EvalCase) {
 		return this.store.db.transaction(() => {
 			const previous = this.getCase(id);
@@ -47,8 +68,8 @@ export class SqliteCatalog implements CatalogRepository {
 		}).immediate();
 	}
 	deleteCase(id: string) { this.store.deleteCase(id); }
-	duplicateCase(id: string) { return this.store.duplicateCase(id); }
-	importCases(moduleId: string, suite: EvalSuite, policy: string) { return this.store.importCases(moduleId, suite, policy); }
+	duplicateCase(id: string) { return this.store.db.transaction(() => this.store.duplicateCase(id)).immediate(); }
+	importCases(moduleId: string, suite: EvalSuite, policy: string) { return this.store.db.transaction(() => this.store.importCases(moduleId, suite, policy)).immediate(); }
 	previewTransfer(input: unknown) { return this.store.previewTransfer(input); }
 	transferCases(input: unknown) { return this.store.transferCases(input); }
 	close() {}

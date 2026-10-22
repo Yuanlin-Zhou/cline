@@ -59,7 +59,7 @@ test("HTTP upload is immediately selectable, frozen across rounds, restart and o
 	app = await createEvalServer({ directory, port: 0, execute: item => grade(item) });
 	expect((await request("/api/verifiers")).value.verifiers).toHaveLength(2);
 	await app.close(); app = undefined;
-	const unavailable: VerifierRepository = { async list() { throw new Error("offline"); }, async get() { throw new Error("offline"); }, async create() { throw new Error("offline"); } };
+	const unavailable: VerifierRepository = { async update() { throw new Error("offline"); }, async delete() { throw new Error("offline"); }, async list() { throw new Error("offline"); }, async get() { throw new Error("offline"); }, async create() { throw new Error("offline"); } };
 	app = await createEvalServer({ directory, port: 0, verifierRepository: unavailable, execute: item => grade(item) });
 	const rerun = await request("/api/runs", { parentRunId: run.value.id, rerunScope: "all" }); expect(rerun.status).toBe(202); await app.queue.idle();
 	expect(app.store.items(rerun.value.id)[0].status).toBe("passed");

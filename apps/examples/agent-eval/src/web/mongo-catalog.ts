@@ -1,3 +1,4 @@
+import { confirmModuleDeletion, checkDeletion } from "./resource-management.js";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { MongoClient, MongoError, type ClientSession, type Db, type Collection } from "mongodb";
@@ -77,6 +78,25 @@ export class MongoCatalog implements CatalogRepository {
 			return { modules: active, cases: cases.filter(c => !c.archived && ids.has(c.moduleId)) };
 		});
 	}
+	async allResources() { return this.transaction(session => this.all(session)); }
+	async deleteModule(id: string, input: unknown) {
+		return this.transaction(async session => {
+			await this.touch([id], session, false);
+			const preview = confirmModuleDeletion(id, await this.all(session), input);
+			await this.cases.deleteMany({ moduleId: id }, { session });
+			await this.modules.deleteOne({ _id: id }, { session });
+			return { deleted: preview.count };
+		});
+	}
+	async deleteCases(input: unknown) {
+		return this.transaction(async session => {
+			const cases = checkDeletion(input, (await this.all(session)).cases);
+			await this.touch(cases.map(c => c.moduleId), session, false);
+			await this.cases.deleteMany({ _id: { $in: cases.map(c => c.id) } }, { session });
+			return { deleted: cases.length };
+		});
+	}
+
 	async getCase(id: string) { return this.guard(async () => { const doc = await this.cases.findOne({ _id: id }); return doc ? caseFromDocument(doc) : undefined; }); }
 	async getModule(id: string) { return this.guard(async () => { const doc = await this.modules.findOne({ _id: id }); return doc ? moduleFromDocument(doc) : undefined; }); }
 	private async source(id: string, session: ClientSession) {

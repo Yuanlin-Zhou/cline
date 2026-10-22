@@ -1,3 +1,4 @@
+import { moduleDeletion, verifierReferences } from "./resource-management.js";
 import { previewConversations, BATCH_BYTE_LIMIT } from "../batch-conversations.js";
 import { readJsonBody } from "./json-body.js";
 import { access } from "node:fs/promises";
@@ -14,7 +15,7 @@ import { summarize, type Module, type Run, type RunItem, type SavedCase } from "
 import { artifacts, artifactText, archivedArtifacts, archivedArtifactText } from "./workspace.js";
 import { buildRepeatReport, repeatReportMarkdown } from "./repeat-report.js";
 import { loadVerifiers, publicVerifier, resolveVerifiers, uploadedPlaceholder } from "../grading/verifiers.js";
-import { MongoVerifiers, SqliteVerifiers, publicUploaded, type VerifierRepository } from "../grading/uploaded-verifiers.js";
+import { MongoVerifiers, SqliteVerifiers, publicUploaded, verifierToken, type VerifierRepository } from "../grading/uploaded-verifiers.js";
 import { preflight } from "../grading/engine.js";
 import { CAPABILITIES, readEvidence } from "../grading/evidence.js";
 import { gradingSummary } from "../grading/summary.js";
@@ -79,7 +80,8 @@ export async function createEvalServer(options: { directory?: string; port?: num
 				if (route === "/api/verifiers" && method === "GET") {
 					const configured = await loadVerifiers(); const uploaded = await verifierRepository.list();
 					if (uploaded.some(v => configured.some(c => c.id === v.id))) throw new CatalogError("验证器 ID 冲突", 409);
-					return json({ verifiers: [...configured.map(publicVerifier), ...uploaded.map(publicUploaded)], capabilities: CAPABILITIES });
+					const all = url.searchParams.get("manage") === "1" ? await catalog.allResources() : undefined;
+					return json({ verifiers: [...configured.map(publicVerifier), ...uploaded.map(v => ({ ...publicUploaded(v), ...(all ? { referenceCount: verifierReferences(v.id, all).length } : {}) }))], capabilities: CAPABILITIES });
 				}
 				if (route === "/api/verifiers/runtime-status" && method === "GET") return json(await pythonRuntimeStatus());
 				if (route === "/api/verifiers" && method === "POST") {
@@ -87,6 +89,30 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					if (runtime?.ready) await validatePythonSource(parsed.content, await pythonEnvironment());
 					return json({ ...publicUploaded(await verifierRepository.create(body)), syntaxStatus: parsed.extension === ".py" ? runtime?.ready ? "checked" : "pending" : "not_applicable" }, 201);
 				}
+				const scriptMatch = route.match(/^\/api\/verifiers\/([^/]+)$/);
+				if (scriptMatch) {
+					const id = scriptMatch[1];
+					const script = await verifierRepository.get(id);
+					if (!script) throw new CatalogError("仅能管理已上传的脚本；脚本不存在或已删除", 404);
+					if (script.extension !== ".py") throw new CatalogError("仅支持管理用户上传的 Python 脚本", 403);
+					if (method === "GET") return json({ ...publicUploaded(script), content: script.content, token: verifierToken(script), references: verifierReferences(id, await catalog.allResources()) });
+					if (method === "PUT") {
+						const { expectedToken, ...input } = await readJsonBody(request);
+						const parsed = parseUpload(input);
+						if (parsed.extension !== ".py") throw new CatalogError("请选择 .py 文件");
+						await validatePythonSource(parsed.content, await pythonEnvironment());
+						const saved = await verifierRepository.update(id, expectedToken, input);
+						return json({ ...publicUploaded(saved), token: verifierToken(saved) });
+					}
+					if (method === "DELETE") {
+						const body = await readJsonBody(request);
+						const references = verifierReferences(id, await catalog.allResources());
+						if (references.length) return json({ error: "脚本仍被案例引用，请先替换或移除这些规则", references }, 409);
+						await verifierRepository.delete(id, body.expectedToken);
+						return json({ deleted: true });
+					}
+				}
+
 				const validationMatch = route.match(/^\/api\/runs\/([^/]+)\/items\/([^/]+)\/(validation-input|verifier-tests)(?:\/([^/]+))?(?:\/(cancel|evidence)(?:\/([^/]+))?)?$/);
 				if (validationMatch) {
 					const [, runId, itemId, kind, testId, action, evidenceId] = validationMatch;
@@ -140,7 +166,11 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					return json({ id: ref.id, label: ref.label, text: bytes.includes(0) ? "二进制文件，无法文本预览" : bytes.toString("utf8"), sha256: ref.sha256 });
 				}
 				if (route === "/api/modules" && method === "POST") { const body = await readJsonBody(request); return json(await catalog.createModule(body.name, body.description, body.tags), 201); }
-				if (route === "/api/modules" && method === "GET") return json((await catalog.snapshot()).modules);
+				if (route === "/api/modules" && method === "GET") return json(url.searchParams.get("includeArchived") === "1" ? (await catalog.allResources()).modules : (await catalog.snapshot()).modules);
+
+				const modulePreview = route.match(/^\/api\/modules\/([^/]+)\/delete-preview$/);
+				if (modulePreview && method === "POST") return json(moduleDeletion(modulePreview[1], await catalog.allResources()));
+				if (route === "/api/cases/delete-batch" && method === "POST") return json(await catalog.deleteCases(await readJsonBody(request)));
 
 				const moduleMatch = route.match(/^\/api\/modules\/([^/]+)(?:\/(archive|unarchive))?$/);
 				if (moduleMatch) {
@@ -148,6 +178,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					if (method === "GET" && !action) { const module = await catalog.getModule(id); if (!module) throw new CatalogError("模块不存在", 404); return json(module); }
 					if (action === "archive" && method === "POST") { await catalog.archiveModule(id); return json({ archived: true }); }
 					if (action === "unarchive" && method === "POST") { await catalog.setArchived("module", id, false); return json({ archived: false }); }
+					if (method === "DELETE" && !action) return json(await catalog.deleteModule(id, await readJsonBody(request)));
 					if (method === "PUT") return json(await catalog.updateModule(id, await readJsonBody(request)));
 					return json({ error: "接口不存在" }, 404);
 				}
@@ -187,6 +218,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					if (!body.moduleId) throw new Error("缺少目标模块");
 					const suite = parseEvalSuite({ defaults: body.defaults, cases: [body.definition] });
 					validateWorkspacePaths(suite.cases[0],suite.defaults);
+					await resolveVerifiers(suite.cases[0], verifierRepository);
 					for (const cwd of [suite.defaults.cwd, suite.cases[0].cwd]) if (cwd && !path.isAbsolute(cwd)) throw new Error("fixture 目录须为绝对路径");
 					return json(await catalog.createCase(body.moduleId, suite.defaults, suite.cases[0]), 201);
 				}
@@ -223,6 +255,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					const body = await readJsonBody(request);
 					const suite = parseEvalSuite({ defaults: body.defaults, cases: [body.definition] });
 					validateWorkspacePaths(suite.cases[0],suite.defaults);
+					await resolveVerifiers(suite.cases[0], verifierRepository);
 					for (const cwd of [suite.defaults.cwd, suite.cases[0].cwd]) if (cwd && !path.isAbsolute(cwd)) throw new Error("fixture 目录须为绝对路径");
 					return json(await catalog.updateCase(caseMatch[1], body.revision, suite.defaults, suite.cases[0]));
 				}

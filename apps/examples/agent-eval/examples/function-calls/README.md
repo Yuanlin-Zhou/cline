@@ -54,7 +54,42 @@ Schema 来自 SDK 公布的输入结构，区别于 SDK 执行时的宽容解析
 {"expected_count":1,"expected_total_calls":1,"allowed_tools":["read_files"]}
 ```
 
-`expected_count` 为本脚本目标工具的准确调用数，默认 1；`expected_total_calls` 可约束本轮总数；`allowed_tools` 默认本轮公布的工具。所有实际返回的调用都须格式有效。检查明细的大值会标注截断，完整值保留在固定原始输入中。验证器最多处理 15 项调用，超过上限报告证据不足。
+允许目标工具调用一次或多次时，使用新版脚本并填写：
+
+```json
+{"min_count":1,"allowed_tools":["editor"]}
+```
+
+| 参数 | 含义 |
+| --- | --- |
+| `expected_count` | 精确目标调用数；未设置范围参数时默认 1，兼容旧案例 |
+| `min_count` | 至少调用多少次；设置范围参数后默认 1 |
+| `max_count` | 可选目标次数上限，不填则不额外限制次数 |
+| `expected_total_calls` | 可选的本轮全部调用精确数量；允许不确定次数时不要填写 |
+| `allowed_tools` | 允许返回的工具名称，默认本轮公布的工具；只允许 editor 时填 `["editor"]` |
+
+`expected_count` 不能与 `min_count`/`max_count` 同时设置；次数须为正整数，不能填 bool、字符串或 null，上限不得小于下限，总数不能小于目标下限。仅允许目标工具时，总数也不能超过目标上限。参数冲突显示为验证配置错误，不自动忽略。
+
+例如 `{"min_count":1,"max_count":5,"allowed_tools":["editor"]}` 接受 1–5 次 editor。每条调用都须格式有效，第一条正确但后续参数错误仍失败。检查明细的大值会标注截断，完整值保留在固定原始输入中。验证器最多处理 15 项调用，超过上限报告证据不足；不填写 max_count 不代表无限处理。
+
+## 指定一个工具，允许调用多次
+
+在“输入 → 本轮公布哪些工具”仅勾选 editor，将调用选择方式设为“必须调用任意所选工具”（required）。也可选择“强制调用 editor”，对应标准的指定函数 tool_choice；网关需支持，具体函数强制模式能否返回多个调用取决于模型服务。提示词写清任务，例如“用 editor 修改 a.txt 和 b.txt，允许在本次响应中返回多条 editor 调用”。希望评测模型是否遵从提示词选工具时，可用 auto，由脚本检查实际名称。
+
+单轮表示只请求模型一次；一次响应的 tool_calls 数组可以有多项。不执行工具，不将结果发回模型继续下一轮。Python 检查本轮响应，不会把历史工具调用计入次数。
+
+两个可导入案例（无历史＋有历史）使用新模板：
+
+```bash
+python3 examples/function-calls/prepare.py \
+  --url http://127.0.0.1:3130 \
+  --template examples/importable/function-call-editor-flexible.json \
+  --output function-call-editor-flexible-bound.json
+```
+
+Windows 可以使用 `python`，从 agent-eval 根目录执行。导入生成的 bound.json 后配置模型再运行，原模板中的脚本 ID 是占位。
+
+**已上传的旧脚本不会自动更新。** 请重新上传仓库新版 verify_editor.py（其他工具同理），并在案例选择新脚本后填写 min_count；也可重新运行 prepare.py 生成绑定新 ID 的案例文件。已提交运行仍使用原源码快照，不会追溯改变结论。
 
 原始证据在 `ctx["diagnostics"]["function_call_response"]`：版本 `schema_version=1`、协议、完整性、`request_tools`、`tool_choice`、`raw_response`、HTTP 状态。它固定在本轮执行的证据与 Python 输入里，历史试验证读取相同快照，不再次请求模型或改变原结论。推荐 `required_inputs=["execution","diagnostics"]`，不要要求工作区产物。
 

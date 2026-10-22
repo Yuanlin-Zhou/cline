@@ -1,3 +1,4 @@
+import type { Database } from "bun:sqlite";
 import { createHash, randomUUID } from "node:crypto";
 import type { Collection, Db } from "mongodb";
 import { isDeepStrictEqual } from "node:util";
@@ -10,6 +11,8 @@ export interface VerifierRepository {
 	list(): Promise<UploadedVerifier[]>;
 	get(id: string): Promise<UploadedVerifier | undefined>;
 	create(input: unknown): Promise<UploadedVerifier>;
+	update(id: string, expectedToken: string, input: unknown): Promise<UploadedVerifier>;
+	delete(id: string, expectedToken: string): Promise<void>;
 }
 export const contentHash = (content: string) => createHash("sha256").update(content).digest("hex");
 export function parseUpload(input: unknown): UploadedVerifier {
@@ -33,12 +36,36 @@ export function validateUploaded(value: UploadedVerifier): UploadedVerifier {
 		return value;
 	} catch { throw new CatalogError("上传脚本文档或内容摘要无效", 422); }
 }
-type Records = { list<T>(kind: string): T[]; get<T>(kind: string, id: string): T | undefined; put(kind: string, id: string, value: unknown): void };
+export const verifierToken = (v: UploadedVerifier) => contentHash(JSON.stringify([v.id, v.createdAt, v.label, v.filename, v.content, v.version, v.pythonEnvironment]));
+function editable(v: UploadedVerifier | undefined, expected: string): UploadedVerifier {
+	if (!v) throw new CatalogError("验证脚本不存在或已删除", 404);
+	if (v.extension !== ".py") throw new CatalogError("仅支持管理用户上传的 Python 脚本", 403);
+	if (typeof expected !== "string" || verifierToken(v) !== expected) throw new CatalogError("脚本已被其他页面修改，请重新打开后重试", 409);
+	return v;
+}
+function replacement(previous: UploadedVerifier, input: unknown) {
+	const next = parseUpload(input);
+	if (next.extension !== ".py") throw new CatalogError("文件须为 .py 脚本");
+	return { ...next, id: previous.id, createdAt: previous.createdAt };
+}
+type Records = { db: Database; list<T>(kind: string): T[]; get<T>(kind: string, id: string): T | undefined; put(kind: string, id: string, value: unknown): void };
 export class SqliteVerifiers implements VerifierRepository {
 	constructor(private records: Records) {}
 	async list() { return this.records.list<UploadedVerifier>("verifier").map(validateUploaded); }
 	async get(id: string) { const value = this.records.get<UploadedVerifier>("verifier", id); return value && validateUploaded(value); }
 	async create(input: unknown) { const v = parseUpload(input); this.records.put("verifier", v.id, v); return v; }
+	async update(id: string, expectedToken: string, input: unknown) {
+		return this.records.db.transaction(() => {
+			const previous = editable(this.records.get<UploadedVerifier>("verifier", id), expectedToken);
+			const next = replacement(previous, input); this.records.put("verifier", id, next); return next;
+		}).immediate();
+	}
+	async delete(id: string, expectedToken: string) {
+		this.records.db.transaction(() => {
+			editable(this.records.get<UploadedVerifier>("verifier", id), expectedToken);
+			this.records.db.query("DELETE FROM records WHERE kind='verifier' AND id=?").run(id);
+		}).immediate();
+	}
 }
 type VerifierDocument = Omit<UploadedVerifier, "id" | "createdAt"> & { _id: string; createdAt: Date };
 export const verifierValidator = { $jsonSchema: {
@@ -63,5 +90,26 @@ export class MongoVerifiers implements VerifierRepository {
 	async list() { try { return (await this.collection.find({}, { maxTimeMS: 5000 }).sort({ createdAt: 1, _id: 1 }).toArray()).map(doc => this.decode(doc)); } catch (error) { throw mongoFailure(error); } }
 	async get(id: string) { try { const doc = await this.collection.findOne({ _id: id }, { maxTimeMS: 5000 }); return doc ? this.decode(doc) : undefined; } catch (error) { throw mongoFailure(error); } }
 	async create(input: unknown) { const v = parseUpload(input); const { id, createdAt, ...fields } = v; try { await this.collection.insertOne({ ...fields, _id: id, createdAt: new Date(createdAt) }, { writeConcern: { w: "majority" } }); return v; } catch (error) { throw mongoFailure(error); } }
+	private condition(previous: UploadedVerifier) {
+		return { _id: previous.id, label: previous.label, filename: previous.filename, content: previous.content, version: previous.version, createdAt: new Date(previous.createdAt), ...(previous.pythonEnvironment ? { pythonEnvironment: previous.pythonEnvironment } : { pythonEnvironment: { $exists: false } }) };
+	}
+	async update(id: string, expectedToken: string, input: unknown) {
+		try {
+			const previous = editable(await this.get(id), expectedToken);
+			const next = replacement(previous, input);
+			const { id: _unusedId, createdAt, ...fields } = next;
+			const result = await this.collection.replaceOne(this.condition(previous), { ...fields, createdAt: new Date(createdAt) }, { writeConcern: { w: "majority" } });
+			if (!result.matchedCount) throw new CatalogError("脚本已变化，请重新打开后重试", 409);
+			return next;
+		} catch (error) { throw mongoFailure(error); }
+	}
+	async delete(id: string, expectedToken: string) {
+		try {
+			const previous = editable(await this.get(id), expectedToken);
+			const result = await this.collection.deleteOne(this.condition(previous), { writeConcern: { w: "majority" } });
+			if (!result.deletedCount) throw new CatalogError("脚本已变化，请重新打开后重试", 409);
+		} catch (error) { throw mongoFailure(error); }
+	}
+
 }
 export const publicUploaded = (v: UploadedVerifier) => ({ id: v.id, label: v.label, version: v.version.slice(0, 12), sha256: v.sha256, timeoutMs: v.timeoutMs, dependencies: [v.filename], source: "uploaded", runtime: v.runtime ?? "bun", contractVersion: v.contractVersion ?? 1, filename: v.filename, createdAt: v.createdAt });

@@ -436,6 +436,7 @@ export function batchConversationImport(input: {
 			}),
 		),
 		verifierNote,
+		Object.assign(node("a", "管理 Python 验证脚本", "btn btn-sm"), { href: "#/verifiers", target: "_blank", rel: "noopener" }),
 		node(
 			"p",
 			`模型配置快照：${input.settings.providerId} / ${input.settings.modelId}`,
@@ -456,6 +457,8 @@ export function batchConversationImport(input: {
 		warning,
 		confirm,
 	);
+	const reloadOnFocus = () => { if (element.isConnected) void loadVerifiers(); else window.removeEventListener("focus", reloadOnFocus); };
+	window.addEventListener("focus", reloadOnFocus);
 	void loadVerifiers();
 	return { element, isBusy: () => busy };
 }

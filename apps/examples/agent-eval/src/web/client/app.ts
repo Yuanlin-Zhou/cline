@@ -1,3 +1,5 @@
+import { deleteCasesDialog, deleteModuleDialog, archivedModulesDialog } from "./resource-delete.js";
+import { verifierManager, canLeaveVerifierManager } from "./verifier-manager.js";
 import { batchConversationImport } from "./batch-conversations.js";
 import { historyImportEditor } from "./history-import.js";
 import { workspaceEditor } from "./workspace-editor.js";
@@ -73,7 +75,8 @@ type Route =
 	| { page: "run-new" }
 	| { page: "runs" }
 	| { page: "run"; id: string }
-	| { page: "settings" };
+	| { page: "settings" }
+	| { page: "verifiers" };
 
 /* ----------------------------- DOM helpers ----------------------------- */
 
@@ -399,6 +402,7 @@ function parseRoute(): Route {
 		if (seg[1]) return { page: "run", id: seg[1] };
 	}
 	if (seg[0] === "runs") return { page: "runs" };
+	if (seg[0] === "verifiers") return { page: "verifiers" };
 	if (seg[0] === "settings") return { page: "settings" };
 	return { page: "cases" };
 }
@@ -412,6 +416,7 @@ const NAV_OF_PAGE: Record<Route["page"], string> = {
 	runs: "runs",
 	run: "runs",
 	settings: "settings",
+	verifiers: "verifiers",
 };
 
 function highlightNav(route: Route): void {
@@ -441,7 +446,10 @@ function flash(text: string, kind: "error" | "warning" | "success" | "info" = "e
 }
 
 let renderEpoch = 0;
+let lastRenderedHash = location.hash;
 function render(): void {
+	if (!canLeaveVerifierManager()) { history.replaceState(null, "", lastRenderedHash || "#/verifiers"); return; }
+	lastRenderedHash = location.hash;
 	renderEpoch++;
 	stopPolling();
 	const route = parseRoute();
@@ -457,6 +465,7 @@ function render(): void {
 		case "runs": void renderRuns(app); break;
 		case "run": void renderRunDetail(app, route.id); break;
 		case "settings": void renderSettings(app); break;
+		case "verifiers": app.append(verifierManager(api)); break;
 	}
 }
 
@@ -565,6 +574,7 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
 	for (const module of s.modules) {
 		moduleList.append(moduleItem(module, selected?.id === module.id, () => navigate(`#/cases/${module.id}`), moduleCounts.get(module.id) ?? 0, {
 			onEdit: () => openModuleModal(module),
+			onDelete: () => deleteModuleDialog(module.id, api, () => { toast("模块及全部案例已删除"); if (location.hash === "#/cases") render(); else navigate("#/cases"); }),
 			onArchive: () => confirmModal("归档模块", `确定归档模块「${module.name}」吗？其中的案例也会被归档。`, "归档", async () => {
 				try {
 					await api(`/api/modules/${module.id}/archive`, { method: "POST", headers: JSON_HEADERS });
@@ -574,7 +584,7 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
 			}),
 		}));
 	}
-	sidebar.append(moduleList);
+	sidebar.append(moduleList, h("button", { class: "btn btn-sm mt-2", onclick: () => archivedModulesDialog(api, () => { toast("模块及全部案例已删除"); navigate("#/cases"); render(); }) }, "已归档模块"));
 	layout.append(sidebar);
 
 	// Search box + table
@@ -606,7 +616,7 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
 		selectionInfo.textContent = selection.size ? `已选 ${selection.size} 个案例` : `${visible.length} 个案例`;
 		runSelectedBtn.disabled = selection.size === 0;
 		batchBar.hidden = selection.size === 0;
-		batchCount.textContent = `已选 ${selection.size} 个案例`;
+		batchCount.textContent = `已选 ${selection.size} 个案例，其中 ${[...selection].filter(id => !visible.some(c => c.id === id)).length} 个不在当前筛选结果中`;
 		selectAll.checked = visible.length > 0 && visible.every(c => selection.has(c.id));
 		selectAll.indeterminate = visible.some(c => selection.has(c.id)) && !selectAll.checked;
 	};
@@ -637,7 +647,7 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
 	const runSelectedBtn = h("button", { class: "btn btn-primary", onclick: () => openNewRun([...selection], []) }, "评测所选案例") as HTMLButtonElement;
 	const batchCount = h("span", {});
 	const transferSelected = (operation: "copy" | "move") => openCaseTransfer(operation, s.cases.filter(c => selection.has(c.id)), s, () => { selection.clear(); render(); }, [...selection].filter(id => !visible.some(c => c.id === id)).length);
-	const batchBar = h("div", { class: "BatchBar", hidden: true }, batchCount, h("div", { class: "flex-center gap-2 wrap" }, h("button", { class: "btn", onclick: () => transferSelected("copy") }, "复制所选"), h("button", { class: "btn", onclick: () => transferSelected("move") }, "移动所选"), h("button", { class: "btn btn-outline", onclick: () => { selection.clear(); renderTable(); } }, "取消选择"), runSelectedBtn));
+	const batchBar = h("div", { class: "BatchBar", hidden: true }, batchCount, h("div", { class: "flex-center gap-2 wrap" }, h("button", { class: "btn", onclick: () => transferSelected("copy") }, "复制所选"), h("button", { class: "btn", onclick: () => transferSelected("move") }, "移动所选"), h("button", { class: "btn btn-danger", onclick: () => deleteCasesDialog(s.cases.filter(c => selection.has(c.id)), s.modules, [...selection].filter(id => !visible.some(c => c.id === id)).length, api, () => { selection.clear(); toast("所选案例已删除"); render(); }) }, "删除所选"), h("button", { class: "btn btn-outline", onclick: () => { selection.clear(); renderTable(); } }, "取消选择"), runSelectedBtn));
 
 	const toolbar = h("div", { class: "flex-between mt-3 mb-2 gap-2 wrap" },
 		h("div", { class: "case-filters flex-center gap-2 grow wrap" }, searchBox, replayFilter, resultFilter, selectionInfo),
@@ -655,7 +665,7 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
 	renderTable();
 }
 
-function moduleItem(module: Pick<Module, "id" | "name" | "description">, active: boolean, onClick: () => void, count?: number, actions?: { onEdit: () => void; onArchive: () => void }): HTMLElement {
+function moduleItem(module: Pick<Module, "id" | "name" | "description">, active: boolean, onClick: () => void, count?: number, actions?: { onEdit: () => void; onArchive: () => void; onDelete: () => void }): HTMLElement {
 	const link = h("a", {
 		class: `module-item${active ? " active" : ""}`,
 		href: "#",
@@ -673,6 +683,7 @@ function moduleItem(module: Pick<Module, "id" | "name" | "description">, active:
 	actionBar.append(
 		h("button", { class: "btn btn-sm btn-icon", title: "编辑模块", onclick: (e: Event) => { e.stopPropagation(); actions.onEdit(); } }, "编辑"),
 		h("button", { class: "btn btn-sm btn-icon", title: "归档模块", onclick: (e: Event) => { e.stopPropagation(); actions.onArchive(); } }, "归档"),
+		h("button", { class: "btn btn-sm btn-danger", title: "删除模块及全部案例", onclick: (e: Event) => { e.stopPropagation(); actions.onDelete(); } }, "删除"),
 	);
 	wrapper.append(link, actionBar);
 	return wrapper;
