@@ -784,3 +784,588 @@ input[data-selection-id] { cursor: cell; }
 @media(max-width:600px) { .JudgeEditor .ModelFields { display: block; } .JudgeEditor .flex-between { align-items: flex-start; } }
 .Verifier-details > summary { list-style: none; }
 .Verifier-details > summary::-webkit-details-marker { display: none; }
+
+/* SPEC-027: quiet surfaces, purposeful hierarchy and progressive disclosure. */
+:root {
+	--color-canvas-subtle: #f7f8fa;
+	--color-canvas-inset: #f7f8fa;
+	--color-border-default: #e6e9ef;
+	--color-border-muted: #edf0f4;
+	--color-fg-default: #20252b;
+	--color-fg-muted: #626d7d;
+	--color-accent-fg: #365ddb;
+	--color-accent-emphasis: #365ddb;
+	--radius: 9px;
+	--font-stack:
+		-apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+		"Noto Sans CJK SC", "Segoe UI", sans-serif;
+}
+body {
+	font-variant-numeric: tabular-nums;
+}
+[hidden] {
+	display: none !important;
+}
+.AppMain {
+	max-width: 1536px;
+	padding: 28px 32px;
+}
+.page-head {
+	margin-bottom: 22px;
+}
+.page-desc {
+	line-height: 1.6;
+}
+.page-actions {
+	gap: 8px;
+}
+.btn {
+	min-height: 36px;
+	box-shadow: none;
+}
+.btn-primary {
+	background: var(--color-accent-emphasis);
+}
+.btn-primary:hover {
+	background: #2c4fbd;
+}
+.btn-sm {
+	min-height: 32px;
+}
+.Label {
+	white-space: nowrap;
+	font-weight: 500;
+}
+.Box {
+	box-shadow: none;
+}
+.Box-header {
+	background: transparent;
+}
+details > summary {
+	list-style: none !important;
+	cursor: pointer;
+}
+details > summary::-webkit-details-marker {
+	display: none;
+}
+details > summary::marker {
+	content: "";
+}
+.ActionMenu-anchor {
+	display: inline-flex;
+}
+.ActionMenu {
+	position: fixed;
+	margin: 0;
+	width: 224px;
+	max-width: calc(100vw - 16px);
+	padding: 6px;
+	border: 1px solid var(--color-border-default);
+	border-radius: 10px;
+	background: white;
+	color: var(--color-fg-default);
+	box-shadow: 0 8px 30px #20252b1a;
+}
+.ActionMenu button {
+	display: block;
+	width: 100%;
+	min-height: 38px;
+	padding: 8px 12px;
+	text-align: left;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+.ActionMenu button:hover,
+.ActionMenu button:focus-visible {
+	background: var(--color-canvas-subtle);
+}
+.ActionMenu button.ActionMenu-danger {
+	color: var(--color-danger-fg);
+}
+.module-entry {
+	position: relative;
+}
+.module-entry .module-item {
+	padding-right: 54px;
+}
+.module-actions {
+	position: absolute;
+	top: 8px;
+	right: 6px;
+	margin: 0;
+}
+.module-actions .ActionMenu-anchor > .btn {
+	font-size: 0;
+	padding: 4px 8px;
+}
+.module-actions .ActionMenu-anchor > .btn::after {
+	content: "•••";
+	font-size: 14px;
+}
+.module-item-desc {
+	max-width: 160px;
+}
+.TableWrap {
+	background: white;
+	border-radius: var(--radius);
+}
+.CaseTable td {
+	padding-top: 16px;
+	padding-bottom: 16px;
+}
+.CaseTable .case-name {
+	font-weight: 600;
+}
+.CaseTable .muted.small {
+	margin-top: 4px;
+}
+.BatchBar {
+	background: #edf1ff;
+	color: #334a87;
+}
+.RunSummary {
+	display: grid;
+	grid-template-columns: minmax(220px, 1fr) minmax(230px, 1fr) minmax(
+			170px,
+			0.8fr
+		);
+	padding: 18px 22px 12px;
+	gap: 8px 24px;
+	align-items: start;
+	margin-bottom: 18px;
+}
+.RunSummary > .StatusBar {
+	grid-column: 1 / -1;
+	width: 100%;
+	height: 4px;
+	margin: 4px 0 0;
+}
+.RunSummary .ResultMetrics-primary {
+	font-size: 19px;
+	margin: 0 0 4px;
+}
+.RunSummary .ResultMetrics-issues {
+	display: none;
+}
+.RunSummary-counts {
+	gap: 8px 14px;
+	margin-top: 8px;
+}
+.RunSummary-attention > p,
+.RunSummary-progress p {
+	margin: 8px 0 0;
+}
+.RunSummary-progress {
+	border-left: 1px solid var(--color-border-default);
+	padding-left: 22px;
+}
+.RunSummary .ResultMetrics:has(details[open]) {
+	grid-column: 1 / -1;
+}
+.RunSummary .ResultMetrics details[open] {
+	margin-top: 12px;
+}
+.RunWorkbench {
+	grid-template-columns: 300px minmax(0, 1fr);
+	align-items: start;
+}
+.MobileCasePicker {
+	min-width: 0;
+	border-right: 1px solid var(--color-border-default);
+}
+.MobileCasePicker > summary {
+	display: none;
+}
+.RunItems {
+	border: 0;
+	max-height: 70vh;
+	overflow-y: auto;
+}
+.RunItem {
+	padding: 15px 16px;
+}
+.RunItem-head {
+	gap: 8px;
+	align-items: center;
+	flex-direction: row;
+}
+.RunItem-head .case-name {
+	font-size: 13px;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+.RunItem-head .Label {
+	flex-shrink: 0;
+	font-size: 11px;
+}
+.RunItem[aria-pressed="true"] {
+	background: #f0f3ff;
+	box-shadow: inset 3px 0 var(--color-accent-emphasis);
+}
+.RunInspector {
+	padding: 18px 24px 24px;
+}
+.Inspector-title {
+	font-size: 18px;
+	margin-bottom: 8px;
+}
+.Inspector-content {
+	max-height: none;
+	overflow: visible;
+}
+.Inspector-content > .flash {
+	margin-bottom: 12px;
+}
+.RunInspector .tab-bar {
+	margin-top: 10px;
+}
+.RunInspector .tab-bar .ActionMenu-anchor {
+	margin-left: auto;
+}
+.RunInspector .tab-bar .ActionMenu button {
+	border: 0;
+	padding: 8px 12px;
+	text-align: left;
+}
+.RunInspector .tab-bar .ActionMenu-anchor > .btn {
+	padding: 8px;
+	font-size: 12px;
+}
+.RunFilterPanel {
+	margin: 0 0 12px;
+}
+.RunFilterPanel > summary {
+	display: none;
+}
+.ResultFilters {
+	margin: 0;
+}
+.JudgeStrip {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 12px;
+	padding: 10px 12px;
+	border-radius: 6px;
+	background: var(--color-canvas-subtle);
+}
+.JudgeStrip .btn {
+	margin-left: auto;
+	background: white;
+}
+.CaseLayout--editing {
+	display: block;
+	max-width: 1040px;
+	margin: 0 auto;
+}
+.CaseLayout--editing > section + section {
+	margin-top: 20px;
+}
+.replay-compact {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-bottom: 20px;
+}
+.replay-compact .replay-card {
+	padding: 9px 14px;
+	min-height: 36px;
+	width: auto;
+	background: white;
+}
+.replay-compact .replay-card .form-hint {
+	display: none;
+}
+.replay-compact .replay-card[aria-pressed="true"] .form-hint {
+	display: block;
+	max-width: 500px;
+	margin-top: 4px;
+}
+.Grading-goals {
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 8px;
+}
+.Grading-goal.btn {
+	padding: 10px 12px;
+	font-size: 13px;
+}
+.Grading-goal .form-hint {
+	font-size: 12px;
+	margin-top: 4px;
+}
+.RetryReasons {
+	display: grid;
+	gap: 0;
+	border: 1px solid var(--color-border-default);
+	border-radius: var(--radius);
+	overflow: hidden;
+}
+.RetryReasons .form-check {
+	padding: 14px 16px;
+	border-bottom: 1px solid var(--color-border-muted);
+}
+.RetryReasons .form-check:last-child {
+	border-bottom: 0;
+}
+.RetryReasons .form-check:has(input:disabled) {
+	color: var(--color-fg-muted);
+	background: var(--color-canvas-subtle);
+}
+.HeaderEditor > summary {
+	padding: 12px 0;
+	color: var(--color-fg-muted);
+	font-size: 13px;
+}
+.HeaderEditor[open] > summary {
+	margin-bottom: 8px;
+}
+.SettingsPanel {
+	max-width: 920px;
+	margin: 0;
+}
+.SettingsPanel > .btn {
+	margin-top: 20px;
+}
+.SettingsPanel .ConfigSection {
+	border: 0;
+	padding: 8px 0;
+}
+.toast.info {
+	color: var(--color-fg-default);
+	background: white;
+	border-color: var(--color-border-default);
+}
+#toast-root {
+	top: auto;
+	bottom: 20px;
+	pointer-events: none;
+}
+@media (max-width: 1080px) {
+	.RunWorkbench {
+		grid-template-columns: 280px minmax(0, 1fr);
+	}
+	.RunInspector {
+		padding: 16px;
+	}
+	.Grading-goals {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+@media (max-width: 760px) {
+	.AppMain {
+		padding: 20px 16px;
+	}
+	.RunSummary {
+		grid-template-columns: minmax(0, 1fr);
+		padding: 14px 16px;
+		gap: 12px;
+	}
+	.RunSummary .ResultMetrics-primary {
+		font-size: 17px;
+	}
+	.RunSummary-progress {
+		border: 0;
+		border-top: 1px solid var(--color-border-muted);
+		padding: 10px 0 0;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 4px 12px;
+	}
+	.RunSummary-progress p {
+		margin: 0;
+	}
+	.RunSummary .JudgeSummary {
+		width: auto;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+	.RunSummary-counts {
+		margin-top: 6px;
+	}
+	.RunWorkbench {
+		display: block;
+	}
+	.MobileCasePicker {
+		border: 0;
+		border-bottom: 1px solid var(--color-border-default);
+	}
+	.MobileCasePicker > summary {
+		display: block;
+		padding: 14px 16px;
+		font-size: 13px;
+		overflow-wrap: anywhere;
+	}
+	.RunItems {
+		max-height: 340px;
+		border: 0;
+	}
+	.RunFilterPanel > summary {
+		display: block;
+		padding: 8px 0;
+		font-size: 13px;
+		color: var(--color-fg-muted);
+	}
+	.RunFilterPanel .ResultFilters {
+		padding: 8px 0;
+	}
+	.RunInspector {
+		padding: 16px;
+	}
+	.RunInspector .tab-bar button {
+		padding: 10px;
+	}
+	.RunInspector .tab-bar .ActionMenu-anchor > .btn {
+		padding: 10px 4px;
+	}
+	.Inspector-title {
+		font-size: 16px;
+	}
+	.page-head {
+		margin-bottom: 16px;
+		gap: 10px;
+	}
+	.page-title {
+		font-size: 22px;
+	}
+	.page-actions {
+		flex-wrap: wrap;
+	}
+	.Grading-goals {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+	.Modal-footer {
+		flex-wrap: wrap;
+	}
+	.btn,
+	.btn-sm,
+	.tab-bar button,
+	.form-control,
+	.ActionMenu button {
+		min-height: 44px;
+	}
+	.ActionMenu {
+		width: 224px;
+	}
+	.JudgeStrip .btn {
+		margin-left: 0;
+	}
+	.CaseTable {
+		min-width: 720px;
+	}
+	.replay-compact .replay-card {
+		flex: 1 1 100%;
+	}
+}
+.AttemptControls {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	margin-bottom: 12px;
+}
+.AttemptControls .form-control {
+	width: auto;
+	max-width: 420px;
+	flex: 1;
+	min-width: 0;
+}
+.RuleSection {
+	margin: 12px 0;
+	border: 1px solid var(--color-border-default);
+	border-radius: var(--radius);
+	background: white;
+}
+.RuleSection > summary {
+	padding: 14px 16px;
+	font-weight: 500;
+}
+.RuleSection > .Box,
+.RuleSection .JudgeEditor,
+.RuleSection .ReplyEditor {
+	margin: 0;
+	border: 0;
+}
+.RuleSection > .Grading {
+	margin: 0;
+	padding: 0 16px 16px;
+}
+.RuleSection:has([aria-invalid="true"]) {
+	border-color: var(--color-danger-emphasis);
+}
+@media (max-width: 760px) {
+	.AppMain:has(.RunSummary) .crumbs {
+		display: none;
+	}
+	.AppMain:has(.RunSummary) .page-desc {
+		font-size: 12px;
+	}
+	.RunSummary-attention > .small {
+		display: none;
+	}
+	.RunSummary-counts {
+		margin-top: 0;
+	}
+	.RunSummary {
+		gap: 10px;
+	}
+	.RunSummary-progress {
+		padding-top: 8px;
+	}
+	.RunInspector .Verifier-details {
+		margin: 6px 0;
+	}
+	.AttemptControls {
+		margin-bottom: 10px;
+	}
+	.RunInspector .tab-bar {
+		margin-top: 6px;
+		margin-bottom: 12px;
+	}
+}
+.module-actions {
+	padding: 0;
+}
+.module-item.active {
+	background: #edf1ff;
+	border-color: #dce3ff;
+}
+.module-entry .module-item {
+	padding-right: 50px;
+}
+.ActiveFilters {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-bottom: 10px;
+}
+.ActiveFilters:empty {
+	display: none;
+}
+.FilterChip {
+	color: var(--color-accent-fg);
+	background: #edf1ff;
+	border-color: #dce3ff;
+}
+@media (max-width: 760px) {
+	.RunFilterPanel {
+		margin-bottom: 8px;
+	}
+	.RunFilterPanel > summary {
+		padding: 4px 0;
+	}
+	.RunInspector .Verifier-details > summary {
+		padding: 4px 0;
+	}
+	.RunInspector .tab-bar {
+		margin-top: 0;
+	}
+	.Inspector-title {
+		margin-bottom: 0;
+	}
+}

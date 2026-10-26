@@ -33,7 +33,11 @@ export function headerEditor(
 	initial: HeaderConfig,
 	title = "自定义模型请求头",
 ): HTMLElement {
-	const section = document.createElement("section");
+	const section = document.createElement("details");
+	const summary = document.createElement("summary");
+	summary.className = "HeaderEditor-summary";
+	summary.textContent = title;
+	section.append(summary);
 	section.id = id;
 	section.className = "HeaderEditor";
 	const toolbar = document.createElement("div");
@@ -69,7 +73,12 @@ export function headerEditor(
 		"Authorization 等凭据请选择环境变量，填写服务端变量名。";
 	const templateHint = document.createElement("p");
 	templateHint.append("请求头模板：");
-	for (const template of ["{{sessionId}}", "{{caseId}}", "{{evaluationId}}", "{{requestId}}"]) {
+	for (const template of [
+		"{{sessionId}}",
+		"{{caseId}}",
+		"{{evaluationId}}",
+		"{{requestId}}",
+	]) {
 		const code = document.createElement("code");
 		code.textContent = template;
 		templateHint.append(code, " ");
@@ -79,6 +88,7 @@ export function headerEditor(
 		"requestId 每次模型 HTTP 请求（含重试）生成新值；sessionId、evaluationId 在同一次执行中保持不变。";
 	help.append(envHint, templateHint, executionHint);
 	const refresh = () => {
+		summary.textContent = `${title} · ${rows.children.length} 项`;
 		empty.hidden = rows.children.length > 0;
 		rows.hidden = !rows.children.length;
 	};
@@ -170,8 +180,10 @@ export function headerEditor(
 		addRow({ name, value, source: "literal" });
 	for (const [name, value] of Object.entries(initial.headersEnv ?? {}))
 		addRow({ name, value, source: "env" });
-	add.onclick = () =>
+	add.onclick = () => {
+		section.open = true;
 		addRow({ name: "", value: "", source: "literal" }).focus();
+	};
 	refresh();
 	section.append(toolbar, hint, rows, empty, help);
 	return section;
@@ -180,15 +192,48 @@ export function headerEditor(
 export function readHeaderEditor(id: string): HeaderConfig {
 	const section = document.getElementById(id);
 	if (!section) return {};
-	return headersFromRows(
-		[...section.querySelectorAll<HTMLElement>("[data-header-row]")].map(
-			(row) => ({
-				name: row.querySelector<HTMLInputElement>("[data-header-name]")!.value,
-				source: row.querySelector<HTMLSelectElement>("[data-header-source]")!
-					.value as HeaderRow["source"],
-				value: row.querySelector<HTMLInputElement>("[data-header-value]")!
-					.value,
-			}),
-		),
-	);
+	section
+		.querySelectorAll("[aria-invalid]")
+		.forEach((control) => control.removeAttribute("aria-invalid"));
+	try {
+		const result = headersFromRows(
+			[...section.querySelectorAll<HTMLElement>("[data-header-row]")].map(
+				(row) => ({
+					name: row.querySelector<HTMLInputElement>("[data-header-name]")!
+						.value,
+					source: row.querySelector<HTMLSelectElement>("[data-header-source]")!
+						.value as HeaderRow["source"],
+					value: row.querySelector<HTMLInputElement>("[data-header-value]")!
+						.value,
+				}),
+			),
+		);
+		section.querySelector(".HeaderEditor-error")?.remove();
+		return result;
+	} catch (error) {
+		for (
+			let parent: HTMLElement | null = section;
+			parent;
+			parent = parent.parentElement
+		) {
+			if (parent instanceof HTMLDetailsElement) parent.open = true;
+			if (parent.getAttribute("role") === "tabpanel")
+				document
+					.querySelector<HTMLButtonElement>(`[aria-controls="${parent.id}"]`)
+					?.click();
+		}
+		let issue = section.querySelector<HTMLElement>(".HeaderEditor-error");
+		if (!issue) {
+			issue = document.createElement("div");
+			issue.className = "HeaderEditor-error field-error";
+			issue.setAttribute("role", "alert");
+			section.append(issue);
+		}
+		issue.textContent = String(error);
+		const invalid =
+			section.querySelector<HTMLInputElement>("[data-header-name]");
+		invalid?.setAttribute("aria-invalid", "true");
+		invalid?.focus();
+		throw error;
+	}
 }

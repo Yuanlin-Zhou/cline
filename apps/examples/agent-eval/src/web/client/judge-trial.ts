@@ -33,7 +33,7 @@ export function judgeTrial(options: {
 	const element = node("section", "", "JudgeTrial");
 	const hint = node(
 		"p",
-		"试评分会调用 Judge 并产生用量，不调用被测模型，不修改原正式评分或批次结论。",
+		"试评分会调用 Judge 并产生用量，不调用被测模型，不修改原正式评分或批次结论。关闭窗口后后台继续，可用“停止试评分”取消。",
 		"form-hint",
 	);
 	const select = node("select", "", "form-control");
@@ -43,6 +43,10 @@ export function judgeTrial(options: {
 	const result = node("div"),
 		input = node("pre", "", "code");
 	input.hidden = true;
+	const materialList = node("div", "", "JudgeMaterials");
+	const rawInput = node("details", "", "Verifier-details");
+	rawInput.hidden = true;
+	rawInput.append(node("summary", "查看送审原文"), input);
 	const actions = node("div", "", "flex-center gap-2 wrap");
 	let targets: Target[] = [],
 		current: Task | undefined,
@@ -107,6 +111,9 @@ export function judgeTrial(options: {
 		preview = undefined;
 		current = undefined;
 		input.hidden = true;
+		rawInput.hidden = true;
+		rawInput.open = false;
+		materialList.replaceChildren();
 		result.replaceChildren();
 		notice.textContent = "预览送审材料后可开始试评分。";
 		requestId = crypto.randomUUID();
@@ -142,6 +149,21 @@ export function judgeTrial(options: {
 				preview = data;
 				input.textContent = JSON.stringify(data.input, null, 2);
 				input.hidden = false;
+				rawInput.hidden = false;
+				rawInput.open = false;
+				materialList.replaceChildren(
+					node(
+						"p",
+						`送审材料 · ${new TextEncoder().encode(JSON.stringify(data.input)).length.toLocaleString()} 字节`,
+						"form-hint",
+					),
+					...data.input.sources.map((source) =>
+						node("p", `${source.title} · ${source.completeness}`, "small"),
+					),
+					...data.input.limitations.map((text) =>
+						node("p", text, "Verifier-warning"),
+					),
+				);
 				notice.textContent = `仅预览，尚未调用 Judge。送审 ${data.input.sources.length} 段材料。`;
 				requestId = crypto.randomUUID();
 			} catch (e) {
@@ -194,8 +216,9 @@ export function judgeTrial(options: {
 		field("历史执行", select),
 		actions,
 		notice,
+		materialList,
+		rawInput,
 		result,
-		input,
 	);
 	void (async () => {
 		try {

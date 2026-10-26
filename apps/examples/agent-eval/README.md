@@ -20,7 +20,7 @@ Cases reuse tags from active cases across active modules; modules reuse tags fro
 
 ## Copying and moving cases between modules
 
-In the Web UI, select cases and use **复制所选 / 移动所选**, or open a saved case through its name or row and use **复制到… / 移动到…** in the details. Save any draft changes first. List rows show only **运行 / 删除** actions. Batch operations include selected cases hidden by the current filters.
+In the Web UI, select cases and use **复制所选 / 移动所选**, or open a saved case through its name or row and use **更多 → 复制到… / 移动到…** in the details. Copying lets you choose the saved version or unsaved draft; save draft changes before moving. List rows offer **运行** and a **更多** menu for copy, move and delete. Batch operations include selected cases hidden by the current filters.
 
 Choose an active target module and review the preview before confirming. Copies retain all configuration and get a new identity with no execution history. Moves retain their identity and history, increase the revision, and change module ownership. Existing runs and historical reruns keep their original snapshots. Same-module copies use `-copyN`; cross-module collisions either stop the entire operation or use `-copyN` / `-moveN`. No existing case is overwritten.
 
@@ -202,9 +202,9 @@ Each case records the final text, finish reason, duration, iteration count, toke
 
 ## 执行状态与会话记录
 
-单案例调试和批次详情会显示当前阶段、运行耗时、最近收到的活动以及页面同步状态。文本暂时不变不代表执行停止；工具通知与验证阶段可以继续推进。
+单案例调试和批次详情会显示当前阶段、运行耗时、最近收到的活动以及页面同步异常；正常同步不常驻提示。文本暂时不变不代表执行停止；工具通知与验证阶段可以继续推进。
 
-“结果与断言”优先展示判分和最终回复，实时文本预览默认折叠。“会话记录”按消息查看本次执行保存的用户输入、模型回复、工具请求与结果，可刷新、分页和下载 JSON。SDK 保存的是会话上下文，压缩后可能不含全部早期消息；缺失、清理或写入中的文件会有明确提示。工具诊断不能作为工具实际执行的判分证据。错误、取消和中断时仍保留已有输出。
+“结果”优先展示判分和最终回复，实时文本预览默认折叠。“会话”按消息查看本次执行保存的用户输入、模型回复、工具请求与结果，可刷新、分页和下载 JSON。SDK 保存的是会话上下文，压缩后可能不含全部早期消息；缺失、清理或写入中的文件会有明确提示。工具诊断不能作为工具实际执行的判分证据。错误、取消和中断时仍保留已有输出。
 
 会话默认跟随最新保存的消息；点击“最早消息”或“下一页”后暂停跟随，便于查阅早期内容，点击“最新消息”恢复。
 
@@ -215,18 +215,18 @@ Each case records the final text, finish reason, duration, iteration count, toke
 
 ## 案例选择、复制和当前批次重试
 
-- 案例集和新建评测的案例选择区支持 **Shift 连选**、鼠标从复选框开始纵向拖动、全选/反选。列表快速选择只作用于当前筛选结果；批量工具栏说明被筛选隐藏的已选项。
+- 案例集和新建评测的案例选择区支持 **Shift 连选**、鼠标从复选框开始纵向拖动、全选/反选。**选择操作** 中的全选/反选只作用于当前筛选结果；批量工具栏说明被筛选隐藏的已选项。
 - 复制时先选择目标模块，点击 **编辑副本配置** 修改输入、判定规则、模型及运行配置，应用修改返回预览后再确认创建。批量复制可只勾选需要统一覆盖的配置字段；逐项编辑的副本优先。取消不会保存副本，原案例和其历史不会改变。有未保存内容时可明确选择使用当前内容或已保存版本。
 - 已结束批次点击 **重试未通过案例**，勾选一种或多种原因：**断言失败 / 执行错误 / 无法判定 / 已取消**。弹窗显示各类数量和本次案例数、执行次数；例如只勾选“无法判定”即可只重试该类案例。也可在案例结果内重试单项。
 - 重试使用原批次冻结的配置和验证脚本，在原批次中创建新的尝试，不读取案例库的后续修改。直接执行模式会再次操作原目录当前内容。运行中先等待完成或取消，再发起重试。
 - 每个案例/轮次默认显示最新执行及 **重试 N 次**；详情下拉框切换首次执行与历次重试的结果、会话及产物。通过率和状态按最新执行统计；Token、费用和耗时累计所有尝试。多轮报告可切换首次执行与最新结果，重试不增加实验轮次。
 - 结果顶部精简为任务验收/回复检查摘要和异常，规则版本、覆盖率及统计口径在 **详细统计与统计口径** 中查看；已结束执行的过程信息折叠到 **执行详情**。
-- JSON 保留全部尝试并附最新项标识，CSV 增加 root_item_id、attempt、previous_item_id 和 is_latest。原 parentRunId 新建子批次 API 保留兼容；“重复评测本批次”仍用于另建独立实验。
+- JSON 保留全部尝试并附最新项标识，CSV 增加 root_item_id、attempt、previous_item_id 和 is_latest。原 parentRunId 新建子批次 API 保留兼容；**更多 → 重复评测（新批次）** 用于另建独立实验；导出格式统一在 **导出** 菜单选择。
 
 
 ## LLM Judge：参考答案评分
 
-在案例 **判定规则 → LLM 评分** 中填写参考答案，自选评审 **执行结果 / 执行轨迹 / 两者**，并配置独立 Judge 模型。默认输出 0–100 分、理由和原文依据，不影响原案例结论；可显式开启及格线。全局 Judge 默认模型在 **运行配置** 中单独保存，已有案例使用自己的快照。
+在案例 **判定规则 → LLM 评分** 中填写参考答案，自选评审 **执行结果 / 执行轨迹 / 两者**，并配置独立 Judge 模型。默认输出 0–100 分、理由和原文依据，不影响原案例结论；可显式开启及格线。全局 Judge 默认模型在 **运行配置 → Judge 默认模型** 中单独保存，已有案例使用自己的快照。
 
 支持历史执行 **预览送审材料 → 试评分**，仅调用 Judge，不重跑被测模型或修改原正式成绩。评分 Token/费用独立统计，失败或信息不足不填为 0 分。复制、导入、原批次重试及 JSON/CSV/Markdown 导出保留 Judge 配置和结果。
 
@@ -235,3 +235,12 @@ Each case records the final text, finish reason, duration, iteration count, toke
 ## 大案例集性能
 
 案例列表与批次进度使用轻量摘要和增量同步，完整输入、输出和尝试历史按需读取。旧数据首次启动会自动备份并构建索引；升级前停止旧实例。迁移、回退、MongoDB 兼容和基准命令见 [性能说明](docs/performance.md)。
+
+
+## 界面操作速查
+
+- 批次详情优先显示结论和模型回复；结束后默认打开未通过项，手动选择不会被轮询打断。手机通过 **切换案例** 展开列表，选中后直接查看结果。
+- **结果 / 会话 / 评分** 是常用视图，**更多视图** 包含输入与配置、工具诊断、文件产物、脚本试验证。无 Judge 配置时不显示空评分页签；结果页的 **查看依据** 打开完整评分。
+- 案例编辑中 **保存案例** 显式保存，**运行草稿** 使用当前填写内容且不自动保存。判定规则按检查类型展开，切换页签和折叠配置保留填写内容。
+- **运行配置** 分为被测模型、执行默认值和 Judge 默认模型。前两项共用保存范围并保留彼此字段，Judge 单独保存；自定义请求头按需展开。
+- 同批次重试按原因选择，显示案例数与执行次数；只有多次尝试时出现历史下拉框。仅评分低分不表示断言失败，信息不足或评分错误不显示为零分。

@@ -52,7 +52,7 @@ await page.addInitScript(() => {
 });
 try {
 	await page.goto(origin + "/#/settings");
-	await page.locator("#global-judge-provider").waitFor();
+	await page.locator("#global-judge-provider").waitFor({state:"attached"});
 	for (const rate of [1, 4]) {
 		await cdp.send("Emulation.setCPUThrottlingRate", { rate });
 		for (const [label, hash, ready] of [
@@ -67,7 +67,7 @@ try {
 				await page.evaluate(() => {
 					location.hash = "#/settings";
 				});
-				await page.locator("#global-judge-provider").waitFor();
+				await page.locator("#global-judge-provider").waitFor({state:"attached"});
 				const start = performance.now();
 				await page.evaluate((hash: string) => {
 					(window as any).benchmarkTasks = [];
@@ -79,7 +79,7 @@ try {
 					await page
 						.getByRole("button", { name: "重试未通过案例", exact: true })
 						.click();
-					await page.getByRole("button", { name: /^确认重试 / }).waitFor();
+					await page.getByRole("button", { name: /^重试 \d+ 次执行/ }).waitFor();
 					if (i) values.push(performance.now() - before);
 					await page.getByRole("button", { name: "取消", exact: true }).click();
 				} else {

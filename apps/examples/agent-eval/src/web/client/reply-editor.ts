@@ -72,6 +72,8 @@ export function replyEditor(options: {
 			.filter(Boolean);
 	function reveal(key: string, focus = true) {
 		root.hidden = false;
+		for (let parent = root.parentElement; parent; parent = parent.parentElement)
+			if (parent instanceof HTMLDetailsElement) parent.open = true;
 		const panel = root.closest('[role="tabpanel"]');
 		if (panel?.id)
 			document
