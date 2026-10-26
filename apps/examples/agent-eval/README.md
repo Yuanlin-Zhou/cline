@@ -231,3 +231,7 @@ Each case records the final text, finish reason, duration, iteration count, toke
 支持历史执行 **预览送审材料 → 试评分**，仅调用 Judge，不重跑被测模型或修改原正式成绩。评分 Token/费用独立统计，失败或信息不足不填为 0 分。复制、导入、原批次重试及 JSON/CSV/Markdown 导出保留 Judge 配置和结果。
 
 完整说明、模型凭据、材料边界、成本及 API 见 [LLM Judge 指南](docs/llm-judge.md)，可运行的 JSON 模板见 [参考答案示例](examples/llm-judge/suite.json)。已有 MongoDB 部署先运行 `bun run mongo:prepare` 更新校验器；未启用 Judge 的旧案例继续按原方式运行。
+
+## 大案例集性能
+
+案例列表与批次进度使用轻量摘要和增量同步，完整输入、输出和尝试历史按需读取。旧数据首次启动会自动备份并构建索引；升级前停止旧实例。迁移、回退、MongoDB 兼容和基准命令见 [性能说明](docs/performance.md)。

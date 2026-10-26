@@ -1,3 +1,5 @@
+import { itemLoader } from "./item-loader.js";
+import type { ItemSummary } from "../projections.js";
 import { judgeEditor, judgeModelEditor, judgeResultPanel } from "./judge-ui.js";
 import { judgeTrial } from "./judge-trial.js";
 import { judgeSummary } from "../../judge/summary.js";
@@ -60,7 +62,7 @@ type StateResponse = {
 	latest: Record<string, LatestResult>;
 };
 
-type RunDetailResponse = Run & { items: RunItem[]; summary: Summary; repeatReport: RepeatReport };
+type RunDetailResponse = Run & { items: RunItem[]; summary: Summary; repeatReport: RepeatReport; cursor?:string; revision?:number; judgeSummary?:ReturnType<typeof judgeSummary>; gradingSummary?:ReturnType<typeof gradingSummary>; moduleSummary?:Record<string,Summary> };
 
 type CaseRunItem = {
  rootItemId?: string; attempt?: number;
@@ -248,8 +250,9 @@ function tagPills(tags?: string[]): HTMLElement[] {
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
+let routeRequests=new AbortController();
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-	const res = await fetch(path, { ...init, signal: init?.signal ?? (!init?.method || init.method === "GET" ? AbortSignal.timeout(10000) : undefined) });
+	const res = await fetch(path, { ...init, signal: init?.signal ?? (!init?.method || init.method === "GET" ? AbortSignal.any([routeRequests.signal,AbortSignal.timeout(10000)]) : undefined) });
 	const text = await res.text();
 	let data: unknown = null;
 	try {
@@ -264,7 +267,13 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 	return data as T;
 }
 
-const getState = () => api<StateResponse>("/api/state");
+// Summary DTOs intentionally carry no input. Full records are loaded before editing or copying.
+const getState = async ():Promise<StateResponse> => {
+ const [catalog,modules,settings]=await Promise.all([api<Pick<StateResponse,"cases"|"latest">>("/api/cases?view=summary"),api<{modules:Module[]}>("/api/modules?view=summary"),api<EvalDefaults>("/api/settings")]);
+ return {...catalog,modules:modules.modules,settings,runs:[]};
+};
+const loadItem=itemLoader(api);
+
 
 /* ----------------------------- Toast / modal ----------------------------- */
 
@@ -368,7 +377,16 @@ function openCaseTransfer(
 	onSuccess: (cases: SavedCase[]) => void = () => render(),
 	hiddenCount = 0,
 ): void {
-	const label = operation === "copy" ? "复制" : "移动";
+ if(sources.some(c=>(c as SavedCase & {summary?:boolean}).summary)){
+  const original=sources;
+  toast("正在加载所选案例…");
+  void Promise.all(sources.map(c=>api<SavedCase>(`/api/cases/${c.id}`))).then(full=>{
+   if(full.some((c,i)=>c.revision!==original[i].revision))throw Error("所选案例已变化，请刷新后重试");
+   const ids=new Set(full.map(c=>c.id));
+   openCaseTransfer(operation,full,{...state,cases:[...state.cases.filter(c=>!ids.has(c.id)),...full]},onSuccess,hiddenCount);
+  }).catch(e=>toast(String(e),"error"));return;
+ }
+ const label = operation === "copy" ? "复制" : "移动";
 	const modules = state.modules.filter(
 		(m) => operation === "copy" || sources.some((c) => c.moduleId !== m.id),
 	);
@@ -553,11 +571,9 @@ function openCaseTransfer(
 		errorBox.replaceChildren();
 		try {
 			if (refreshSources) {
-				const latest = await api<StateResponse>("/api/state");
-				if (current !== generation || closed) return;
-				selected = selected.map(
-					(c) => latest.cases.find((item) => item.id === c.id) ?? c,
-				);
+				const latest = await Promise.all(selected.map(c=>api<SavedCase>(`/api/cases/${c.id}`)));
+ if (current !== generation || closed) return;
+ selected=latest;
 			}
 			const next = await api<TransferPreview>("/api/cases/transfer/preview", {
 				method: "POST",
@@ -905,6 +921,7 @@ let lastRenderedHash = location.hash;
 function render(): void {
 	if (!canLeaveVerifierManager()) { history.replaceState(null, "", lastRenderedHash || "#/verifiers"); return; }
 	lastRenderedHash = location.hash;
+ routeRequests.abort();routeRequests=new AbortController();
 	renderEpoch++;
 	stopPolling();
 	const route = parseRoute();
@@ -1231,7 +1248,7 @@ async function runCases(caseIds: string[], moduleIds: string[], name?: string): 
 }
 
 function openModuleModal(module?: Module): void {
-	const tagsEditor = tagEditor({ id: "m-tags", initial: module?.tags, limit: 20, loadCandidates: async () => (await api<StateResponse>("/api/state")).modules.flatMap(m => m.tags ?? []) });
+	const tagsEditor = tagEditor({ id: "m-tags", initial: module?.tags, limit: 20, loadCandidates: async () => (await api<{modules:Module[]}>("/api/modules?view=summary")).modules.flatMap(m => m.tags ?? []) });
 	const body = h("div", {});
 	body.append(
 		field("名称", input("m-name", module?.name)),
@@ -1895,7 +1912,7 @@ if(copy) {
 	const stopInline = async (): Promise<void> => {
 		if (!inlineRunId) return;
 		try {
-			await api(`/api/runs/${inlineRunId}/cancel`, { method: "POST", headers: JSON_HEADERS });
+			await api(`/api/runs/${inlineRunId}/cancel?view=summary`, { method: "POST", headers: JSON_HEADERS });
 		} catch (error) {
 			toast(error instanceof Error ? error.message : String(error), "error");
 		}
@@ -1938,11 +1955,11 @@ if(copy) {
 	if(!copy)void loadHistory();
 }
 
-const inlineInspectors = new WeakMap<HTMLElement, { id: string; view: ReturnType<typeof createItemInspector> }>();
+const inlineInspectors = new WeakMap<HTMLElement, { id: string; view: ReturnType<typeof lazyItemInspector> }>();
 function renderInlineResult(container: HTMLElement, item: RunItem): void {
 	const existing = inlineInspectors.get(container);
 	if (existing?.id === item.id && container.contains(existing.view.element)) { existing.view.update(item); return; }
-	const view = createItemInspector(item.runId, item);
+	const view = lazyItemInspector(item.runId, item);
 	inlineInspectors.set(container, { id: item.id, view });
 	container.replaceChildren(view.element);
 }
@@ -1980,30 +1997,35 @@ function renderToolCalls(container: HTMLElement, toolCalls: EvalCaseResult["tool
 	container.append(box);
 }
 
-function pollRun(runId: string, onUpdate: (detail: RunDetailResponse) => void, onDone?: () => void): () => void {
-	let stopped = false;
-	let handle: number | undefined;
-	const tick = async (): Promise<void> => {
-		if (stopped) return;
-		try {
-			const detail = await api<RunDetailResponse>(`/api/runs/${runId}`);
-			if (stopped) return;
-			onUpdate(detail);
-			showSyncStatus(runId);
-			if (["completed", "cancelled", "interrupted"].includes(detail.status) && !detail.items.some(i => ["queued", "running"].includes(i.status))) {
-				if (onDone) onDone();
-				return;
-			}
-		} catch (error) {
-			if (!stopped) showSyncStatus(runId, error instanceof Error ? error.message : String(error));
-		}
-		handle = window.setTimeout(tick, 1000);
-	};
-	handle = window.setTimeout(tick, 200);
-	return () => {
-		stopped = true;
-		if (handle !== undefined) clearTimeout(handle);
-	};
+function pollRun(runId: string, onUpdate: (detail: RunDetailResponse, changed?:boolean) => void, onDone?: () => void, initial?:RunDetailResponse): () => void {
+ let stopped=false,busy=false,handle:ReturnType<typeof setTimeout>|undefined,current=initial;
+ const controller=new AbortController();
+ const tick=async()=>{
+  if(stopped||busy)return;
+  const previousCursor=current?.cursor;
+  busy=true;
+  try{
+   if(!current)current=await api<RunDetailResponse>(`/api/runs/${runId}/overview`,{signal:controller.signal});
+   else {
+    const change=await api<RunDetailResponse & {resync?:boolean}>(`/api/runs/${runId}/changes?cursor=${encodeURIComponent(current.cursor??"")}`,{signal:controller.signal});
+    if(change.resync)current=await api<RunDetailResponse>(`/api/runs/${runId}/overview`,{signal:controller.signal});
+    else if(change.status){
+     const rows=new Map(current.items.map(i=>[i.rootItemId??i.id,i]));
+     for(const item of change.items)rows.set(item.rootItemId??item.id,item);
+     current={...current,...change,items:[...rows.values()]};
+    }
+   }
+   if(stopped){busy=false;return;}
+   onUpdate(current,current.cursor!==previousCursor);showSyncStatus(runId);
+   if(["completed","cancelled","interrupted"].includes(current.status)&&!current.items.some(i=>["queued","running"].includes(i.status))){busy=false;onDone?.();return;}
+  }catch(error){if(!stopped)showSyncStatus(runId,String(error));}
+  busy=false;
+  if(!stopped)handle=setTimeout(tick,1000);
+ };
+ const retry=(event:Event)=>{if((event as CustomEvent).detail===runId){clearTimeout(handle);if(!stopped){current=undefined;void tick();}}};
+ window.addEventListener("eval-retry",retry);
+ handle=setTimeout(tick,200);
+ return ()=>{stopped=true;controller.abort();clearTimeout(handle);window.removeEventListener("eval-retry",retry);};
 }
 
 /* ----------------------------- View: new run ----------------------------- */
@@ -2291,7 +2313,7 @@ async function renderRuns(app: HTMLElement): Promise<void> {
 		actions.append(h("button", { class: "btn btn-sm", onclick: () => navigate(`#/run/${run.id}`) }, "查看"));
 		if (["queued", "running"].includes(run.status)) {
 			actions.append(h("button", { class: "btn btn-sm btn-danger", onclick: async () => {
-				try { await api(`/api/runs/${run.id}/cancel`, { method: "POST", headers: JSON_HEADERS }); toast("已请求取消"); render(); } catch (error) { toast(error instanceof Error ? error.message : String(error), "error"); }
+				try { await api(`/api/runs/${run.id}/cancel?view=summary`, { method: "POST", headers: JSON_HEADERS }); toast("已请求取消"); render(); } catch (error) { toast(error instanceof Error ? error.message : String(error), "error"); }
 			} }, "取消"));
 		}
 		if (failed + summary.cancelled > 0 && ["completed", "cancelled", "interrupted"].includes(run.status)) {
@@ -2321,7 +2343,7 @@ async function renderRuns(app: HTMLElement): Promise<void> {
 
 async function rerunFailed(runId: string, itemIds?: string[]): Promise<void> {
 	try {
-		const run = await api<RunDetailResponse>(`/api/runs/${runId}`);
+		const run = await api<RunDetailResponse>(`/api/runs/${runId}/retry-preview`);
 		const candidates = latestAttempts(run.items).filter(
 			(i) => canRetry(i) && (!itemIds || itemIds.includes(i.id)),
 		);
@@ -2358,7 +2380,7 @@ async function rerunFailed(runId: string, itemIds?: string[]): Promise<void> {
 			const caseCount = new Set(items.map((i) => i.snapshot.id)).size;
 			const direct = items.some(
 				(i) =>
-					(i.snapshot.definition.workspace ?? i.snapshot.defaults.workspace)
+					(i as ItemSummary).direct || (i.snapshot.definition.workspace ?? i.snapshot.defaults.workspace)
 						?.mode === "direct",
 			);
 			message.textContent = `将在当前评测重试 ${caseCount} 个案例、${items.length} 次执行，使用原配置和验证脚本快照，保留全部历史。${direct ? "直接执行模式将再次操作原目录当前内容。" : ""}`;
@@ -2433,7 +2455,7 @@ async function rerunFailed(runId: string, itemIds?: string[]): Promise<void> {
 				busy = false;
 				close();
 				toast("已在当前评测中排队重试");
-				if (location.hash === `#/run/${runId}`) render();
+				if (location.hash === `#/run/${runId}`) window.dispatchEvent(new CustomEvent("eval-retry",{detail:runId}));
 				else navigate(`#/run/${runId}`);
 			} catch (error) {
 				errorBox.textContent = String(error);
@@ -2470,7 +2492,7 @@ function repeatBatch(run: RunDetailResponse): void {
 	const count = h("input", { class: "form-control", id: "repeat-batch-count", type: "number", min: 1, max: 100, step: 1, value: 3 }) as HTMLInputElement;
 	const hint = h("p", { class: "muted small" });
 	const error = h("div", { role: "alert" });
-	const update = () => { hint.textContent = `${run.repeatReport.caseCount} 个案例 × ${count.value || "—"} 轮 = ${run.repeatReport.caseCount * Number(count.value)} 次执行；沿用原批次快照和并发 ${run.concurrency}，创建独立的新批次。`; };
+	const update = () => { hint.textContent = `${new Set(run.items.map(i=>i.snapshot.id)).size} 个案例 × ${count.value || "—"} 轮 = ${new Set(run.items.map(i=>i.snapshot.id)).size * Number(count.value)} 次执行；沿用原批次快照和并发 ${run.concurrency}，创建独立的新批次。`; };
 	count.addEventListener("input", update); update();
 	openModal({ title: "重复评测本批次", body: h("div", {}, field("重复轮数（含首次）", count), hint, error), actions: close => [
 		h("button", { class: "btn", onclick: close }, "取消"),
@@ -2514,16 +2536,17 @@ function renderRepeatReport(target: HTMLElement, run: RunDetailResponse): void {
 		const populate = () => {
 			if (content.childElementCount) return;
 			for (const r of c.rounds) {
-				const item = items.get(r.itemId)!;
+				const item = items.get(r.itemId);
 				content.append(h("section", { class: "Box" }, h("div", { class: "Box-header flex-center gap-2" }, `第 ${r.round} 轮`, statusBadge(r.status)), h("div", { class: "Box-body" },
 					...r.failedAssertions.map(message => h("p", { class: "flash flash-error" }, message)),
 					r.error ? h("p", { class: "flash flash-error" }, r.error) : null,
-					h("pre", { class: "RepeatOutput" }, item.result?.text ?? (r.status === "queued" ? "尚未执行" : r.status === "running" ? "执行中，实时输出见案例结果" : item.text || "无完整输出")),
+					h("pre", { class: "RepeatOutput", "data-report-item":r.itemId }, item?.result?.text || (r.status === "queued" ? "尚未执行" : r.status === "running" ? "执行中，实时输出见案例结果" : item?.text || "加载输出…")),
 				)));
 			}
 		};
-		row.append(content); row.addEventListener("toggle", () => { if ((row as HTMLDetailsElement).open) populate(); });
-		if (expanded.has(c.caseId)) populate();
+		const fill=()=>{populate();for(const el of content.querySelectorAll<HTMLElement>("[data-report-item]")){if(el.dataset.loaded)continue;el.dataset.loaded="true";void api<RunItem>(`/api/runs/${run.id}/items/${el.dataset.reportItem}`).then(item=>{el.textContent=item.result?.text??item.text??"无完整输出";const failures=[...(item.result?.assertions??[]).filter(a=>!a.passed).map(a=>a.message),...(item.result?.grading?.results??[]).filter(r=>r.status!=="pass").map(r=>`${r.id}: ${r.status} ${r.message}`)];const problem=item.error??item.result?.error;if(problem)failures.push(problem);el.parentElement?.querySelectorAll(".flash-error").forEach(node=>node.remove());for(const message of failures)el.before(h("p",{class:"flash flash-error"},message));}).catch(e=>{el.textContent=String(e);delete el.dataset.loaded;});}};
+  row.append(content); row.addEventListener("toggle", () => { if ((row as HTMLDetailsElement).open) fill(); });
+		if (expanded.has(c.caseId)) fill();
 		target.append(row);
 	}
 }
@@ -2531,7 +2554,7 @@ function renderRepeatReport(target: HTMLElement, run: RunDetailResponse): void {
 async function renderRunDetail(app: HTMLElement, runId: string): Promise<void> {
 	app.append(loading());
 	let detail: RunDetailResponse;
-	try { detail = await api<RunDetailResponse>(`/api/runs/${runId}`); }
+	try { detail = await api<RunDetailResponse>(`/api/runs/${runId}/overview`); }
 	catch (error) { app.replaceChildren(flash(error instanceof Error ? error.message : String(error))); return; }
 	if (parseRoute().page !== "run" || location.hash !== `#/run/${runId}`) return;
 	app.replaceChildren();
@@ -2552,14 +2575,19 @@ async function renderRunDetail(app: HTMLElement, runId: string): Promise<void> {
 	const count = h("span", { class: "muted small" });
 	const rows = new Map<string, HTMLElement>();
 	let selectedId: string | undefined;
-	let itemView: ReturnType<typeof createItemInspector> | undefined;
+	let itemView: ReturnType<typeof lazyItemInspector> | undefined;
 	let inspectorItem: string | undefined;
+ let inspected:RunItem|undefined;
 	let lastRunStatus = "";
  const attemptChoice = new Map<string, string>();
+ const attemptCache=new Map<string,{latest:string,items:RunItem[]}>();
+ const attemptsLoading=new Set<string>();
  let metricsOpen = false;
  const reportMode = select("report-attempt-mode", [["latest", "各轮最新结果（含重试）"], ["first", "仅首次执行结果"]], "") as HTMLSelectElement;
  reportMode.value = "latest";
- reportMode.onchange = () => renderRepeatReport(repeatReport, reportMode.value === "first" ? { ...detail, items: detail.items.filter(i => !i.attempt), repeatReport: buildRepeatReport({...detail,items:detail.items.filter(i=>!i.attempt)}) } : detail);
+ let reportLoadedRevision=-1,reportEpoch=0;
+ const loadReport=async()=>{const epoch=++reportEpoch;try{const value=await api<{revision:number,repeatReport:RepeatReport}>(`/api/runs/${runId}/report?attemptMode=${reportMode.value}`);if(repeatReport.isConnected&&epoch===reportEpoch){reportLoadedRevision=value.revision;renderRepeatReport(repeatReport,{...detail,repeatReport:value.repeatReport});}}catch(e){if(epoch===reportEpoch)repeatReport.replaceChildren(flash(String(e)));}};
+ reportMode.onchange=()=>void loadReport();
 	const applyFilters = () => {
 		const query = (search as HTMLInputElement).value.toLowerCase();
 		const value = (filter as HTMLSelectElement).value;
@@ -2587,14 +2615,20 @@ async function renderRunDetail(app: HTMLElement, runId: string): Promise<void> {
 		}
 		const current = detail.items.find(i => i.id === selectedId);
   const rootId = current?.rootItemId ?? current?.id;
-  const attempts = detail.items.filter(i => (i.rootItemId ?? i.id) === rootId);
+  let attempts = attemptCache.get(rootId!)?.items ?? (current?[current]:[]);
+  if(current && attemptCache.get(rootId!)?.latest!==current.id && !attemptsLoading.has(rootId!)){
+   attemptsLoading.add(rootId!);const key=rootId!,latest=current.id;
+   void api<RunItem[]>(`/api/runs/${runId}/items/${latest}/attempts`).then(items=>{attemptCache.set(key,{latest,items});if(list.isConnected)applyFilters();}).catch(e=>toast(String(e),"error")).finally(()=>attemptsLoading.delete(key));
+  }
+  attempts=attempts.map(i=>i.id===current?.id?current:i);
   const selected = attempts.find(i => i.id === attemptChoice.get(rootId!)) ?? current;
 		if (!selected) {
 			inspector.replaceChildren(h("div", { class: "empty" }, h("div", { class: "empty-title" }, "没有匹配的案例"), h("div", { class: "empty-desc" }, "调整结果、模块或搜索条件后重试。")));
 			inspectorItem = undefined; return;
 		}
+		inspected=selected;
 		if (inspectorItem !== selected.id) {
-			itemView = createItemInspector(runId, selected);
+			itemView = lazyItemInspector(runId, selected);
    const history = select("item-attempt", attempts.map(i => [i.id, `${i.attempt ? `第 ${i.attempt} 次重试` : "首次执行"} · ${({queued:"排队中",running:"运行中",passed:"通过",failed:"失败",error:"执行错误",cancelled:"已取消",inconclusive:"无法判定"})[i.status]}`]), selected.id) as HTMLSelectElement;
    history.setAttribute("aria-label", "执行尝试历史");
    history.onchange = () => { attemptChoice.set(rootId!, history.value); inspectorItem = undefined; applyFilters(); };
@@ -2606,11 +2640,15 @@ async function renderRunDetail(app: HTMLElement, runId: string): Promise<void> {
   const retryButton=inspector.querySelector<HTMLButtonElement>("[data-item-retry]");
   if(retryButton)retryButton.disabled=["queued","running"].includes(detail.status)||!current||!canRetry(current);
   const history=inspector.querySelector<HTMLSelectElement>("#item-attempt");
+  if(history){const signature=attempts.map(i=>i.id).join(",");if(history.dataset.attempts!==signature){history.replaceChildren(...attempts.map(i=>h("option",{value:i.id},`${i.attempt?`第 ${i.attempt} 次重试`:"首次执行"} · ${STATUS_META[i.status].label}`)));history.value=selected.id;history.dataset.attempts=signature;}}
   if(history)for(const option of history.options){const attempt=attempts.find(i=>i.id===option.value);if(attempt)option.textContent=`${attempt.attempt ? `第 ${attempt.attempt} 次重试` : "首次执行"} · ${STATUS_META[attempt.status].label}`;}
 
 	};
-	const update = (run: RunDetailResponse) => {
-		detail = run;
+	const update = (run: RunDetailResponse, changed=true) => {
+ if(!changed){if(inspected)itemView?.update(inspected);return;}
+		const selectedRoot=detail.items.find(i=>i.id===selectedId)?.rootItemId??selectedId;
+ detail = run;
+ if(selectedRoot)selectedId=run.items.find(i=>(i.rootItemId??i.id)===selectedRoot)?.id??selectedId;
 		const value = run.summary;
 
 		const settled = value.passed + value.failed + value.error + value.inconclusive + value.cancelled;
@@ -2619,7 +2657,7 @@ async function renderRunDetail(app: HTMLElement, runId: string): Promise<void> {
 		if (lastRunStatus !== run.status) {
 			lastRunStatus = run.status; actions.replaceChildren();
 			if (running) actions.append(h("button", { class: "btn btn-danger", onclick: async () => {
-				try { await api(`/api/runs/${runId}/cancel`, { method: "POST", headers: JSON_HEADERS }); toast("已请求停止评测"); }
+				try { await api(`/api/runs/${runId}/cancel?view=summary`, { method: "POST", headers: JSON_HEADERS }); toast("已请求停止评测"); }
 				catch (error) { toast(String(error), "error"); }
 			} }, "停止评测"));
 			else if (value.failed + value.error + value.inconclusive + value.cancelled > 0) actions.append(h("button", { class: "btn btn-primary", onclick: () => rerunFailed(runId) }, "重试未通过案例"));
@@ -2627,29 +2665,34 @@ async function renderRunDetail(app: HTMLElement, runId: string): Promise<void> {
 			actions.append(h("button", { class: "btn", onclick: () => download(`/api/runs/${runId}/export?format=markdown`) }, "导出简报"));
 			if (!running) actions.append(h("button", { class: "btn", onclick: () => repeatBatch(detail) }, "重复评测本批次"));
 		}
-  const metrics = gradingMetrics(gradingSummary(run.items));
+  const metrics = gradingMetrics(run.gradingSummary??gradingSummary(run.items));
   const fold = metrics.querySelector("details"); if(fold){ fold.open=metricsOpen;fold.ontoggle=()=>{if(fold.isConnected)metricsOpen=fold.open;}; }
   summary.replaceChildren(
    metrics,
-   ...(() => {const j=judgeSummary(run.items);return j.expected?[h("div",{class:"JudgeSummary"},h("strong",{},`LLM 已评分 ${j.scored}/${j.expected}`),h("span",{class:"muted small"},` · 未评分 ${j.unscored}${j.errors?` · 错误 ${j.errors}`:""}${j.insufficient?` · 信息不足 ${j.insufficient}`:""} · 评分耗时 ${fmtDuration(j.durationMs)} · 评分 Token ${j.inputTokens+j.outputTokens} · 评分费用 ${j.cost===null?"未提供":fmtCost(j.cost)}`),h("details",{class:"Verifier-details"},h("summary",{},"Judge 分组均分"),...j.groups.map(g=>h("p",{},`${g.model} · ${g.rubric}：${g.average.toFixed(1)}/100（${g.scored} 次）`))))]:[];})(),
+   ...(() => {const j=run.judgeSummary??judgeSummary(run.items);return j.expected?[h("div",{class:"JudgeSummary"},h("strong",{},`LLM 已评分 ${j.scored}/${j.expected}`),h("span",{class:"muted small"},` · 未评分 ${j.unscored}${j.errors?` · 错误 ${j.errors}`:""}${j.insufficient?` · 信息不足 ${j.insufficient}`:""} · 评分耗时 ${fmtDuration(j.durationMs)} · 评分 Token ${j.inputTokens+j.outputTokens} · 评分费用 ${j.cost===null?"未提供":fmtCost(j.cost)}`),h("details",{class:"Verifier-details"},h("summary",{},"Judge 分组均分"),...j.groups.map(g=>h("p",{},`${g.model} · ${g.rubric}：${g.average.toFixed(1)}/100（${g.scored} 次）`))))]:[];})(),
    h("div", { class: "RunSummary-counts", hidden: value.failed + value.error + value.inconclusive + value.cancelled + value.running + value.queued === 0 }, ...(["failed", "error", "inconclusive", "cancelled", "running", "queued"] as const).filter(key => value[key] > 0).map(key => h("span", { class: "flex-center gap-1" }, statusBadge(key), h("b", {}, String(value[key]))))),
-   h("div", { class: "RunSummary-meta muted small" }, `已结束 ${settled} / ${value.total} · 重试 ${run.items.filter(i => (i.attempt ?? 0) > 0).length} 次 · 累计执行耗时 ${fmtDuration(value.durationMs)} · Token ${fmtTokens(value.tokens)} · 费用 ${value.cost === null ? "未提供" : fmtCost(value.cost)}`), statusBar(value),
+   h("div", { class: "RunSummary-meta muted small" }, `已结束 ${settled} / ${value.total} · 重试 ${value.retryCount??run.items.filter(i => (i.attempt ?? 0) > 0).length} 次 · 累计执行耗时 ${fmtDuration(value.durationMs)} · Token ${fmtTokens(value.tokens)} · 费用 ${value.cost === null ? "未提供" : fmtCost(value.cost)}`), statusBar(value),
   );
 		const table = h("table", { class: "Table" }, h("thead", {}, h("tr", {}, ...["模块", "通过 / 总数", "判定明细", "失败 / 错误 / 未判定", "累计执行耗时"].map(label => h("th", {}, label)))));
 		const body = h("tbody", {});
-		for (const [name, m] of Object.entries(moduleStats(run.items))) {
+		for (const [name, m] of Object.entries(run.moduleSummary??moduleStats(run.items))) {
 			const metrics = gradingSummary(run.items.filter(i => i.moduleName === name));
 			body.append(h("tr", {}, h("td", {}, name), h("td", {}, `${m.passed} / ${m.total}`), h("td", {}, [metrics.legacy.denominator ? `回复检查 ${metrics.legacy.numerator}/${metrics.legacy.denominator}` : "", metrics.groups.length ? `任务验收 ${metrics.groups.reduce((n,g)=>n+g.passRate.numerator,0)}/${metrics.groups.reduce((n,g)=>n+g.passRate.denominator,0)}` : ""].filter(Boolean).join(" · ") || "待判定"), h("td", {}, `${m.failed} / ${metrics.executionErrors.numerator} / ${latestAttempts(run.items).filter(i => i.moduleName === name && i.status === "inconclusive").length}`), h("td", {}, fmtDuration(m.durationMs))));
 		}
 		table.append(body); stats.replaceChildren(h("div", { class: "TableWrap" }, table));
-		renderRepeatReport(repeatReport, reportMode.value === "first" ? { ...run, items: run.items.filter(i => !i.attempt), repeatReport: buildRepeatReport({...run,items:run.items.filter(i=>!i.attempt)}) } : run);
+		if(!repeatReport.closest<HTMLElement>("[role=tabpanel]")?.hidden&&reportLoadedRevision!==run.revision)void loadReport();
 		applyFilters();
 	};
 	const results = h("section", {}, h("div", { class: "ResultFilters" }, search, filter, moduleFilter, roundFilter, count), h("div", { class: "RunWorkbench" }, list, inspector));
 	app.append(h("div", { class: "crumbs" }, h("a", { href: "#/runs" }, "评测批次"), h("span", {}, "/"), h("span", {}, runId.slice(0, 8))), h("div", { class: "page-head flex-between wrap gap-3" }, h("div", {}, h("div", { class: "flex-center gap-2 wrap" }, title, status), h("p", { class: "page-desc" }, `创建于 ${fmtTime(detail.createdAt)} · ${detail.repeatCount ?? 1} 轮 · 并发 ${detail.concurrency}${detail.note ? ` · ${detail.note}` : ""}`)), actions), summary, panelTabs("run-detail", [["案例结果", results], ["多轮报告", h("div", {}, field("统计结果", reportMode), repeatReport)], ["模块统计", stats]]));
 	search.addEventListener("input", applyFilters); filter.addEventListener("change", applyFilters); moduleFilter.addEventListener("change", applyFilters); roundFilter.addEventListener("change", applyFilters);
 	update(detail);
-	if (["queued", "running"].includes(detail.status) || detail.items.some(i => ["queued", "running"].includes(i.status))) activePoll = pollRun(runId, update);
+	const resume=()=>{stopPolling();activePoll=pollRun(runId,update,undefined,detail);};
+ const retryEvent=(event:Event)=>{if((event as CustomEvent).detail===runId&&app.isConnected){resume();}};
+ window.addEventListener("eval-retry",retryEvent);
+ const cleanup=new MutationObserver(()=>{if(!list.isConnected){window.removeEventListener("eval-retry",retryEvent);cleanup.disconnect();}});cleanup.observe(document.body,{childList:true,subtree:true});
+ document.getElementById("run-detail-tab-1")?.addEventListener("click",()=>void loadReport());
+ if (["queued", "running"].includes(detail.status) || detail.items.some(i => ["queued", "running"].includes(i.status))) resume();
 }
 
 function statusBar(summary: Summary): HTMLElement {
@@ -2707,7 +2750,11 @@ function createItemInspector(runId: string, initial: RunItem) {
 		if(item.snapshot.definition.replayMode === "full-task" && item.workspace) { const mode = item.result?.workspaceInfo?.mode ?? (item.snapshot.definition.workspace ?? item.snapshot.defaults.workspace)?.mode ?? "copy"; execution.append(h("p", {class:"muted small"}, `${mode === "direct" ? "直接执行" : "复制后执行"} · 实际目录：${item.workspace}`)); }
 		const details = progress.querySelector("details"); if (details && expanded) details.open = true;
 	};
-	const renderTab = async () => {
+	let renderedTab:string|undefined;
+ const renderTab = async () => {
+  const sameTab=renderedTab===tab;renderedTab=tab;
+  const scroll=content.scrollTop;
+  const expanded=new Set(sameTab?[...content.querySelectorAll<HTMLDetailsElement>("details[open]")].map(el=>el.querySelector("summary")?.textContent):[]);
 		const currentRevision = ++revision;
 		const result = item.result;
 		if (tab !== "verification") trial?.suspend();
@@ -2765,6 +2812,7 @@ function createItemInspector(runId: string, initial: RunItem) {
 				content.append(diffArea);
 			} catch (error) { if (currentRevision === revision) content.replaceChildren(flash(String(error))); }
 		}
+  if(sameTab&&currentRevision===revision){for(const details of content.querySelectorAll<HTMLDetailsElement>("details"))if(expanded.has(details.querySelector("summary")?.textContent))details.open=true;content.scrollTop=scroll;}
 	};
 	for (const [key, label] of labels) tabs.append(h("button", { type: "button", "data-tab": key, onclick: () => { tab = key; void renderTab(); } }, label));
 	setHeader(); void renderTab();
@@ -2783,8 +2831,14 @@ function createItemInspector(runId: string, initial: RunItem) {
 	} };
 }
 
+function lazyItemInspector(runId:string,initial:RunItem){
+ const element=h("div",{},loading());let view:ReturnType<typeof createItemInspector>|undefined;let revision=0;
+ const update=(next:RunItem)=>{const epoch=++revision;void loadItem(runId,next).then(item=>{if(epoch!==revision||!element.isConnected)return;if(!view)view=createItemInspector(runId,item);else view.update(item);if(!element.contains(view.element))element.replaceChildren(view.element);}).catch(error=>{if(epoch===revision)element.replaceChildren(flash(String(error)),h("button",{class:"btn",onclick:()=>update(next)},"重试加载"));});};
+ update(initial);return {element,update};
+}
+
 function openItemModal(runId: string, item: RunItem): void {
-	openModal({ title: `${item.snapshot.definition.id} · ${item.moduleName}`, wide: true, body: createItemInspector(runId, item).element, actions: close => [h("button", { class: "btn", onclick: close }, "关闭")] });
+	openModal({ title: `${item.snapshot.definition.id} · ${item.moduleName}`, wide: true, body: lazyItemInspector(runId, item).element, actions: close => [h("button", { class: "btn", onclick: close }, "关闭")] });
 }
 
 async function renderSettings(app: HTMLElement): Promise<void> {

@@ -1,0 +1,73 @@
+{
+  "url": "http://127.0.0.1:3134",
+  "browser": "151.0.7922.173",
+  "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+  "memoryBytes": 10452471808,
+  "runId": "3a714475-4149-4004-9e5e-b6d4e47625c5",
+  "results": [
+    {
+      "label": "cases",
+      "cpuThrottling": 1,
+      "samples": 30,
+      "p50Ms": 113.98831700000028,
+      "p95Ms": 141.91331300000002,
+      "maxLongTaskMs": 51
+    },
+    {
+      "label": "batch",
+      "cpuThrottling": 1,
+      "samples": 30,
+      "p50Ms": 61.29346400000031,
+      "p95Ms": 78.40590800000064,
+      "maxLongTaskMs": 0
+    },
+    {
+      "label": "new-run",
+      "cpuThrottling": 1,
+      "samples": 30,
+      "p50Ms": 57.702432000000044,
+      "p95Ms": 118.04174700000112,
+      "maxLongTaskMs": 0
+    },
+    {
+      "label": "retry-preview",
+      "cpuThrottling": 1,
+      "samples": 30,
+      "p50Ms": 116.61546600000293,
+      "p95Ms": 129.85759399999915,
+      "maxLongTaskMs": 0
+    },
+    {
+      "label": "cases",
+      "cpuThrottling": 4,
+      "samples": 30,
+      "p50Ms": 405.38095500000054,
+      "p95Ms": 911.9034780000002,
+      "maxLongTaskMs": 435
+    },
+    {
+      "label": "batch",
+      "cpuThrottling": 4,
+      "samples": 30,
+      "p50Ms": 183.71937199999957,
+      "p95Ms": 362.51630800000567,
+      "maxLongTaskMs": 70
+    },
+    {
+      "label": "new-run",
+      "cpuThrottling": 4,
+      "samples": 30,
+      "p50Ms": 89.99498799999856,
+      "p95Ms": 150.6634980000017,
+      "maxLongTaskMs": 0
+    },
+    {
+      "label": "retry-preview",
+      "cpuThrottling": 4,
+      "samples": 30,
+      "p50Ms": 430.67548499999975,
+      "p95Ms": 850.8065639999986,
+      "maxLongTaskMs": 515
+    }
+  ]
+}

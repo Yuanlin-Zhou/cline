@@ -12,7 +12,7 @@ export function judgeSummary(items: RunItem[]) {
 		const score = item.result?.llmJudge;
 		if (score?.status !== "scored" || score.score === null) continue;
 		const config = item.snapshot.definition.llmJudge!;
-		const key = JSON.stringify([config.model, config.rubric ?? ""]);
+		const key = (item as RunItem & {judgeGroupKey?:string}).judgeGroupKey ?? JSON.stringify([config.model, config.rubric ?? ""]);
 		const g = groups.get(key) ?? {
 			model: `${config.model?.providerId} / ${config.model?.modelId}`,
 			rubric: config.rubric ?? "默认评分标准",

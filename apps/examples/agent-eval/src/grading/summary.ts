@@ -1,7 +1,7 @@
 import { latestAttempts } from "../web/types.js";
 import type { EvalCaseResult } from "../types.js";
 
-type Item = { id?: string; rootItemId?: string; attempt?: number; status: string; snapshot: { id: string; definition: { id: string; grading?: unknown } }; result?: EvalCaseResult };
+type Item = { gradingGroupKey?:string; id?: string; rootItemId?: string; attempt?: number; status: string; snapshot: { id: string; definition: { id: string; grading?: unknown } }; result?: EvalCaseResult };
 const baseStatus = (item:Item)=>item.result?.llmJudge?.baseStatus??item.status;
 const fraction = (numerator: number, denominator: number) => ({ numerator, denominator, rate: denominator ? numerator / denominator : null });
 export function gradingSummary(items: Item[]) {
@@ -10,7 +10,7 @@ export function gradingSummary(items: Item[]) {
 	const legacy = settled.filter(i => !i.snapshot.definition.grading);
 	const groups = new Map<string, Item[]>();
 	for (const item of settled.filter(i => i.snapshot.definition.grading)) {
-		const key = `${item.snapshot.id}:${item.result?.grading?.ruleHash ?? JSON.stringify(item.snapshot.definition.grading)}`;
+		const key = `${item.snapshot.id}:${item.gradingGroupKey ?? item.result?.grading?.ruleHash ?? JSON.stringify(item.snapshot.definition.grading)}`;
 		groups.set(key, [...groups.get(key) ?? [], item]);
 	}
 	return {

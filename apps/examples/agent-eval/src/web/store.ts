@@ -1,3 +1,4 @@
+import { Projections, type ItemSummary } from "./projections.js";
 import {preflightJudge} from "../judge/engine.js";
 import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
@@ -17,11 +18,13 @@ const cleanTags = (tags: unknown): string[] => (Array.isArray(tags) ? tags : [])
 export class EvalStore {
 	validateCase?: (definition: EvalCase) => void;
 	readonly db: Database;
+ readonly projections: Projections;
 	constructor(readonly directory: string, options: { seedModules?: boolean } = {}) {
 		mkdirSync(directory, { recursive: true });
 		this.db = new Database(path.join(directory, "eval.sqlite"));
 		this.db.exec(`PRAGMA journal_mode=WAL;
 			CREATE TABLE IF NOT EXISTS records (kind TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(kind,id));`);
+		try {this.projections = new Projections(this.db,directory);} catch(error){this.db.close();throw error;}
 		if (!this.get<EvalDefaults>("settings", "default")) {
 			this.put("settings", "default", parseEvalSuite({ cases: [{ id: "default", prompt: "default" }] }).defaults);
 			if (options.seedModules !== false) for (const [name, description] of [["read_file", "文件读取、路径处理与边界行为"], ["write_file", "文件创建、内容修改与写入验证"], ["execute_command", "命令执行与错误处理"], ["task_completion", "完整任务执行与最终结果验证"]]) this.createModule(name, description);
@@ -29,15 +32,50 @@ export class EvalStore {
 		this.db.transaction(() => {
 			for (const run of this.list<Run>("run")) if (["queued", "running"].includes(run.status)) {
 				run.status = "interrupted"; run.endedAt = now(); this.put("run", run.id, run);
-				for (const item of this.items(run.id)) if (["queued", "running"].includes(item.status)) {
+				for (const summary of this.summaries(run.id).filter(i => ["queued", "running"].includes(i.status))) {
+ const item=this.require<RunItem>("item",summary.id);
 					item.status = "error"; item.interrupted = true; item.error = "服务重启，执行已中断。请在当前评测内重试。"; item.endedAt = now(); this.put("item", item.id, item);
 				}
 			}
 		})();
 	}
-	list<T>(kind: string): T[] { return (this.db.query("SELECT data FROM records WHERE kind=? ORDER BY rowid").all(kind) as { data: string }[]).map(row => JSON.parse(row.data) as T); }
-	get<T>(kind: string, id: string): T | undefined { const row = this.db.query("SELECT data FROM records WHERE kind=? AND id=?").get(kind, id) as { data: string } | null; return row ? JSON.parse(row.data) as T : undefined; }
-	put(kind: string, id: string, value: unknown) { this.db.query("INSERT INTO records(kind,id,data) VALUES(?,?,?) ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data").run(kind, id, JSON.stringify(value)); }
+	list<T>(kind: string): T[] {
+  if(kind==="item")return this.projections.summaries().map(i=>this.require<RunItem>("item",i.id)) as T[];
+  return (this.db.query("SELECT data FROM records WHERE kind=? ORDER BY rowid").all(kind) as { data: string }[]).map(row => JSON.parse(row.data) as T);
+ }
+ get<T>(kind:string,id:string):T|undefined {
+  const row=this.db.query("SELECT data FROM records WHERE kind=? AND id=?").get(kind,id) as {data:string}|null;
+  if(!row)return;
+  const value=JSON.parse(row.data);
+  if(kind==="item"){
+   const state=this.db.query("SELECT data FROM run_item_state WHERE item_id=?").get(id) as {data:string}|null;
+   if(state)Object.assign(value,JSON.parse(state.data));
+  }
+  return value;
+ }
+ put(kind:string,id:string,value:unknown){
+  this.db.transaction(()=>{
+   if(["case","item","run"].includes(kind)&&(value as {id?:string})?.id!==id)throw Error("记录 ID 不一致");
+   this.db.query("INSERT INTO records(kind,id,data) VALUES(?,?,?) ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data").run(kind,id,JSON.stringify(value));
+   if(["case","item","run"].includes(kind)){
+    const row=this.db.query("SELECT rowid AS ordinal FROM records WHERE kind=? AND id=?").get(kind,id) as {ordinal:number};
+    this.projections.write(kind,value,row.ordinal);
+   }
+  })();
+ }
+ progress(item:RunItem){
+  this.db.transaction(()=>{
+   const row=this.db.query("SELECT ordinal FROM run_item_summaries WHERE item_id=?").get(item.id) as {ordinal:number}|null;
+   if(!row)throw Error("执行摘要不存在");
+   this.projections.write("item",item,row.ordinal);
+  })();
+ }
+ summaries(runId?:string):ItemSummary[]{return this.projections.summaries(runId?"WHERE run_id=?":"",runId?[runId]:[]);}
+ caseItems(caseId:string){return this.projections.summaries("WHERE case_id=?",[caseId]);}
+ itemIds(runId:string,status?:string,round?:number):string[]{
+  return (this.db.query(`SELECT item_id FROM run_item_summaries WHERE run_id=? ${status?'AND status=?':''} ${round?'AND round=?':''} ORDER BY ordinal`).all(runId,...(status?[status]:[]),...(round?[round]:[])) as {item_id:string}[]).map(r=>r.item_id);
+ }
+
 	require<T>(kind: string, id: string): T { const value = this.get<T>(kind, id); if (!value) throw new Error("记录不存在"); return value; }
 	settings() { return this.require<EvalDefaults>("settings", "default"); }
 	activeModules() { return this.list<Module>("module").filter(module => !module.archived); }
@@ -70,7 +108,7 @@ export class EvalStore {
 	}
 	createCase(moduleId: string, defaults: EvalDefaults, definition: EvalCase): SavedCase {
 		this.require<Module>("module", moduleId);
-		if (this.activeCases().some(c => c.moduleId === moduleId && c.definition.id === definition.id)) throw new Error("同模块已有相同案例 ID");
+		if (this.projections.cases(moduleId).some(c => c.definition.id === definition.id)) throw new Error("同模块已有相同案例 ID");
 		const item: SavedCase = { id: randomUUID(), moduleId, revision: 1, definition, defaults, updatedAt: now() }; this.put("case", item.id, item); return item;
 	}
 	duplicateCase(id: string): SavedCase {
@@ -115,7 +153,7 @@ export class EvalStore {
 	deleteCase(id: string) {
 		this.require<SavedCase>("case", id);
 		// Executions own their snapshots, so deleting a case preserves queued work and history.
-		this.db.query("DELETE FROM records WHERE kind='case' AND id=?").run(id);
+		this.db.transaction(()=>{this.db.query("DELETE FROM records WHERE kind='case' AND id=?").run(id);this.db.query("DELETE FROM case_summaries WHERE case_id=?").run(id);})();
 	}
 	parseImport(content: string, mode: string, replayMode: string): EvalSuite {
 		if (!["single-turn", "full-task", "function-call"].includes(replayMode)) throw new Error("请选择有效回放方式");
@@ -149,7 +187,7 @@ export class EvalStore {
 		})();
 		return { created, updated, skipped };
 	}
-	items(runId: string) { return this.list<RunItem>("item").filter(item => item.runId === runId); }
+	items(runId: string) { return this.itemIds(runId).map(id=>this.require<RunItem>("item",id)); }
 	detail(id: string): RunDetail { return { ...this.require<Run>("run", id), items: this.items(id) }; }
 	retryRun(id: string, input: unknown): { run: Run; itemIds: string[] } {
 		const body = input as {
@@ -202,7 +240,7 @@ export class EvalStore {
 					(run.retryRevision ?? 0) !== body.expectedRetryRevision
 				)
 					throw new TransferError("评测已变化或仍在运行，请刷新后重试");
-				const latest = latestAttempts(this.items(id));
+				const latest = latestAttempts(this.summaries(id));
 				const selected = body.itemIds
 					? latest.filter((i) => body.itemIds!.includes(i.id))
 					: latest.filter(
@@ -253,7 +291,7 @@ export class EvalStore {
 			.immediate();
 	}
 
-	createRun(input: RunInput, resolvedSources?: RunSource[]): Run {
+	createRun(input: RunInput, resolvedSources?: RunSource[], validated = false): Run {
 		const concurrency = input.concurrency ?? 1;
 		if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("并发数须为 1–4");
 		const repeatCount = input.repeatCount === undefined ? 1 : input.repeatCount;
@@ -265,16 +303,16 @@ export class EvalStore {
 		else if (input.draft?.length) {
 			sources = input.draft.map(draft => ({ snapshot: { id: randomUUID(), moduleId: draft.moduleId, revision: 0, definition: { ...draft.definition, replayMode: input.replayMode as "single-turn" | "full-task" | "function-call" }, defaults: draft.defaults, updatedAt: now() }, moduleName: this.require<Module>("module", draft.moduleId).name }));
 		} else if (input.parentRunId) {
-			const items = latestAttempts(this.detail(input.parentRunId).items).filter(i => input.rerunScope === "all" || ["failed", "error", "cancelled", "inconclusive"].includes(i.status));
+			const items = latestAttempts(this.summaries(input.parentRunId)).filter(i => input.rerunScope === "all" || ["failed", "error", "cancelled", "inconclusive"].includes(i.status));
 			// Repeated failures select a case once, retaining the original input snapshot.
-			sources = [...new Map(items.map(i => [i.snapshot.id, { snapshot: i.snapshot, moduleName: i.moduleName, verifierSnapshots: i.verifierSnapshots }])).values()];
+			sources = [...new Map(items.map(s => {const i=this.require<RunItem>("item",s.id);return [i.snapshot.id, { snapshot: i.snapshot, moduleName: i.moduleName, verifierSnapshots: i.verifierSnapshots }] as const;})).values()];
 		}
 		else {
 			if (input.caseIds?.some(id => !this.get("case", id)) || input.moduleIds?.some(id => !this.get("module", id))) throw new Error("选中的案例或模块不存在");
 			sources = this.activeCases().filter(c => input.caseIds?.includes(c.id) || input.moduleIds?.includes(c.moduleId)).map(snapshot => ({ snapshot, moduleName: this.require<Module>("module", snapshot.moduleId).name }));
 		}
 		if (!sources.length) throw new Error("请选择至少一个案例；空模块无法执行");
-		for (const source of sources) {
+		for (const source of validated ? [] : sources) {
 			const definition = { ...source.snapshot.definition, ...(input.replayMode ? { replayMode: input.replayMode } : {}) };
 			const parsed = parseEvalSuite({ defaults: source.snapshot.defaults, cases: [definition] }).cases[0];
 			preflightJudge(parsed.llmJudge);

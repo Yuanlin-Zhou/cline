@@ -1,0 +1,144 @@
+{
+  "seed": "deterministic arithmetic fixture v1",
+  "environment": {
+    "bun": "1.3.13",
+    "node": "v24.3.0",
+    "platform": "linux",
+    "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+    "cpuCount": 3,
+    "memoryBytes": 10452471808
+  },
+  "samples": 30,
+  "caseCount": 200,
+  "caseBytes": 20505502,
+  "databaseBytes": 627159040,
+  "walBytes": 24077312,
+  "results": [
+    {
+      "label": "history=0:cases",
+      "samples": 30,
+      "p50Ms": 2.2722879999998895,
+      "p95Ms": 4.921095999999807,
+      "maxBytes": 103844
+    },
+    {
+      "label": "history=0:overview",
+      "samples": 30,
+      "p50Ms": 1.1328730000000178,
+      "p95Ms": 3.5178379999999834,
+      "maxBytes": 180640
+    },
+    {
+      "label": "history=0:unchanged",
+      "samples": 30,
+      "p50Ms": 0.05026599999996506,
+      "p95Ms": 0.12583199999994577,
+      "maxBytes": 101
+    },
+    {
+      "label": "history=0:retry-preview",
+      "samples": 30,
+      "p50Ms": 1.0845819999999549,
+      "p95Ms": 3.102484000000004,
+      "maxBytes": 180640
+    },
+    {
+      "label": "history=0:start-200",
+      "samples": 30,
+      "p50Ms": 180.54161999999997,
+      "p95Ms": 351.38259100000005,
+      "maxBytes": 159
+    },
+    {
+      "label": "history=0:retry",
+      "samples": 30,
+      "p50Ms": 172.9895379999998,
+      "p95Ms": 210.39420599999903,
+      "maxBytes": 7992
+    },
+    {
+      "label": "history=5:cases",
+      "samples": 30,
+      "p50Ms": 6.4628799999991315,
+      "p95Ms": 9.115285999998378,
+      "maxBytes": 104044
+    },
+    {
+      "label": "history=5:overview",
+      "samples": 30,
+      "p50Ms": 0.9684099999994942,
+      "p95Ms": 2.269274000000223,
+      "maxBytes": 180661
+    },
+    {
+      "label": "history=5:unchanged",
+      "samples": 30,
+      "p50Ms": 0.04252000000087719,
+      "p95Ms": 0.16440999999940686,
+      "maxBytes": 102
+    },
+    {
+      "label": "history=5:retry-preview",
+      "samples": 30,
+      "p50Ms": 0.9896090000002005,
+      "p95Ms": 2.3418060000003607,
+      "maxBytes": 180661
+    },
+    {
+      "label": "history=5:start-200",
+      "samples": 30,
+      "p50Ms": 243.6753830000016,
+      "p95Ms": 552.9114289999998,
+      "maxBytes": 159
+    },
+    {
+      "label": "history=5:retry",
+      "samples": 30,
+      "p50Ms": 173.08188899999732,
+      "p95Ms": 345.29089699999895,
+      "maxBytes": 7992
+    },
+    {
+      "label": "history=25:cases",
+      "samples": 30,
+      "p50Ms": 24.882691999999224,
+      "p95Ms": 41.10043600000063,
+      "maxBytes": 104044
+    },
+    {
+      "label": "history=25:overview",
+      "samples": 30,
+      "p50Ms": 1.0071309999984805,
+      "p95Ms": 2.508103000000119,
+      "maxBytes": 180663
+    },
+    {
+      "label": "history=25:unchanged",
+      "samples": 30,
+      "p50Ms": 0.044722999999066815,
+      "p95Ms": 0.11125100000208477,
+      "maxBytes": 103
+    },
+    {
+      "label": "history=25:retry-preview",
+      "samples": 30,
+      "p50Ms": 0.9946530000015628,
+      "p95Ms": 2.195150999999896,
+      "maxBytes": 180663
+    },
+    {
+      "label": "history=25:start-200",
+      "samples": 30,
+      "p50Ms": 186.51910800000041,
+      "p95Ms": 278.10882400000264,
+      "maxBytes": 159
+    },
+    {
+      "label": "history=25:retry",
+      "samples": 30,
+      "p50Ms": 169.8014020000046,
+      "p95Ms": 209.0383229999934,
+      "maxBytes": 7992
+    }
+  ]
+}

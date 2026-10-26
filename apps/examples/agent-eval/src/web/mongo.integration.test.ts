@@ -34,6 +34,14 @@ describe("MongoDB replica-set catalog (set EVAL_TEST_MONGODB_URI)", () => {
 			await cleanup.db(config.database).dropDatabase();
 		} finally { await cleanup.close(); await repository.close(); rmSync(directory, { recursive: true, force: true }); }
 	});
+ mongoTest("summary projections and selected bodies preserve MongoDB visibility and configurations",async()=>{
+  const m=await repository.createModule("summaries");
+  const c=await repository.createCase(m.id,defaults,{id:"large",prompt:"private "+"x".repeat(150000),replayMode:"single-turn"});
+  const summary=await repository.summaries();expect(summary.cases[0].definition).not.toHaveProperty("prompt");
+  const selected=await repository.selected({caseIds:[c.id]});expect(selected.cases[0]).toEqual(c);
+  await repository.setArchived("case",c.id,true);expect((await repository.summaries()).cases).toHaveLength(0);expect((await repository.selected({caseIds:[c.id]})).cases).toHaveLength(0);
+ });
+
 	mongoTest("resource deletion is atomic, serializes against changed previews and Python updates use CAS", async () => {
 		const module = await repository.createModule("delete module");
 		const a = await repository.createCase(module.id, defaults, { id: "a", prompt: "a" });

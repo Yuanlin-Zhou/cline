@@ -1,3 +1,6 @@
+import { acquireServiceLock } from "./service-lock.js";
+import { RunViews } from "./run-views.js";
+import { caseSummary } from "./projections.js";
 import { JudgeScores } from "./judge-scores.js";
 import { parseJudgeModel } from "../judge/config.js";
 import { preflightJudge } from "../judge/engine.js";
@@ -44,12 +47,17 @@ export async function createEvalServer(options: { directory?: string; port?: num
 	const storage = options.storage ?? (options.mongo ? "mongodb" : process.env.EVAL_CASE_STORAGE ?? "sqlite");
 	if (!["sqlite", "mongodb"].includes(storage)) throw new CatalogError("EVAL_CASE_STORAGE 须为 sqlite 或 mongodb");
 	const connected = options.catalog ?? (storage === "mongodb" ? await MongoCatalog.connect(options.mongo ?? mongoConfig()) : undefined);
-	let store: EvalStore;
-	try { store = new EvalStore(path.resolve(options.directory ?? process.env.EVAL_DATA_DIR ?? path.join(root, ".eval-data")), { seedModules: storage !== "mongodb" }); }
-	catch (error) { await connected?.close(); throw error; }
+	const directory=path.resolve(options.directory ?? process.env.EVAL_DATA_DIR ?? path.join(root, ".eval-data"));
+ let release:()=>void;
+ try{release=acquireServiceLock(directory);}catch(error){await connected?.close();throw error;}
+ let store: EvalStore;
+	try { store = new EvalStore(directory, { seedModules: storage !== "mongodb" }); }
+	catch (error) {release();await connected?.close(); throw error; }
 	const catalog = connected ?? new SqliteCatalog(store);
 	try {
 	const queue = new EvalQueue(store, options.execute);
+ const views = new RunViews(store);
+ const catalogSummaries = async()=>{if(catalog.summaries)return catalog.summaries();const snapshot=await catalog.snapshot();return {modules:snapshot.modules,cases:snapshot.cases.map(caseSummary)};};
 	const verifierTests = new VerifierTests(store);
  const judgeScores = new JudgeScores(store);
 	const verifierRepository = options.verifierRepository ?? (catalog instanceof MongoCatalog ? new MongoVerifiers(catalog.db, catalog.config.verifierCollection ?? "agent_eval_verifiers") : new SqliteVerifiers(store));
@@ -76,12 +84,37 @@ export async function createEvalServer(options: { directory?: string; port?: num
 				}
 				if (method !== "GET" && !request.headers.get("content-type")?.startsWith("application/json")) return json({ error: "请求须为 application/json" }, 415);
 				if (route === "/api/state" && method === "GET") {
-					const allItems = store.list<import("./types.js").RunItem>("item");
+					const allItems = store.summaries();
 					const { cases, modules } = await catalog.snapshot();
 					const activeIds = new Set(cases.map(c => c.id));
 					const latest = Object.fromEntries(latestAttempts(allItems).filter(i => activeIds.has(i.snapshot.id) && ((i.attempt ?? 0) > 0 || !["queued", "running", "cancelled"].includes(i.status))).map(i => [i.snapshot.id, { status: i.status, runId: i.runId, revision: i.snapshot.revision, modelId: i.snapshot.defaults.modelId, sessionId: i.result?.sessionId, durationMs: i.result?.durationMs, endedAt: i.endedAt }]));
 					return json({ modules, cases, settings: store.settings(), runs: store.list<Run>("run").reverse().map(run => ({ ...run, summary: summarize(allItems.filter(i => i.runId === run.id)), judgeSummary: judgeSummary(allItems.filter(i=>i.runId===run.id)) })), latest });
 				}
+    if(route==="/api/cases"&&method==="GET"){
+     const {cases}=await catalogSummaries();const moduleId=url.searchParams.get("moduleId");
+     const selected=moduleId?cases.filter(c=>c.moduleId===moduleId):cases;
+     const activeIds=new Set(selected.map(c=>c.id));
+     const latest=Object.fromEntries(latestAttempts(store.summaries()).filter(i=>activeIds.has(i.snapshot.id)&&((i.attempt??0)>0||!["queued","running","cancelled"].includes(i.status))).map(i=>[i.snapshot.id,{status:i.status,runId:i.runId,revision:i.snapshot.revision,modelId:i.snapshot.defaults.modelId,sessionId:i.result?.sessionId,durationMs:i.result?.durationMs,endedAt:i.endedAt}]));
+     return json({cases:selected,latest});
+    }
+    if(route==="/api/cases/tags"&&method==="GET")return json([...new Set((await catalogSummaries()).cases.flatMap(c=>c.definition.tags??[]))]);
+    if(route==="/api/modules"&&method==="GET"&&url.searchParams.get("view")==="summary"){
+     const {cases,modules}=await catalogSummaries();return json({modules,counts:Object.fromEntries(modules.map(m=>[m.id,cases.filter(c=>c.moduleId===m.id).length]))});
+    }
+    const viewMatch=route.match(/^\/api\/runs\/([^/]+)\/(overview|changes|retry-preview|report)$/);
+    if(viewMatch&&method==="GET"){
+     const [,id,view]=viewMatch;
+     return json(view==="overview"?views.overview(id):view==="changes"?views.changes(id,url.searchParams.get("cursor")):view==="retry-preview"?views.retryPreview(id):views.report(id,url.searchParams.get("attemptMode")==="first"));
+    }
+    const itemView=route.match(/^\/api\/runs\/([^/]+)\/items\/([^/]+)(?:\/(attempts|progress))?$/);
+    if(itemView&&method==="GET"){
+     const [,runId,itemId,view]=itemView;
+     if(view==="attempts")return json(views.attempts(runId,itemId));
+     if(view==="progress")return json(views.progress(runId,itemId,url.searchParams.get("version")));
+     const item=store.get<RunItem>("item",itemId);if(!item||item.runId!==runId)throw new CatalogError("执行记录不存在",404);
+     return json(item);
+    }
+
                 if(route==="/api/judge-settings"){
      if(method==="GET")return json(store.get("judge-settings","default")??null);
      if(method==="PUT"){const model=parseJudgeModel(await readJsonBody(request));store.put("judge-settings","default",model);return json(model);}
@@ -263,7 +296,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 				const caseRunsMatch = route.match(/^\/api\/cases\/([^/]+)\/runs$/);
 				if (caseRunsMatch && method === "GET") {
 					const targetId = caseRunsMatch[1];
-					const allItems = store.list<RunItem>("item");
+					const allItems = store.caseItems(caseRunsMatch[1]);
 					if (!allItems.some(i => i.snapshot.id === targetId) && !await catalog.getCase(targetId)) throw new CatalogError("案例不存在或已删除", 404);
 					return json(store.list<Run>("run").reverse().map(run => {
 						const items = allItems.filter(i => i.runId === run.id && i.snapshot.id === targetId);
@@ -288,13 +321,14 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					return json(await catalog.updateCase(caseMatch[1], body.revision, suite.defaults, suite.cases[0]));
 				}
 				if (route === "/api/runs" && method === "GET") {
-					const items = store.list<RunItem>("item");
+					const items = store.summaries();
 					return json(store.list<Run>("run").reverse().map(run => ({ ...run, summary: summarize(items.filter(i => i.runId === run.id)) })));
 				}
 				if (route === "/api/settings" && method === "GET") return json(store.settings());
 
 				if (route === "/api/runs" && method === "POST") {
 					const body = await readJsonBody(request);
+ for(const key of ["caseIds","moduleIds"])if(body[key]!==undefined&&(!Array.isArray(body[key])||body[key].some((id:unknown)=>typeof id!=="string"||!id)))throw Error("案例/模块选择参数无效");
 					if (body.defaults) {
 						const parsed = parseEvalSuite({ defaults: body.defaults, cases: [{ id: "run-defaults", prompt: "run-defaults" }] }).defaults;
 						if (parsed.cwd && !path.isAbsolute(parsed.cwd)) throw new Error("fixture 目录须为绝对路径");
@@ -315,15 +349,16 @@ export async function createEvalServer(options: { directory?: string; port?: num
 							sources.push({ snapshot: { id: randomUUID(), moduleId: draft.moduleId, revision: 0, definition: draft.definition, defaults: draft.defaults, updatedAt: new Date().toISOString() }, moduleName: module.name });
 						}
 					} else if (!body.parentRunId) {
-						const snapshot = await catalog.snapshot();
+						const snapshot = catalog.selected ? await catalog.selected(body) : await catalog.snapshot();
 						if (body.caseIds?.some((id: string) => !snapshot.cases.some(c => c.id === id)) || body.moduleIds?.some((id: string) => !snapshot.modules.some(m => m.id === id))) throw new CatalogError("选中的案例或模块不存在或已归档", 404);
 						sources = snapshot.cases.filter(c => body.caseIds?.includes(c.id) || body.moduleIds?.includes(c.moduleId)).map(c => ({ snapshot: c, moduleName: snapshot.modules.find(m => m.id === c.moduleId)!.name }));
 					}
 					if (!sources && body.parentRunId) {
-						const items = latestAttempts(store.detail(body.parentRunId).items).filter(i => body.rerunScope === "all" || ["failed", "error", "cancelled", "inconclusive"].includes(i.status));
-						sources = [...new Map(items.map(i => [i.snapshot.id, { snapshot: i.snapshot, moduleName: i.moduleName, verifierSnapshots: i.verifierSnapshots }])).values()];
+						const items = latestAttempts(store.summaries(body.parentRunId)).filter(i => body.rerunScope === "all" || ["failed", "error", "cancelled", "inconclusive"].includes(i.status));
+						sources = [...new Map(items.map(s => {const i=store.require<RunItem>("item",s.id);return [i.snapshot.id,{snapshot:i.snapshot,moduleName:i.moduleName,verifierSnapshots:i.verifierSnapshots}] as const;})).values()];
 					}
 					const prepared = [];
+ let preparedCount=0;
 					for (const source of sources ?? []) {
 						const definition = parseEvalSuite({ defaults: source.snapshot.defaults, cases: [{ ...source.snapshot.definition, ...(body.replayMode ? { replayMode: body.replayMode } : {}) }] }).cases[0];
 						const frozen = body.parentRunId ? source.verifierSnapshots ?? [] : undefined;
@@ -331,15 +366,16 @@ export async function createEvalServer(options: { directory?: string; port?: num
 						resolved.uploaded = await Promise.all(resolved.uploaded.map(v => preparePythonUpload(v)));
 						preflightJudge(definition.llmJudge);
 						preflight(definition, [...resolved.configured, ...resolved.uploaded.map(uploadedPlaceholder)]);
-						prepared.push({ ...source, verifierSnapshots: resolved.uploaded });
+						prepared.push({ ...source, snapshot:{...source.snapshot,definition}, verifierSnapshots: resolved.uploaded });
+ if(++preparedCount%10===0)await Bun.sleep(0);
 					}
-					const run = store.createRun(body, prepared); queue.kick(); return json(run, 202);
+					const run = store.createRun(body, prepared, true); queue.kick(); return json(run, 202);
 				}
 				const runMatch = route.match(/^\/api\/runs\/([^/]+)(?:\/(cancel|export|artifacts|retry))?$/);
 				if (runMatch) {
 					const [, id, action] = runMatch;
 					if (action === "retry" && method === "POST") { const response = store.retryRun(id, await readJsonBody(request)); queue.kick(); return json(response, 202); }
-					if (action === "cancel" && method === "POST") { queue.cancel(id); return json(store.detail(id)); }
+					if (action === "cancel" && method === "POST") { queue.cancel(id); return json(url.searchParams.get("view")==="summary"?views.overview(id):store.detail(id)); }
 					if (method === "GET") {
 						const run = store.detail(id);
 						if (action === "artifacts") {
@@ -374,10 +410,10 @@ export async function createEvalServer(options: { directory?: string; port?: num
 	let closing: Promise<void> | undefined;
 	const close = () => closing ??= (async () => {
 		for (const run of store.list<Run>("run")) if (["queued", "running"].includes(run.status)) queue.cancel(run.id);
-		await server.stop(true); await queue.idle(); await verifierTests.close(); await judgeScores.close(); await catalog.close(); store.db.close();
+		await server.stop(true); await queue.idle(); await verifierTests.close(); await judgeScores.close(); await catalog.close(); store.db.close();release();
 	})();
 	return { server, store, queue, catalog, close };
-	} catch (error) { await catalog.close(); store.db.close(); throw error; }
+	} catch (error) { await catalog.close(); store.db.close();release(); throw error; }
 }
 if (import.meta.main) {
 	const app = await createEvalServer();

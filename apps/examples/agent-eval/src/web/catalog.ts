@@ -1,3 +1,4 @@
+import type { CaseSummary } from "./projections.js";
 import { confirmModuleDeletion, checkDeletion } from "./resource-management.js";
 import type { EvalCase, EvalDefaults, EvalSuite } from "../types.js";
 import type { Module, SavedCase } from "./types.js";
@@ -12,6 +13,8 @@ export type TransferResult = { cases: SavedCase[]; copied: number; moved: number
 type Awaitable<T> = T | Promise<T>;
 export interface CatalogRepository {
 	snapshot(): Awaitable<CatalogSnapshot>;
+ summaries?(): Awaitable<{modules:Module[];cases:CaseSummary[]}>;
+ selected?(input:{caseIds?:string[];moduleIds?:string[]}):Awaitable<CatalogSnapshot>;
 	allResources(): Awaitable<CatalogSnapshot>;
 	deleteModule(id: string, input: unknown): Awaitable<{ deleted: number }>;
 	deleteCases(input: unknown): Awaitable<{ deleted: number }>;
@@ -33,6 +36,12 @@ export interface CatalogRepository {
 export class SqliteCatalog implements CatalogRepository {
 	constructor(readonly store: EvalStore) {}
 	snapshot() { return this.store.db.transaction(() => ({ modules: this.store.activeModules(), cases: this.store.activeCases() }))(); }
+ summaries(){return this.store.db.transaction(()=>({modules:this.store.activeModules(),cases:this.store.projections.cases()}))();}
+ selected(input:{caseIds?:string[];moduleIds?:string[]}){
+  const {modules,cases}=this.summaries();
+  return {modules,cases:cases.filter(c=>input.caseIds?.includes(c.id)||input.moduleIds?.includes(c.moduleId)).map(c=>this.store.require<SavedCase>("case",c.id))};
+ }
+
 	allResources() { return this.store.db.transaction(() => ({ modules: this.store.list<Module>("module"), cases: this.store.list<SavedCase>("case") }))(); }
 	deleteModule(id: string, input: unknown) {
 		return this.store.db.transaction(() => {
@@ -62,7 +71,7 @@ export class SqliteCatalog implements CatalogRepository {
 			const previous = this.getCase(id);
 			if (!previous) throw new CatalogError("案例不存在或已删除", 404);
 			if (previous.revision !== revision) throw new CatalogError("案例已被其他页面修改，请刷新后重试", 409);
-			if (this.store.activeCases().some(c => c.id !== id && c.moduleId === previous.moduleId && c.definition.id === definition.id)) throw new CatalogError("同模块已有相同案例 ID", 409);
+			if (this.store.projections.cases(previous.moduleId).some(c => c.id !== id && c.moduleId === previous.moduleId && c.definition.id === definition.id)) throw new CatalogError("同模块已有相同案例 ID", 409);
 			const next = { ...previous, definition, defaults, revision: revision + 1, updatedAt: new Date().toISOString() };
 			this.store.put("case", id, next); return next;
 		}).immediate();

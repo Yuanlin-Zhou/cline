@@ -32,7 +32,7 @@ export function buildRepeatReport(run: RunDetail, firstOnly = false) {
 		const outputs = items.filter(item => judged(item) && item.result);
 		const variants = new Map<string, { rounds: number[]; itemIds: string[] }>();
 		for (const item of outputs) {
-			const text = item.result!.text.replace(/\r\n?/g, "\n").trim();
+			const text = (item as RunItem & {outputHash?:string}).outputHash ?? item.result!.text.replace(/\r\n?/g, "\n").trim();
 			const variant = variants.get(text) ?? { rounds: [], itemIds: [] };
 			variant.rounds.push(item.round ?? 1); variant.itemIds.push(item.id); variants.set(text, variant);
 		}
@@ -41,7 +41,7 @@ export function buildRepeatReport(run: RunDetail, firstOnly = false) {
 		return {
 			caseId, name: definition.id, moduleName: items[0].moduleName,
 			...summary, grading: gradingSummary(items), passRate: items[0].snapshot.definition.grading ? (gradingSummary(items).groups.length === 1 ? gradingSummary(items).groups[0].passRate.rate : null) : passRate(summary.passed, summary.failed),
-			hasContentAssertions: Boolean(definition.grading || assertions?.contains?.length || assertions?.notContains?.length || assertions?.matches?.length),
+			hasContentAssertions: (items[0] as RunItem & {hasContentAssertions?:boolean}).hasContentAssertions ?? Boolean(definition.grading || assertions?.contains?.length || assertions?.notContains?.length || assertions?.matches?.length),
 			comparedOutputs: outputs.length, outputVariants: variants.size,
 			// A single response is insufficient evidence of repeatability.
 			consistencyRate: outputs.length >= 2 ? Math.max(...[...variants.values()].map(v => v.itemIds.length)) / outputs.length : null,

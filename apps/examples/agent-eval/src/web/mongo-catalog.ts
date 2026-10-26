@@ -1,3 +1,4 @@
+import { caseSummary, type CaseSummary } from "./projections.js";
 import { confirmModuleDeletion, checkDeletion } from "./resource-management.js";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -78,6 +79,25 @@ export class MongoCatalog implements CatalogRepository {
 			return { modules: active, cases: cases.filter(c => !c.archived && ids.has(c.moduleId)) };
 		});
 	}
+ async summaries(){
+  return this.transaction(async session=>{
+   const modules=(await this.modules.find({archived:false},{session}).sort({createdAt:1,_id:1}).toArray()).map(moduleFromDocument);
+   const docs=await this.cases.find({archived:false,moduleId:{$in:modules.map(m=>m.id)}},{session,projection:{_id:1,moduleId:1,revision:1,updatedAt:1,archived:1,"definition.id":1,"definition.description":1,"definition.tags":1,"definition.replayMode":1,"defaults.providerId":1,"defaults.modelId":1}}).sort({createdAt:1,_id:1}).toArray();
+   const cases=docs.map(doc=>{
+    if(typeof doc._id!=="string"||typeof doc.moduleId!=="string"||!Number.isSafeInteger(doc.revision)||doc.revision<1||!(doc.updatedAt instanceof Date)||!Number.isFinite(doc.updatedAt.getTime())||typeof doc.definition?.id!=="string"||!doc.definition.id||typeof doc.defaults?.providerId!=="string"||typeof doc.defaults.modelId!=="string"||!doc.defaults.providerId||!doc.defaults.modelId||(doc.definition.description!==undefined&&typeof doc.definition.description!=="string")||(doc.definition.tags!==undefined&&(!Array.isArray(doc.definition.tags)||doc.definition.tags.some(t=>typeof t!=="string"||!t.trim())))||!["single-turn","full-task","function-call"].includes(doc.definition.replayMode??""))throw new CatalogError("MongoDB 案例摘要不符合合同",422);
+    return caseSummary({...doc,id:doc._id,updatedAt:doc.updatedAt.toISOString()});
+   });
+   return {modules,cases};
+  });
+ }
+ async selected(input:{caseIds?:string[];moduleIds?:string[]}){
+  return this.transaction(async session=>{
+   const modules=(await this.modules.find({archived:false},{session}).sort({createdAt:1,_id:1}).toArray()).map(moduleFromDocument);
+   const docs=await this.cases.find({archived:false,moduleId:{$in:modules.map(m=>m.id)},$or:[{_id:{$in:input.caseIds??[]}},{moduleId:{$in:input.moduleIds??[]}}]},{session}).sort({createdAt:1,_id:1}).toArray();
+   return {modules,cases:docs.map(caseFromDocument)};
+  });
+ }
+
 	async allResources() { return this.transaction(session => this.all(session)); }
 	async deleteModule(id: string, input: unknown) {
 		return this.transaction(async session => {
