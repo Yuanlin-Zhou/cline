@@ -2,6 +2,7 @@ import { latestAttempts } from "../web/types.js";
 import type { EvalCaseResult } from "../types.js";
 
 type Item = { id?: string; rootItemId?: string; attempt?: number; status: string; snapshot: { id: string; definition: { id: string; grading?: unknown } }; result?: EvalCaseResult };
+const baseStatus = (item:Item)=>item.result?.llmJudge?.baseStatus??item.status;
 const fraction = (numerator: number, denominator: number) => ({ numerator, denominator, rate: denominator ? numerator / denominator : null });
 export function gradingSummary(items: Item[]) {
  items = latestAttempts(items);
@@ -13,7 +14,7 @@ export function gradingSummary(items: Item[]) {
 		groups.set(key, [...groups.get(key) ?? [], item]);
 	}
 	return {
-		legacy: fraction(legacy.filter(i => i.status === "passed").length, legacy.filter(i => ["passed", "failed"].includes(i.status)).length),
+		legacy: fraction(legacy.filter(i => baseStatus(i) === "passed").length, legacy.filter(i => ["passed", "failed"].includes(baseStatus(i))).length),
 		executionErrors: fraction(settled.filter(i => i.result?.execution?.status === "error" || (!i.result?.execution && i.status === "error")).length, settled.length),
 		cancelled: items.filter(i => i.status === "cancelled").length,
 		groups: [...groups.entries()].map(([key, entries]) => {

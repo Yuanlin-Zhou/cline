@@ -10,7 +10,7 @@ const age = (date: string, now = Date.now()) => `${Math.max(0, Math.floor((now -
 export function executionStatus(item: RunItem): HTMLElement {
 	const box = el("section", "", "ExecutionStatus"); box.setAttribute("aria-label", "执行状态");
 	const active = item.status === "running";
-	const phase = item.status === "queued" ? "排队中" : active ? item.phase === "verifying" ? "验证中" : "执行中" : "执行已结束";
+	const phase = item.status === "queued" ? "排队中" : active ? item.phase === "judging" ? "LLM 评分中" : item.phase === "verifying" ? "验证中" : "执行中" : "执行已结束";
 	box.append(el("strong", phase), el("span", item.startedAt ? `已运行 ${age(item.startedAt, item.endedAt ? Date.parse(item.endedAt) : Date.now())}` : "等待开始", "muted small"));
 	box.append(el("div", item.activity ? activityLabel(item.activity) : active ? "暂无活动记录" : "未记录活动", "small"));
 	box.append(el("div", item.lastActivityAt ? `最近收到活动：${age(item.lastActivityAt)}前` : "最近收到活动：尚无记录", "muted small"));

@@ -1,3 +1,5 @@
+import { JUDGE_PROMPT_VERSION } from "../judge/input.js";
+import { preflightJudge, scoreWithJudge, applyJudgeOutcome, judgeSecrets } from "../judge/engine.js";
 import { workspaceLease } from "../web/workspace-lease.js";
 import { preflightFunctionCall } from "../function-call.js";
 import { randomUUID } from "node:crypto";
@@ -11,13 +13,13 @@ import { gradeCase, preflight } from "./engine.js";
 import { resolveVerifiers, materializeVerifiers } from "./verifiers.js";
 import { loadCliVerifierSnapshots } from "./verifier-source.js";
 import type { UploadedVerifier } from "./uploaded-verifiers.js";
-import { manifest, redact, redactValue, saveEvidence, snapshot } from "./evidence.js";
+import { manifest, redact, redactValue, saveEvidence, snapshot, sha256 } from "./evidence.js";
 import { killTree } from "./process.js";
 import type { EvidenceEvent } from "./types.js";
 import { freezeValidationInput } from "./validation-context.js";
 import type { ExecutionUpdate } from "../web/activity.js";
 
-async function executeIsolated(input: { definition: EvalCase; defaults: EvalDefaults; directory: string; verifierSnapshots?: UploadedVerifier[]; itemId?: string; runId?: string; round?: number; signal?: AbortSignal; onText?: (text: string) => void; onWorkspace?: (workspace: string) => void; onPhase?: (phase: "executing" | "verifying") => void; onUpdate?: (update: ExecutionUpdate) => void }): Promise<EvalCaseResult> {
+async function executeIsolated(input: { definition: EvalCase; defaults: EvalDefaults; directory: string; verifierSnapshots?: UploadedVerifier[]; itemId?: string; runId?: string; round?: number; signal?: AbortSignal; onText?: (text: string) => void; onWorkspace?: (workspace: string) => void; onPhase?: (phase: "executing" | "verifying" | "judging") => void; onUpdate?: (update: ExecutionUpdate) => void }): Promise<EvalCaseResult> {
 	const { definition, defaults, directory, signal } = input; const started = Date.now();
 	await mkdir(directory, { recursive: true });
 	const snapshots = input.verifierSnapshots ?? await loadCliVerifierSnapshots(definition, path.resolve(directory, "../../.."));
@@ -25,10 +27,11 @@ async function executeIsolated(input: { definition: EvalCase; defaults: EvalDefa
 	const verifiers = [...resolved.configured, ...await materializeVerifiers(resolved.uploaded, directory)];
 	preflight(definition, verifiers);
 	preflightFunctionCall(definition, defaults);
+	preflightJudge(definition.llmJudge);
 	const sourceInput = definition.replayMode === "full-task" ? definition.cwd ?? defaults.cwd : undefined;
 	const source = sourceInput ? await realpath(path.resolve(sourceInput)) : undefined;
 	if (source && verifiers.some(v => v.files.some(file => { const relative = path.relative(path.resolve(source), file); return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative)); }))) throw new Error("正式验收脚本不能位于 Agent fixture 内，请将验证器移到独立目录");
-	const secrets = [defaults.apiKeyEnv ? process.env[defaults.apiKeyEnv] ?? "" : "", ...verifiers.flatMap(v => v.env.map(k => process.env[k] ?? ""))];
+	const secrets = [...(definition.llmJudge?.enabled?judgeSecrets(definition.llmJudge):[]),defaults.apiKeyEnv ? process.env[defaults.apiKeyEnv] ?? "" : "", ...verifiers.flatMap(v => v.env.map(k => process.env[k] ?? ""))];
 	if (definition.grading && secrets.some(secret => secret && JSON.stringify(definition.grading).includes(secret))) throw new Error("判分规则不得包含凭据值，请使用非敏感验收条件");
 	if (definition.grading) await writeFile(path.join(directory, "case.json"), JSON.stringify(redactValue({ definition, defaults }, secrets), null, 2));
 	const evidence = manifest(); const events: EvidenceEvent[] = []; let seq = 0; let sessionId = ""; let persisted = Promise.resolve();
@@ -45,7 +48,7 @@ async function executeIsolated(input: { definition: EvalCase; defaults: EvalDefa
 	signal?.throwIfAborted(); input.onPhase?.("executing");
 	input.onUpdate?.({ phase: "executing" });
 	// Only the parent owns grading. The worker receives the ordinary execution input.
-	const suite = { version: 1, defaults: { ...defaults, cwd: workspace }, cases: [{ ...definition, grading: undefined, assertions: definition.grading ? undefined : definition.assertions, cwd: workspace }] };
+	const suite = { version: 1, defaults: { ...defaults, cwd: workspace }, cases: [{ ...definition, llmJudge: undefined, grading: undefined, assertions: definition.grading ? undefined : definition.assertions, cwd: workspace }] };
 	const suitePath = path.join(directory, "suite.json"); await writeFile(suitePath, JSON.stringify(suite));
 	const worker = fileURLToPath(new URL(import.meta.url.endsWith(".ts") ? "../web/worker.ts" : "../web/worker.js", import.meta.url));
 	const child = spawn(process.execPath, [worker, suitePath], { cwd: workspace, windowsHide: true, detached: process.platform !== "win32", stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, CLINE_DATA_DIR: path.join(directory, "session"), CLINE_SESSION_DATA_DIR: path.join(directory, "session", "sessions"), CLINE_SANDBOX: "1", CLINE_SANDBOX_DATA_DIR: path.join(directory, "session"), CLINE_LOG_ENABLED: "0" } });
@@ -104,6 +107,26 @@ async function executeIsolated(input: { definition: EvalCase; defaults: EvalDefa
 	input.onUpdate?.({ phase: "verifying", activity: { type: "phase", at: new Date().toISOString() } });
 	if (definition.grading) result.grading = await gradeCase({ definition, result, directory, evidence, events, verifiers, signal, secrets });
 	result.evidence = evidence; if (result.grading) result.status = result.grading.verdict;
+	if (definition.llmJudge?.enabled) {
+		const config = definition.llmJudge;
+		input.onPhase?.("judging");
+		input.onUpdate?.({ phase: "judging", activity: { type: "phase", stage: "judging", at: new Date().toISOString() } });
+		if (result.execution.status !== "completed" || signal?.aborted) {
+			const at = new Date().toISOString();
+			result.llmJudge = {
+				id: randomUUID(), status: signal?.aborted ? "cancelled" : "skipped", score: null,
+				rationale: "执行未正常结束，未自动调用 Judge；可使用已有历史材料试评分。", evidence: [],
+				targets: config.targets, model: config.model, affectsOutcome: config.affectsOutcome,
+				passScore: config.passScore, configHash: sha256(JSON.stringify(config)),
+				promptVersion: JUDGE_PROMPT_VERSION, limitations: [], startedAt: at, endedAt: at,
+				durationMs: 0, usage: {},
+			};
+		} else {
+			result.llmJudge = await scoreWithJudge({ config, directory, evidence, caseId: definition.id, sessionId: result.sessionId, signal });
+			result.llmJudge.baseStatus = result.status;
+			applyJudgeOutcome(result, result.llmJudge);
+		}
+	}
 	await writeFile(path.join(directory, "execution.json"), JSON.stringify(result, null, 2));
 	await writeFile(path.join(directory, "evidence/manifest.json"), JSON.stringify(evidence, null, 2));
 	return result;

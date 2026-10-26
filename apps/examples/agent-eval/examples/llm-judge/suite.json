@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "defaults": {
+    "providerId": "openai-compatible",
+    "modelId": "replace-with-actor-model",
+    "baseUrl": "http://127.0.0.1:8000/v1",
+    "apiKeyEnv": "ACTOR_API_KEY",
+    "tools": "none"
+  },
+  "cases": [
+    {
+      "id": "reference-answer-idempotency",
+      "replayMode": "single-turn",
+      "prompt": "请用一句话解释什么是幂等性。",
+      "history": [],
+      "llmJudge": {
+        "enabled": true,
+        "referenceAnswer": "对同一个操作重复执行一次或多次，产生的效果与只执行一次相同。",
+        "targets": ["result"],
+        "rubric": "重点检查重复执行与最终效果不变这两个关键点，允许语义等价表述，不要求逐字一致。",
+        "model": {
+          "providerId": "openai-compatible",
+          "modelId": "replace-with-judge-model",
+          "baseUrl": "http://127.0.0.1:8000/v1",
+          "apiKeyEnv": "JUDGE_API_KEY"
+        },
+        "affectsOutcome": false,
+        "passScore": 80,
+        "timeoutMs": 120000,
+        "maxInputBytes": 131072,
+        "resultFiles": []
+      }
+    }
+  ]
+}

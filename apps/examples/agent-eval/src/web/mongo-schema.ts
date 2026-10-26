@@ -1,3 +1,4 @@
+import {judgeConfigValidator} from "./judge-schema.js";
 import { nativeHistoryValidator, historySourceValidator } from "./history-schema.js";
 import { prepareVerifierCollection } from "../grading/uploaded-verifiers.js";
 import type { Db } from "mongodb";
@@ -22,7 +23,7 @@ export const caseValidator = { $jsonSchema: {
 		_id: string, schemaVersion: { enum: [1] }, moduleId: string, revision: integer,
 		archived: { bsonType: "bool" }, createdAt: { bsonType: "date" }, updatedAt: { bsonType: "date" },
 		definition: { bsonType: "object", required: ["id", "replayMode", "prompt", "history"], properties: {
-			id: string, workspace: workspaceValidator, replayMode: { enum: ["single-turn", "full-task", "function-call"] }, prompt: string,
+			id: string, llmJudge:judgeConfigValidator, workspace: workspaceValidator, replayMode: { enum: ["single-turn", "full-task", "function-call"] }, prompt: string,
 			functionCall: { bsonType: "object", required: ["tools"], additionalProperties: false, properties: { tools: { bsonType: "array", minItems: 1, maxItems: 6, uniqueItems: true, items: { enum: ["read_files", "search_codebase", "run_commands", "fetch_web_content", "editor", "skills"] } }, toolChoice: { enum: ["auto", "required", "read_files", "search_codebase", "run_commands", "fetch_web_content", "editor", "skills"] }, history: nativeHistoryValidator, historySource: historySourceValidator } },
 			tags: { bsonType: "array", items: string },
 			history: { bsonType: "array", items: { bsonType: "object", required: ["role", "content"], properties: { role: { enum: ["user", "assistant"] }, content: string } } },

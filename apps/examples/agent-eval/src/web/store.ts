@@ -1,3 +1,4 @@
+import {preflightJudge} from "../judge/engine.js";
 import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
@@ -276,6 +277,7 @@ export class EvalStore {
 		for (const source of sources) {
 			const definition = { ...source.snapshot.definition, ...(input.replayMode ? { replayMode: input.replayMode } : {}) };
 			const parsed = parseEvalSuite({ defaults: source.snapshot.defaults, cases: [definition] }).cases[0];
+			preflightJudge(parsed.llmJudge);
 			this.validateCase?.(parsed);
 		}
 		const run: Run = { id: randomUUID(), name: input.name?.trim() || `回归评测 · ${new Date().toLocaleString("zh-CN")}`, note: input.note?.trim(), status: "queued", concurrency, repeatCount, createdAt: now(), parentRunId: input.parentRunId };

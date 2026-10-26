@@ -35,7 +35,7 @@ async function main(): Promise<void> {
 		process.stderr.write(`[report] ${outputPath}\n`);
 	}
 	process.stdout.write(json);
-	if (report.cases.some(c => c.grading)) {
+	if (report.cases.some(c => c.grading || c.llmJudge?.affectsOutcome)) {
 		process.exitCode = report.cases.some(c => c.status === "failed") ? 1 : report.cases.some(c => c.status !== "passed" || c.execution?.status === "error" || c.grading?.status === "error") ? 2 : 0;
 	} else if (report.summary.failed > 0) process.exitCode = 1;
 }

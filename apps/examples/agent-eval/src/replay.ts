@@ -38,7 +38,7 @@ export const IMPORT_FIELDS: Array<[string, string, string, string]> = [
 	["cwd", "string · 多轮可选", "服务端绝对路径，运行时复制到独立工作区；留空使用空工作区", "D:/eval-fixtures/demo"],
 	["tools", "string · 多轮可选", "工具权限；单轮固定禁用", "none / read-only / full"],
 	["maxIterations", "正整数 · 多轮可选", "Agent 迭代上限；单轮固定一次", "30"],
-	["timeoutMs", "正整数 · 可选", "整个案例的超时，单位毫秒", "300000（5 分钟）"],
+	["timeoutMs", "正整数 · 可选", "被测任务超时，单位毫秒；LLM 评分另有独立超时", "300000（5 分钟）"],
 	["systemPrompt", "string · 可选", "系统提示词，未配置时使用默认提示词", "请用中文回答"],
 	["headers", "object · 可选", "非敏感模型请求头；按名称覆盖 defaults，支持执行标识模板", '{"x-session-id":"{{sessionId}}","x-message-id":"{{evaluationId}}"}'],
 	["headersEnv", "object · 可选", "请求头→服务端环境变量名；Authorization 必须用此方式，不填写密钥值", '{"Authorization":"EVAL_AUTHORIZATION"}'],
@@ -48,5 +48,6 @@ export const IMPORT_FIELDS: Array<[string, string, string, string]> = [
 	["defaults", "object · 可选，仅案例集对象", "文件默认配置；案例执行配置优先于文件默认值，文件默认值优先于全局配置", '{"tools":"read-only","timeoutMs":300000}'],
 	["defaults.providerId / modelId", "string · 可选", "模型供应商和模型名，未填写继承全局配置", "openai-compatible / 已配置的模型名"],
 	["defaults.apiKeyEnv / baseUrl", "string · 可选", "密钥环境变量名（不是密钥本身）及自定义服务端点", "DEEPSEEK_API_KEY / https://api.deepseek.com"],
+	["llmJudge", "object · 可选", "参考答案评分：自选结果/轨迹，独立评审模型；默认只评分", '{"enabled":true,"referenceAnswer":"参考答案","targets":["result"],"model":{"providerId":"openai-compatible","modelId":"Judge 模型","baseUrl":"https://服务地址/v1","apiKeyEnv":"JUDGE_API_KEY"}}'],
 	["version / cases", "1 / object[]", "案例集对象的 cases 必填；也支持直接传案例数组", '{"version":1,"cases":[…]}'],
 ];

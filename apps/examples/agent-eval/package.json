@@ -23,7 +23,8 @@
 	},
 	"dependencies": {
 		"@cline/sdk": "workspace:*",
-		"mongodb": "6.21.0"
+		"mongodb": "6.21.0",
+		"@cline/llms": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/bun": "^1.3.13",

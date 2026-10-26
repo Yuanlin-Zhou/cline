@@ -1,9 +1,10 @@
 export type Activity = {
 	type: "session" | "iteration" | "text" | "reasoning" | "tool.request" | "tool.result" | "tool.update" | "done" | "error" | "phase";
+	stage?: "judging";
 	at: string; iteration?: number; toolName?: string;
 };
 export type ExecutionUpdate = {
-	activity?: Activity; sessionId?: string; workspace?: string; phase?: "executing" | "verifying";
+	activity?: Activity; sessionId?: string; workspace?: string; phase?: "executing" | "verifying" | "judging";
 };
 
 // These are observed SDK notifications, not proof of an actual tool execution.
@@ -31,6 +32,6 @@ export function activityLabel(activity: Activity): string {
 		case "tool.update": return `收到工具更新${tool}`;
 		case "done": return "模型执行结束";
 		case "error": return "收到模型执行错误";
-		case "phase": return "进入验证阶段";
+		case "phase": return activity.stage === "judging" ? "进入 LLM 评分阶段" : "进入验证阶段";
 	}
 }

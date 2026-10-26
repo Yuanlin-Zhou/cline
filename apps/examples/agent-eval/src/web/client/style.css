@@ -774,3 +774,13 @@ input[data-selection-id] { cursor: cell; }
 .RunSummary .ResultMetrics > .Verifier-details { margin: 4px 0; }
 .RunSummary .ResultMetrics > .Verifier-details > summary { padding: 4px 0; }
 .RunSummary-counts { align-self: flex-start; margin-top: 6px; }
+.JudgeEditor, .JudgeResult, .JudgeTrial, .JudgeModel { min-width: 0; overflow-wrap: anywhere; }
+.JudgeEditor > .flex-between .section-title { margin: 0; }
+.JudgeResult blockquote { margin: 8px 0; padding: 8px 12px; border-left: 3px solid var(--color-border-default); white-space: pre-wrap; }
+.JudgeEditor textarea, .JudgeTrial pre, .JudgeResult pre { width: 100%; max-width: 100%; box-sizing: border-box; }
+.JudgeTrial > pre, .JudgeResult > pre { max-height: 360px; overflow: auto; }
+.JudgeSummary { width: 100%; font-size: 13px; }
+.JudgeEditor .ModelFields { margin-top: 12px; }
+@media(max-width:600px) { .JudgeEditor .ModelFields { display: block; } .JudgeEditor .flex-between { align-items: flex-start; } }
+.Verifier-details > summary { list-style: none; }
+.Verifier-details > summary::-webkit-details-marker { display: none; }

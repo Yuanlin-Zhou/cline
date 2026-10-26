@@ -34,6 +34,7 @@ export type EvalDefaults = HeaderConfig & {
 };
 
 export type EvalCase = HeaderConfig & {
+	llmJudge?: import("./judge/types.js").JudgeConfig;
 	id: string;
 	replayMode?: "single-turn" | "full-task" | "function-call";
 	functionCall?: import("./function-call-config.js").FunctionCallConfig;
@@ -72,6 +73,7 @@ export type AssertionResult = {
 };
 
 export type EvalCaseResult = {
+	llmJudge?: import("./judge/types.js").JudgeResult;
 	workspaceInfo?: import("./workspace-config.js").WorkspaceInfo;
 	functionCallResponse?: import("./function-call.js").FunctionCallResponse;
 	id: string;
@@ -116,6 +118,7 @@ export type EvalReport = {
 		inconclusive?: number;
 		executionErrors?: number;
 		grading?: ReturnType<typeof import("./grading/summary.js").gradingSummary>;
+        judge?: ReturnType<typeof import("./judge/summary.js").judgeSummary>;
 		durationMs: number;
 		inputTokens: number;
 		outputTokens: number;

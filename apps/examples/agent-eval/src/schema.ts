@@ -1,3 +1,4 @@
+import { parseJudgeConfig } from "./judge/config.js";
 import { parseWorkspace } from "./workspace-config.js";
 import { parseFunctionCall } from "./function-call-config.js";
 import { parseHeaderConfig } from "./headers.js";
@@ -190,6 +191,7 @@ function parseCase(value: unknown, index: number): EvalCase {
 				? undefined
 				: parseToolMode(value.tools, `${path}.tools`),
 		assertions: parseAssertions(value.assertions, `${path}.assertions`),
+		llmJudge: parseJudgeConfig(value.llmJudge,String(value.replayMode??"single-turn")),
 		grading: parseGrading(value.grading, `${path}.grading`, String(value.replayMode ?? "single-turn")),
 	};
 }

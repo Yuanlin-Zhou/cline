@@ -108,7 +108,7 @@ Script stdout must be one JSON object: `{ "protocolVersion": 1, "verdict": "pass
 
 Evidence is frozen after the execution worker exits. Each command/script receives its own copy; verification cannot alter the original snapshot through normal workspace operations. These directories are **not an OS security sandbox**: trusted cases/verifiers are required, and adversarial isolation requires separate OS controls. Snapshot limits are 5000 files / 100 MiB; text/JSON checks accept up to 1 MiB, evidence previews up to 1 MiB. Excluded fixture directories remain `.git`, `node_modules`, `.cline`, `.eval-data`; dependencies must be provided by the verifier environment. Truncation or unavailable evidence never silently passes a required check.
 
-Web artifacts live under `EVAL_DATA_DIR/runs` as before. New CLI grading runs use `<suite directory>/.eval-data/runs` by default (`EVAL_DATA_DIR` overrides it), print the isolated workspace path, and use an empty workspace unless `cwd` is configured. The run directory and fixture cannot contain one another. Old CLI cases keep their original cwd behavior. New grading exit codes: 0 all pass, 1 an explicit failure, 2 otherwise execution/verification error or inconclusive; full error details remain in the report. Regrading and model judges are not included in this phase.
+Web artifacts live under `EVAL_DATA_DIR/runs` as before. New CLI grading runs use `<suite directory>/.eval-data/runs` by default (`EVAL_DATA_DIR` overrides it), print the isolated workspace path, and use an empty workspace unless `cwd` is configured. The run directory and fixture cannot contain one another. Old CLI cases keep their original cwd behavior. New grading exit codes: 0 all pass, 1 an explicit failure, 2 otherwise execution/verification error or inconclusive; full error details remain in the report. Reference-based LLM scoring is available as described below; historical trials do not overwrite official results.
 
 Validation: `bun run typecheck`, `bun test`, `bun run smoke:web`. The process-tree test requires Windows permission to terminate the test process tree: `$env:EVAL_PROCESS_TREE_TEST='1'; bun test src/grading/integration.test.ts --test-name-pattern 'Windows verifier timeout'`.
 
@@ -222,3 +222,12 @@ Each case records the final text, finish reason, duration, iteration count, toke
 - 每个案例/轮次默认显示最新执行及 **重试 N 次**；详情下拉框切换首次执行与历次重试的结果、会话及产物。通过率和状态按最新执行统计；Token、费用和耗时累计所有尝试。多轮报告可切换首次执行与最新结果，重试不增加实验轮次。
 - 结果顶部精简为任务验收/回复检查摘要和异常，规则版本、覆盖率及统计口径在 **详细统计与统计口径** 中查看；已结束执行的过程信息折叠到 **执行详情**。
 - JSON 保留全部尝试并附最新项标识，CSV 增加 root_item_id、attempt、previous_item_id 和 is_latest。原 parentRunId 新建子批次 API 保留兼容；“重复评测本批次”仍用于另建独立实验。
+
+
+## LLM Judge：参考答案评分
+
+在案例 **判定规则 → LLM 评分** 中填写参考答案，自选评审 **执行结果 / 执行轨迹 / 两者**，并配置独立 Judge 模型。默认输出 0–100 分、理由和原文依据，不影响原案例结论；可显式开启及格线。全局 Judge 默认模型在 **运行配置** 中单独保存，已有案例使用自己的快照。
+
+支持历史执行 **预览送审材料 → 试评分**，仅调用 Judge，不重跑被测模型或修改原正式成绩。评分 Token/费用独立统计，失败或信息不足不填为 0 分。复制、导入、原批次重试及 JSON/CSV/Markdown 导出保留 Judge 配置和结果。
+
+完整说明、模型凭据、材料边界、成本及 API 见 [LLM Judge 指南](docs/llm-judge.md)，可运行的 JSON 模板见 [参考答案示例](examples/llm-judge/suite.json)。已有 MongoDB 部署先运行 `bun run mongo:prepare` 更新校验器；未启用 Judge 的旧案例继续按原方式运行。

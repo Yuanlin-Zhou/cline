@@ -135,6 +135,7 @@
       "name": "@cline/example-agent-eval",
       "version": "0.0.0",
       "dependencies": {
+        "@cline/llms": "workspace:*",
         "@cline/sdk": "workspace:*",
         "mongodb": "6.21.0",
       },

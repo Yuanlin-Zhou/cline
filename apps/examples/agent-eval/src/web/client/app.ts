@@ -1,3 +1,7 @@
+import { judgeEditor, judgeModelEditor, judgeResultPanel } from "./judge-ui.js";
+import { judgeTrial } from "./judge-trial.js";
+import { judgeSummary } from "../../judge/summary.js";
+import { JUDGE_STATUS, type JudgeModel } from "../../judge/types.js";
 import { rangeSelection } from "./range-selection.js";
 import { latestAttempts, canRetry } from "../types.js";
 import { deleteCasesDialog, deleteModuleDialog, archivedModulesDialog } from "./resource-delete.js";
@@ -1644,7 +1648,10 @@ if(copy) {
 
 	const functionChecks = functionCallEditor(definition.functionCall);
 	const replyChecks = replyEditor({ initial: definition.assertions, finish: definition.grading ? definition.assertions?.finishReason ?? "" : definition.assertions?.finishReason ?? "completed", finishOptions: FINISH_OPTIONS, omitDefaultFinish: !definition.assertions && !definition.grading });
-	const taskGrading = gradingEditor(definition.grading, { caseId: existing?.id, onModeChange: () => { replayMode = "full-task"; updateMode(); } });
+	const llmJudgeEditor = judgeEditor({ id:"f-judge",initial:definition.llmJudge,api,execution:()=>{
+  const value=readConfig("f",false);return {providerId:value.providerId,modelId:value.modelId,baseUrl:value.baseUrl,apiKeyEnv:value.apiKeyEnv,headers:value.headers,headersEnv:value.headersEnv};
+ },trial:config=>openModal({title:"LLM 历史试评分",body:judgeTrial({api,config,caseId:existing?.id}),wide:true,actions:close=>[h("button",{class:"btn",onclick:close},"关闭（后台评分继续）")]})});
+ const taskGrading = gradingEditor(definition.grading, { caseId: existing?.id, onModeChange: () => { replayMode = "full-task"; updateMode(); } });
 	const rulesPage = h("section", { class: "GradingWorkspace" });
 	const ruleIntro = h("div", { class: "GradingWorkspace-intro" }, h("h3", {}, "如何判断评测通过？"), h("p", {}, "选择你要检查的内容。所有影响通过的检查都满足，才算本次评测通过。"), h("p", {class:"form-hint"}, "未配置内容检查时，系统仅检查是否正常结束，不能证明业务任务完成。"));
 	const goals = h("div", { class: "Grading-goals", "aria-label": "添加判定检查" });
@@ -1652,9 +1659,9 @@ if(copy) {
 	const replyGoal = goal("最终回复", "检查回复包含、不包含或匹配文字", () => replyChecks.open());
 	const fileGoal = goal("文件产物", "检查交付文件和 JSON · 需要完整任务", () => taskGrading.openFiles());
 	const scriptGoal = goal("Python 脚本", "自定义检查结果、会话与文件", () => taskGrading.addScript());
-	goals.append(replyGoal, fileGoal, scriptGoal);
+	goals.append(replyGoal, fileGoal, scriptGoal,goal("LLM 评分","提供参考答案，自选结果或轨迹，由独立模型评分",()=>llmJudgeEditor.open()));
 	const ruleAdvanced = verifierFold("高级判定设置"); ruleAdvanced.append(replyChecks.finishSettings, taskGrading.advanced);
-	rulesPage.append(ruleIntro, goals, replyChecks.element, taskGrading.element, ruleAdvanced);
+	rulesPage.append(ruleIntro, goals, replyChecks.element, taskGrading.element,llmJudgeEditor.element, ruleAdvanced);
 
 	left.append(panelTabs("case-editor", [
 		["输入", h("div", {}, form, historyBox, promptBox, functionChecks.element)],
@@ -1693,7 +1700,7 @@ if(copy) {
 		document.getElementById("history-title")!.textContent = replayMode === "function-call" ? "历史对话" : "历史消息（可选）";
 		const hasNative = replayMode === "function-call" && nativeHistory.read().history !== undefined;
 		legacyHistoryControls.hidden = hasNative;historyRows.hidden = hasNative;
-		taskGrading.setMode(replayMode);
+		taskGrading.setMode(replayMode);llmJudgeEditor.setMode(replayMode);
 		fileGoal.classList.toggle("Grading-goal--restricted", single); fileGoal.title = single ? "文件检查需要完整任务，可点击切换并选择检查类型。" : "添加文件检查";
 		envBox.hidden = single;
 		for (const card of modeCards.querySelectorAll<HTMLElement>("button")) {
@@ -1741,6 +1748,7 @@ if(copy) {
 			prompt: val("f-prompt"),
 			assertions,
 			grading: validateGrading ? taskGrading.read(replayMode) : definition.grading,
+            llmJudge:llmJudgeEditor.read(validateGrading),
 			...readHeaderEditor("f-case-headers"),
 			cwd: val("f-cwd").trim() || undefined,
 			workspace: replayMode === "full-task" ? caseWorkspace.read(validateGrading) : definition.workspace ?? defaults.workspace,
@@ -1798,7 +1806,7 @@ if(copy) {
 			first.focus();
 			return false;
 		}
-		try { if(replayMode === "function-call") functionChecks.read(); if(replayMode === "full-task")caseWorkspace.read(); replyChecks.read(); taskGrading.read(replayMode); } catch (error) { toast(error instanceof Error ? error.message : String(error), "error"); return false; }
+		try { if(replayMode === "function-call") functionChecks.read(); if(replayMode === "full-task")caseWorkspace.read(); replyChecks.read(); taskGrading.read(replayMode);llmJudgeEditor.read(); } catch (error) { toast(error instanceof Error ? error.message : String(error), "error"); return false; }
 		return !first;
 	};
 
@@ -2571,10 +2579,10 @@ async function renderRunDetail(app: HTMLElement, runId: string): Promise<void> {
 			}
 			row.hidden = !visibleIds.has(item.id);
 			row.setAttribute("aria-pressed", String(item.id === selectedId));
-			const signature = JSON.stringify([item.status, item.phase, item.result?.durationMs, item.attempt]);
+			const signature = JSON.stringify([item.status, item.phase, item.result?.durationMs, item.attempt,item.result?.llmJudge?.status,item.result?.llmJudge?.score]);
 			if (row.dataset.signature !== signature) {
 				row.dataset.signature = signature;
-				row.replaceChildren(h("span", { class: "RunItem-head" }, h("span", { class: "case-name" }, item.snapshot.definition.id), item.status === "running" && item.phase === "verifying" ? badge("验证中", "Label--attention") : statusBadge(item.status)), h("span", { class: "muted small" }, `第 ${item.round ?? 1} 轮 · 重试 ${item.attempt ?? 0} 次 · ${item.moduleName} · ${replayLabel(item.snapshot.definition.replayMode)} · ${fmtDuration(item.result?.durationMs)}`));
+				row.replaceChildren(h("span", { class: "RunItem-head" }, h("span", { class: "case-name" }, item.snapshot.definition.id), item.status === "running" && item.phase === "judging" ? badge("LLM 评分中","Label--attention") : item.status === "running" && item.phase === "verifying" ? badge("验证中", "Label--attention") : statusBadge(item.status)), h("span", { class: "muted small" }, `第 ${item.round ?? 1} 轮 · 重试 ${item.attempt ?? 0} 次${item.result?.llmJudge ? ` · LLM ${item.result.llmJudge.score??JUDGE_STATUS[item.result.llmJudge.status]}`:""} · ${item.moduleName} · ${replayLabel(item.snapshot.definition.replayMode)} · ${fmtDuration(item.result?.durationMs)}`));
 			}
 		}
 		const current = detail.items.find(i => i.id === selectedId);
@@ -2623,6 +2631,7 @@ async function renderRunDetail(app: HTMLElement, runId: string): Promise<void> {
   const fold = metrics.querySelector("details"); if(fold){ fold.open=metricsOpen;fold.ontoggle=()=>{if(fold.isConnected)metricsOpen=fold.open;}; }
   summary.replaceChildren(
    metrics,
+   ...(() => {const j=judgeSummary(run.items);return j.expected?[h("div",{class:"JudgeSummary"},h("strong",{},`LLM 已评分 ${j.scored}/${j.expected}`),h("span",{class:"muted small"},` · 未评分 ${j.unscored}${j.errors?` · 错误 ${j.errors}`:""}${j.insufficient?` · 信息不足 ${j.insufficient}`:""} · 评分耗时 ${fmtDuration(j.durationMs)} · 评分 Token ${j.inputTokens+j.outputTokens} · 评分费用 ${j.cost===null?"未提供":fmtCost(j.cost)}`),h("details",{class:"Verifier-details"},h("summary",{},"Judge 分组均分"),...j.groups.map(g=>h("p",{},`${g.model} · ${g.rubric}：${g.average.toFixed(1)}/100（${g.scored} 次）`))))]:[];})(),
    h("div", { class: "RunSummary-counts", hidden: value.failed + value.error + value.inconclusive + value.cancelled + value.running + value.queued === 0 }, ...(["failed", "error", "inconclusive", "cancelled", "running", "queued"] as const).filter(key => value[key] > 0).map(key => h("span", { class: "flex-center gap-1" }, statusBadge(key), h("b", {}, String(value[key]))))),
    h("div", { class: "RunSummary-meta muted small" }, `已结束 ${settled} / ${value.total} · 重试 ${run.items.filter(i => (i.attempt ?? 0) > 0).length} 次 · 累计执行耗时 ${fmtDuration(value.durationMs)} · Token ${fmtTokens(value.tokens)} · 费用 ${value.cost === null ? "未提供" : fmtCost(value.cost)}`), statusBar(value),
   );
@@ -2687,7 +2696,7 @@ function createItemInspector(runId: string, initial: RunItem) {
 	const element = h("div", {}, title, meta, progress, sync, tabs, content);
 	let conversation: ReturnType<typeof conversationView> | undefined;
 	let trial: ReturnType<typeof verifierTrial> | undefined;
-	const labels = [["result", "结果与断言"], ["conversation", "会话记录"], ["verification", "脚本试验证"], ["input", "输入快照"], ["tools", "工具诊断"], ["artifacts", "文件产物"]];
+	const labels = [["result", "结果与断言"], ["judge","LLM 评分"], ["conversation", "会话记录"], ["verification", "脚本试验证"], ["input", "输入快照"], ["tools", "工具诊断"], ["artifacts", "文件产物"]];
 	const setHeader = () => {
 		title.replaceChildren(h("span", {}, item.snapshot.definition.id), statusBadge(item.status));
 		meta.replaceChildren(h("span", {}, `v${item.snapshot.revision} · ${item.snapshot.defaults.modelId} · ${replayLabel(item.snapshot.definition.replayMode)}`), sessionIdLabel(item.sessionId ?? item.result?.sessionId));
@@ -2707,9 +2716,11 @@ function createItemInspector(runId: string, initial: RunItem) {
 		if (tab === "result") {
 			const reason = item.error ?? result?.error ?? (item.status === "failed" ? result?.assertions.filter(a => !a.passed).map(a => a.message).join("；") || "断言未通过" : "");
 			if (reason) content.append(flash(reason, item.status === "error" ? "warning" : "error"));
+            if(result?.llmJudge)content.append(judgeResultPanel(result.llmJudge,()=>api(`/api/runs/${runId}/items/${item.id}/judge-scores/official-input`)));
 			if (result && (result.functionCallResponse || item.snapshot.definition.replayMode === "function-call")) content.append(modelResponse(result));
 			else if (result && !["error", "cancelled"].includes(item.status)) content.append(h("div", { class: "section-title mt-3" }, "最终回复"), h("pre", { class: "output" }, result.text || "（无文本回复）"));
 			if (result) renderAssertions(content, result);
+
 			if (result) content.append(gradingPanel(result, async id => api(`/api/runs/${runId}/items/${item.id}/evidence/${id}`), { rules: item.snapshot.definition.grading?.rules, verifiers: item.verifierSnapshots, caseUrl: item.snapshot.revision > 0 ? `#/case/${item.snapshot.id}?tab=grading` : undefined }));
 			if (!result || ["error", "cancelled"].includes(item.status)) {
 				const preview = h("details", { class: "mt-3" }, h("summary", {}, ["queued", "running"].includes(item.status) ? "实时文本预览" : "已有输出（执行未完整结束）"), h("p", { class: "muted small" }, "这里只是文本片段；按消息查看过程请切换到会话记录。"), h("pre", { class: "output", "data-live-output": true }, item.text || result?.text || "暂无文本片段。"));
@@ -2718,6 +2729,11 @@ function createItemInspector(runId: string, initial: RunItem) {
 			if (result) content.append(h("div", { class: "metric-row mt-3" }, ...[["耗时", fmtDuration(result.durationMs)], ["迭代", String(result.iterations)], ["输入 Token", fmtTokens(result.usage.inputTokens)], ["输出 Token", fmtTokens(result.usage.outputTokens)], ["费用", fmtCost(result.usage.totalCost)]].map(([label, value]) => h("span", { class: "metric" }, label + " ", h("b", {}, value)))));
 		} else if (tab === "conversation") {
 			conversation ??= conversationView(runId, item.id); content.append(conversation.element); conversation.refresh();
+		} else if(tab === "judge"){
+   if(result?.llmJudge)content.append(judgeResultPanel(result.llmJudge,()=>api(`/api/runs/${runId}/items/${item.id}/judge-scores/official-input`)));
+   const config=item.snapshot.definition.llmJudge;
+   if(config?.enabled&&!['queued','running'].includes(item.status))content.append(judgeTrial({api,config,runId,itemId:item.id}));
+   else content.append(h("p",{class:"form-hint"},config?.enabled?"执行结束后可使用本次材料试评分。":"本次执行未启用 LLM 评分。可在案例判定规则中配置参考答案，再选择历史试评分。"));
 		} else if (tab === "verification") {
 			trial ??= verifierTrial({ runId, itemId: item.id }); content.append(trial.element); trial.resume();
 		} else if (tab === "input") {
@@ -2761,7 +2777,7 @@ function createItemInspector(runId: string, initial: RunItem) {
 		if (tab === "result" && previous.status === next.status && !next.result) {
 			const output = content.querySelector<HTMLElement>("[data-live-output]");
 			if (output) output.textContent = next.text || "等待模型输出…";
-		} else if (tab === "result" || (tab === "input" && previous.workspace !== next.workspace) || (tab === "tools" && JSON.stringify(previous.result?.toolCalls) !== JSON.stringify(next.result?.toolCalls)) || (tab === "artifacts" && previous.status !== next.status)) {
+		} else if (tab === "result" || tab === "judge" || (tab === "input" && previous.workspace !== next.workspace) || (tab === "tools" && JSON.stringify(previous.result?.toolCalls) !== JSON.stringify(next.result?.toolCalls)) || (tab === "artifacts" && previous.status !== next.status)) {
 			const scroll = content.scrollTop; void renderTab(); content.scrollTop = scroll;
 		}
 	} };
@@ -2803,6 +2819,14 @@ async function renderSettings(app: HTMLElement): Promise<void> {
 			} catch (error) { toast(error instanceof Error ? error.message : String(error), "error"); }
 		} }, "保存配置"),
 	));
+ const judgeBox=h("section",{class:"Box Box-body mt-3"},h("h2",{class:"section-title"},"全局 Judge 默认模型"),h("p",{class:"form-hint"},"只用于主动选择此配置的 LLM 评分；保存案例后使用快照，不随全局设置变化。"));
+ app.append(judgeBox);
+ try{
+  const initial=await api<JudgeModel|null>("/api/judge-settings");
+  if(!judgeBox.isConnected)return;
+  const editor=judgeModelEditor("global-judge",initial??undefined,api,undefined,false);judgeBox.append(editor.element,h("button",{class:"btn btn-primary mt-3",onclick:async()=>{try{await api("/api/judge-settings",{method:"PUT",headers:JSON_HEADERS,body:JSON.stringify(editor.read())});toast("Judge 默认配置已保存");}catch(error){toast(String(error),"error");}}},"保存 Judge 默认配置"));
+ }catch(error){judgeBox.append(flash(String(error)));}
+
 }
 
 /* ----------------------------- Boot ----------------------------- */

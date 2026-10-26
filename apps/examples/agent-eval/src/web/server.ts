@@ -1,3 +1,7 @@
+import { JudgeScores } from "./judge-scores.js";
+import { parseJudgeModel } from "../judge/config.js";
+import { preflightJudge } from "../judge/engine.js";
+import { judgeSummary } from "../judge/summary.js";
 import { moduleDeletion, verifierReferences } from "./resource-management.js";
 import { previewConversations, BATCH_BYTE_LIMIT } from "../batch-conversations.js";
 import { readJsonBody } from "./json-body.js";
@@ -47,6 +51,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 	try {
 	const queue = new EvalQueue(store, options.execute);
 	const verifierTests = new VerifierTests(store);
+ const judgeScores = new JudgeScores(store);
 	const verifierRepository = options.verifierRepository ?? (catalog instanceof MongoCatalog ? new MongoVerifiers(catalog.db, catalog.config.verifierCollection ?? "agent_eval_verifiers") : new SqliteVerifiers(store));
 	if (verifierRepository instanceof MongoVerifiers) await verifierRepository.preflight();
 	const build = await Bun.build({ entrypoints: [path.join(client, "app.ts")], target: "browser", minify: false });
@@ -75,8 +80,26 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					const { cases, modules } = await catalog.snapshot();
 					const activeIds = new Set(cases.map(c => c.id));
 					const latest = Object.fromEntries(latestAttempts(allItems).filter(i => activeIds.has(i.snapshot.id) && ((i.attempt ?? 0) > 0 || !["queued", "running", "cancelled"].includes(i.status))).map(i => [i.snapshot.id, { status: i.status, runId: i.runId, revision: i.snapshot.revision, modelId: i.snapshot.defaults.modelId, sessionId: i.result?.sessionId, durationMs: i.result?.durationMs, endedAt: i.endedAt }]));
-					return json({ modules, cases, settings: store.settings(), runs: store.list<Run>("run").reverse().map(run => ({ ...run, summary: summarize(allItems.filter(i => i.runId === run.id)) })), latest });
+					return json({ modules, cases, settings: store.settings(), runs: store.list<Run>("run").reverse().map(run => ({ ...run, summary: summarize(allItems.filter(i => i.runId === run.id)), judgeSummary: judgeSummary(allItems.filter(i=>i.runId===run.id)) })), latest });
 				}
+                if(route==="/api/judge-settings"){
+     if(method==="GET")return json(store.get("judge-settings","default")??null);
+     if(method==="PUT"){const model=parseJudgeModel(await readJsonBody(request));store.put("judge-settings","default",model);return json(model);}
+    }
+    const judgeMatch=route.match(/^\/api\/runs\/([^/]+)\/items\/([^/]+)\/judge-scores(?:\/(preview|official-input|[a-zA-Z0-9-]+)(?:\/(cancel))?)?$/);
+    if(judgeMatch){
+     const [,runId,itemId,scoreId,action]=judgeMatch;
+     const item=store.get<RunItem>("item",itemId);if(!item||item.runId!==runId)throw new CatalogError("执行记录不存在",404);
+     if(!scoreId){if(method==="GET")return json(judgeScores.list(item));if(method==="POST")return json(await judgeScores.create(item,await readJsonBody(request)),202);}
+     if(scoreId==="preview"&&method==="POST")return json(await judgeScores.preview(item,(await readJsonBody(request)).config));
+     if(scoreId==="official-input"&&method==="GET")return json(await judgeScores.officialInput(item));
+     if(scoreId&&!["preview","official-input"].includes(scoreId)){
+      const score=judgeScores.get(scoreId,item);
+      if(action==="cancel"&&method==="POST"){judgeScores.cancel(scoreId);return json(judgeScores.public(score));}
+      if(!action&&method==="GET")return json(url.searchParams.get("input")==="1"?score:judgeScores.public(score));
+     }
+     throw new CatalogError("不支持的评分操作",400);
+    }
 				if (route === "/api/verifiers" && method === "GET") {
 					const configured = await loadVerifiers(); const uploaded = await verifierRepository.list();
 					if (uploaded.some(v => configured.some(c => c.id === v.id))) throw new CatalogError("验证器 ID 冲突", 409);
@@ -306,6 +329,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 						const frozen = body.parentRunId ? source.verifierSnapshots ?? [] : undefined;
 						const resolved = await resolveVerifiers(definition, frozen === undefined ? verifierRepository : undefined, frozen);
 						resolved.uploaded = await Promise.all(resolved.uploaded.map(v => preparePythonUpload(v)));
+						preflightJudge(definition.llmJudge);
 						preflight(definition, [...resolved.configured, ...resolved.uploaded.map(uploadedPlaceholder)]);
 						prepared.push({ ...source, verifierSnapshots: resolved.uploaded });
 					}
@@ -329,12 +353,12 @@ export async function createEvalServer(options: { directory?: string; port?: num
 							if (url.searchParams.get("format") === "markdown") return new Response(repeatReportMarkdown(run), { headers: { "Content-Type": "text/markdown; charset=utf-8", "Content-Disposition": `attachment; filename="eval-${id}-repeat-report.md"` } });
 							if (url.searchParams.get("format") === "csv") {
                                 const latestIds = new Set(latestAttempts(run.items).map(i => i.id));
-								const rows = [["module", "case", "revision", "mode", "model", "status", "duration_ms", "tokens", "cost", "error", "round", "item_id", "output", "failed_assertions", "session_id", "grading_mode", "grading_verdict", "grading_status", "failed_rules", "evidence_ids", "rule_hash", "root_item_id", "attempt", "previous_item_id", "is_latest"], ...run.items.map(i => [i.moduleName, i.snapshot.definition.id, i.snapshot.revision, i.snapshot.definition.replayMode ?? "single-turn", i.snapshot.defaults.modelId, i.status, i.result?.durationMs, (i.result?.usage.inputTokens ?? 0) + (i.result?.usage.outputTokens ?? 0), i.result?.usage.totalCost ?? "", i.error ?? i.result?.error ?? "", i.round ?? 1, i.id, i.result?.text ?? i.text, i.result?.assertions.filter(a => !a.passed).map(a => a.message).join("; "), i.result?.sessionId, i.snapshot.definition.grading ? "task" : "legacy-text", i.result?.grading?.verdict, i.result?.grading?.status, i.result?.grading?.results.filter(r => r.status === "fail").map(r => r.id).join("; "), i.result?.evidence?.refs.map(r => r.id).join("; "), i.result?.grading?.ruleHash, i.rootItemId ?? i.id, i.attempt ?? 0, i.previousItemId ?? "", latestIds.has(i.id)])];
+								const rows = [["module", "case", "revision", "mode", "model", "status", "duration_ms", "tokens", "cost", "error", "round", "item_id", "output", "failed_assertions", "session_id", "grading_mode", "grading_verdict", "grading_status", "failed_rules", "evidence_ids", "rule_hash", "root_item_id", "attempt", "previous_item_id", "is_latest", "judge_score", "judge_status", "judge_targets", "judge_threshold", "judge_affects_outcome", "judge_meets_threshold", "judge_reason", "judge_provider", "judge_model", "judge_id", "judge_input_hash", "judge_config_hash", "judge_prompt_version", "judge_input_tokens", "judge_output_tokens", "judge_cost", "judge_duration_ms"], ...run.items.map(i => [i.moduleName, i.snapshot.definition.id, i.snapshot.revision, i.snapshot.definition.replayMode ?? "single-turn", i.snapshot.defaults.modelId, i.status, i.result?.durationMs, (i.result?.usage.inputTokens ?? 0) + (i.result?.usage.outputTokens ?? 0), i.result?.usage.totalCost ?? "", i.error ?? i.result?.error ?? "", i.round ?? 1, i.id, i.result?.text ?? i.text, i.result?.assertions.filter(a => !a.passed).map(a => a.message).join("; "), i.result?.sessionId, i.snapshot.definition.grading ? "task" : "legacy-text", i.result?.grading?.verdict, i.result?.grading?.status, i.result?.grading?.results.filter(r => r.status === "fail").map(r => r.id).join("; "), i.result?.evidence?.refs.map(r => r.id).join("; "), i.result?.grading?.ruleHash, i.rootItemId ?? i.id, i.attempt ?? 0, i.previousItemId ?? "", latestIds.has(i.id),i.result?.llmJudge?.score,i.result?.llmJudge?.status,i.result?.llmJudge?.targets.join(";"),i.result?.llmJudge?.passScore,i.result?.llmJudge?.affectsOutcome,i.result?.llmJudge?.meetsThreshold,i.result?.llmJudge?.rationale,i.result?.llmJudge?.model?.providerId,i.result?.llmJudge?.model?.modelId,i.result?.llmJudge?.id,i.result?.llmJudge?.inputHash,i.result?.llmJudge?.configHash,i.result?.llmJudge?.promptVersion,i.result?.llmJudge?.usage.inputTokens,i.result?.llmJudge?.usage.outputTokens,i.result?.llmJudge?.usage.totalCost,i.result?.llmJudge?.durationMs])];
 								return new Response(`\uFEFF${rows.map(row => row.map(csvCell).join(",")).join("\r\n")}`, { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="eval-${id}.csv"` } });
 							}
-							return new Response(JSON.stringify({ ...run, latestItemIds: latestAttempts(run.items).map(i => i.id), retryCount: run.items.filter(i => (i.attempt ?? 0) > 0).length, summary: summarize(run.items), gradingSummary: gradingSummary(run.items), repeatReport: buildRepeatReport(run) }, null, 2), { headers: { "Content-Type": "application/json", "Content-Disposition": `attachment; filename="eval-${id}.json"` } });
+							return new Response(JSON.stringify({ ...run, latestItemIds: latestAttempts(run.items).map(i => i.id), retryCount: run.items.filter(i => (i.attempt ?? 0) > 0).length, summary: summarize(run.items), judgeSummary: judgeSummary(run.items), gradingSummary: gradingSummary(run.items), repeatReport: buildRepeatReport(run) }, null, 2), { headers: { "Content-Type": "application/json", "Content-Disposition": `attachment; filename="eval-${id}.json"` } });
 						}
-						return json({ ...run, latestItemIds: latestAttempts(run.items).map(i => i.id), retryCount: run.items.filter(i => (i.attempt ?? 0) > 0).length, summary: summarize(run.items), gradingSummary: gradingSummary(run.items), repeatReport: buildRepeatReport(run) });
+						return json({ ...run, latestItemIds: latestAttempts(run.items).map(i => i.id), retryCount: run.items.filter(i => (i.attempt ?? 0) > 0).length, summary: summarize(run.items), judgeSummary: judgeSummary(run.items), gradingSummary: gradingSummary(run.items), repeatReport: buildRepeatReport(run) });
 					}
 				}
 				return json({ error: "接口不存在" }, 404);
@@ -350,7 +374,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 	let closing: Promise<void> | undefined;
 	const close = () => closing ??= (async () => {
 		for (const run of store.list<Run>("run")) if (["queued", "running"].includes(run.status)) queue.cancel(run.id);
-		await server.stop(true); await queue.idle(); await verifierTests.close(); await catalog.close(); store.db.close();
+		await server.stop(true); await queue.idle(); await verifierTests.close(); await judgeScores.close(); await catalog.close(); store.db.close();
 	})();
 	return { server, store, queue, catalog, close };
 	} catch (error) { await catalog.close(); store.db.close(); throw error; }

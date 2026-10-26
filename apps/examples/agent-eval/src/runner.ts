@@ -1,3 +1,5 @@
+import {preflightJudge} from "./judge/engine.js";
+import {judgeSummary} from "./judge/summary.js";
 import { runFunctionCall, preflightFunctionCall } from "./function-call.js";
 import { prepareRequestHeaders } from "./request-headers.js";
 import { randomUUID } from "node:crypto";
@@ -207,8 +209,9 @@ export async function runEvalSuite(input: {
 	const startedAt = new Date();
 	const suiteDirectory = path.dirname(suitePath);
 	resolveApiKey(overrides.apiKeyEnv ?? suite.defaults.apiKeyEnv);
+ if(!input.executionOnly)for(const c of suite.cases)preflightJudge(c.llmJudge);
 	for (const definition of suite.cases) preflightFunctionCall(definition, {...suite.defaults,...(overrides.providerId?{providerId:overrides.providerId}:{}),...(overrides.modelId?{modelId:overrides.modelId}:{}),...(overrides.apiKeyEnv?{apiKeyEnv:overrides.apiKeyEnv}:{})});
-	const shouldIsolate = (c:EvalCase) => !input.executionOnly && (!!c.grading || c.replayMode === "full-task" && !!(c.workspace ?? suite.defaults.workspace));
+	const shouldIsolate = (c:EvalCase) => !input.executionOnly && (!!c.grading || !!c.llmJudge?.enabled || c.replayMode === "full-task" && !!(c.workspace ?? suite.defaults.workspace));
 	const cline = suite.cases.some(c=>c.replayMode !== "function-call" && !shouldIsolate(c)) ? await ClineCore.create({
 		clientName: "agent-eval",
 		backendMode: "local",
@@ -284,9 +287,10 @@ export async function runEvalSuite(input: {
 		summary: {
 			total: results.length,
 			passed: results.filter((result) => result.status === "passed").length,
-			failed: results.filter((result) => suite.cases.some(c => c.grading) ? result.status === "failed" : result.status !== "passed").length,
+			failed: results.filter((result) => suite.cases.some(c => c.grading || (c.llmJudge?.enabled && c.llmJudge.affectsOutcome)) ? result.status === "failed" : result.status !== "passed").length,
 			inconclusive: results.filter(result => result.status === "inconclusive").length,
 			executionErrors: results.filter(result => result.execution?.status === "error" || result.status === "error").length,
+			judge: judgeSummary(results.map((result,index)=>({id:String(index),runId:gradingRunId,snapshot:{id:suite.cases[index].id,moduleId:"cli",revision:1,updatedAt:startedAt.toISOString(),definition:suite.cases[index],defaults:suite.defaults},moduleName:"CLI",status:result.status,text:result.text,result}))),
 			grading: gradingSummary(results.map((result, index) => ({ status: result.status, result, snapshot: { id: suite.cases[index].id, definition: suite.cases[index] } }))),
 			durationMs: endedAt.getTime() - startedAt.getTime(),
 			inputTokens: results.reduce(

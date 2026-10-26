@@ -1,3 +1,4 @@
+import { judgeSummary } from "../judge/summary.js";
 import { latestAttempts, summarize, type RunDetail, type RunItem } from "./types.js";
 import { gradingSummary } from "../grading/summary.js";
 
@@ -58,7 +59,7 @@ export function buildRepeatReport(run: RunDetail, firstOnly = false) {
 	return {
         retryCount: attempts.filter(i => (i.attempt ?? 0) > 0).length,
         firstSummary: summarize(attempts.filter(i => !i.attempt)),
-		repeatCount, caseCount: cases.length, summary,
+		repeatCount, caseCount: cases.length, summary, judge:judgeSummary(attempts),
 		passRate: gradingSummary(run.items).legacy.rate,
 		grading: gradingSummary(run.items),
 		completedRounds: rounds.filter(r => r.total > 0 && r.queued + r.running + r.cancelled + r.interrupted === 0).length,
@@ -110,6 +111,10 @@ export function repeatReportMarkdown(run: RunDetail, report = buildRepeatReport(
 	if (report.retryCount) {
   lines.push("## 执行尝试历史", "");
   for (const item of run.items) lines.push(`- ${escapeMarkdown(item.snapshot.definition.id)} · 第 ${item.round ?? 1} 轮 · ${item.attempt ? `重试 ${item.attempt}` : "首次执行"}：${status[item.status]}`);
+ }
+ if(report.judge.expected){
+  lines.push("## LLM 评分", "", `正式评分 ${report.judge.scored}/${report.judge.expected}；评分错误 ${report.judge.errors}，信息不足 ${report.judge.insufficient}。评分费用 ${report.judge.cost===null?"未提供":report.judge.cost}，评分 Token ${report.judge.inputTokens+report.judge.outputTokens}。`, "");
+  for(const item of latestAttempts(run.items)){const j=item.result?.llmJudge;if(j)lines.push(`- ${escapeMarkdown(item.snapshot.definition.id)} · 第 ${item.round??1} 轮：${j.score===null?j.status:j.score+"/100"}；${escapeMarkdown(j.rationale)}`);}
  }
  lines.push("摘录最多展示 20 个案例、每案例 10 条异常和 3 个输出版本；完整原文、逐轮状态与断言证据见批次详情或 JSON 导出。", "", report.method, "");
 	return lines.join("\n");

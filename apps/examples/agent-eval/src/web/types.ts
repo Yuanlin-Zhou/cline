@@ -39,7 +39,7 @@ export type RunItem = {
 	text: string;
 	result?: EvalCaseResult;
 	error?: string;
-	phase?: "executing" | "verifying";
+	phase?: "executing" | "verifying" | "judging";
 	sessionId?: string;
 	lastActivityAt?: string;
 	activity?: import("./activity.js").Activity;
