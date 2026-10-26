@@ -134,6 +134,17 @@ describe("MongoDB replica-set catalog (set EVAL_TEST_MONGODB_URI)", () => {
 		await expect(transfer("copy", target, [first, sources[1]])).rejects.toMatchObject({ status: 503 });
 		await repository.db.admin().command({ configureFailPoint: "failCommand", mode: "off" });
 		expect(await repository.cases.countDocuments()).toBe(count);
+        const draft = { definition: { ...sources[1].definition, id: "configured-copy", timeoutMs: 12345 }, defaults: { ...sources[1].defaults, modelId: "copied-model" } };
+        const copyRequest = { operation: "copy", targetModuleId: target.id, conflictPolicy: "abort", items: [{ id: sources[1].id, revision: 1, draft }] };
+        const preview = await repository.previewTransfer(structuredClone(copyRequest));
+        const applyRequest = { ...copyRequest, items: copyRequest.items.map(i => ({ ...i, expectedDefinitionId: preview.items[0].proposedDefinitionId, expectedDraftFingerprint: preview.items[0].draftFingerprint })) };
+        await expect(repository.transferCases({ ...applyRequest, items: applyRequest.items.map(i => ({ ...i, draft: { ...draft, defaults: { ...draft.defaults, modelId: "after-preview" } } })) })).rejects.toThrow("预览");
+        expect(await repository.cases.countDocuments()).toBe(count);
+        const copy = (await repository.transferCases(applyRequest)).cases[0];
+        expect(copy.definition).toMatchObject({ id: "configured-copy", timeoutMs: 12345 });
+        expect(copy.defaults.modelId).toBe("copied-model");
+        expect(await repository.getCase(sources[1].id)).toEqual(sources[1]);
+
 	});
 	mongoTest("commit retry produces one copy; module archive serializes against transfer and restores only module", async () => {
 		const source = await repository.createModule("source"); const target = await repository.createModule("target"); const c = await seed(source);

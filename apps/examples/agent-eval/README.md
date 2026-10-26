@@ -69,7 +69,7 @@ Pass rate is calculated over judged cases only (`passed / (passed + failed)`); e
 
 ### Repeated batch evaluation
 
-Set **新建评测 → 运行配置 → 重复轮数** (1–100, including the first execution; default 1). The review step displays cases × rounds and the total execution count. Each round completes before the next starts, with the configured concurrency within a round. Every execution uses the saved prompt/history/configuration snapshot and a separate session and workspace. Stopping a batch cancels pending repetitions as well. On a finished batch, **重复评测本批次** creates a new batch from its original snapshots; **重跑未通过案例** selects each affected case once even if it failed in several rounds.
+Set **新建评测 → 运行配置 → 重复轮数** (1–100, including the first execution; default 1). The review step displays cases × rounds and the total execution count. Each round completes before the next starts, with the configured concurrency within a round. Every execution uses the saved prompt/history/configuration snapshot and a separate session and workspace. Stopping a batch cancels pending repetitions as well. On a finished batch, **重复评测本批次** creates a new batch from its original snapshots; **重试未通过案例** retries selected latest failed executions within the same batch. Choose 断言失败, 执行错误, 无法判定 or 已取消 (one or several reasons); counts show affected cases and executions. Each failed round is selected separately.
 
 **批次详情 → 多轮报告** shows per-round pass rates, cases that passed every round, pass/fail fluctuations, distinct output counts, and text consistency (most frequent output / compared outputs). Expand a case to compare complete outputs and assertion failures across rounds; the results list also filters by round. **导出简报** downloads a brief Markdown report, JSON includes `repeatReport` plus all raw results, and CSV includes round numbers, output text and failed assertions.
 
@@ -211,3 +211,14 @@ Each case records the final text, finish reason, duration, iteration count, toke
 ## Python 自定义验证
 
 在案例判定规则上传 `.py`，用 `verify(ctx)` 读取执行结果、结构化会话、产物和初始文件，自定义业务检查。页面提供模板、输入字段说明、历史结果试验证及日志。服务端需要 Python 3.10+，可指定 `EVAL_PYTHON_EXECUTABLE`；无需注册脚本或重启。参见 [Python 脚本指南](docs/python-verifiers.md) 和 [启动配置说明](STARTUP.md)。旧 JS/TS 脚本继续支持。
+
+
+## 案例选择、复制和当前批次重试
+
+- 案例集和新建评测的案例选择区支持 **Shift 连选**、鼠标从复选框开始纵向拖动、全选/反选。列表快速选择只作用于当前筛选结果；批量工具栏说明被筛选隐藏的已选项。
+- 复制时先选择目标模块，点击 **编辑副本配置** 修改输入、判定规则、模型及运行配置，应用修改返回预览后再确认创建。批量复制可只勾选需要统一覆盖的配置字段；逐项编辑的副本优先。取消不会保存副本，原案例和其历史不会改变。有未保存内容时可明确选择使用当前内容或已保存版本。
+- 已结束批次点击 **重试未通过案例**，勾选一种或多种原因：**断言失败 / 执行错误 / 无法判定 / 已取消**。弹窗显示各类数量和本次案例数、执行次数；例如只勾选“无法判定”即可只重试该类案例。也可在案例结果内重试单项。
+- 重试使用原批次冻结的配置和验证脚本，在原批次中创建新的尝试，不读取案例库的后续修改。直接执行模式会再次操作原目录当前内容。运行中先等待完成或取消，再发起重试。
+- 每个案例/轮次默认显示最新执行及 **重试 N 次**；详情下拉框切换首次执行与历次重试的结果、会话及产物。通过率和状态按最新执行统计；Token、费用和耗时累计所有尝试。多轮报告可切换首次执行与最新结果，重试不增加实验轮次。
+- 结果顶部精简为任务验收/回复检查摘要和异常，规则版本、覆盖率及统计口径在 **详细统计与统计口径** 中查看；已结束执行的过程信息折叠到 **执行详情**。
+- JSON 保留全部尝试并附最新项标识，CSV 增加 root_item_id、attempt、previous_item_id 和 is_latest。原 parentRunId 新建子批次 API 保留兼容；“重复评测本批次”仍用于另建独立实验。

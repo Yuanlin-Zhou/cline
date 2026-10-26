@@ -1,12 +1,20 @@
-import { summarize, type RunDetail, type RunItem } from "./types.js";
+import { latestAttempts, summarize, type RunDetail, type RunItem } from "./types.js";
 import { gradingSummary } from "../grading/summary.js";
 
 const judged = (item: RunItem) => item.status === "passed" || item.status === "failed";
 const passRate = (passed: number, failed: number) => passed + failed ? passed / (passed + failed) : null;
 export const REPEAT_REPORT_METHOD = "旧版文本判定与任务验收分开统计；任务指标按案例及规则版本分组，无法判定、验证错误和取消单列。输出比较仅统计已判定且有完整结果的执行，统一换行并忽略首尾空白。输出差异不等于幻觉，规则通过也不代表事实正确，请核查验收规则与原始证据。";
 
-export function buildRepeatReport(run: RunDetail) {
+export function buildRepeatReport(run: RunDetail, firstOnly = false) {
+ const attempts = run.items;
+ run = { ...run, items: firstOnly ? attempts.filter(i => !i.attempt) : latestAttempts(attempts) };
 	const repeatCount = run.repeatCount ?? 1;
+ const byRound = new Map<number,RunItem[]>(), byCase = new Map<string,RunItem[]>();
+ for (const item of attempts) {
+  const round = item.round ?? 1;
+  const roundItems = byRound.get(round) ?? [];roundItems.push(item);byRound.set(round,roundItems);
+  const caseItems = byCase.get(item.snapshot.id) ?? [];caseItems.push(item);byCase.set(item.snapshot.id,caseItems);
+ }
 	const groups = new Map<string, RunItem[]>();
 	for (const item of run.items) {
 		const group = groups.get(item.snapshot.id) ?? [];
@@ -15,11 +23,11 @@ export function buildRepeatReport(run: RunDetail) {
 	const rounds = Array.from({ length: repeatCount }, (_, index) => {
 		const round = index + 1;
 		const items = run.items.filter(item => (item.round ?? 1) === round);
-		const summary = summarize(items);
+		const summary = summarize(byRound.get(round) ?? []);
 		return { round, ...summary, grading: gradingSummary(items), interrupted: items.filter(item => item.interrupted).length, passRate: gradingSummary(items).legacy.rate };
 	});
 	const cases = [...groups.entries()].map(([caseId, items]) => {
-		const summary = summarize(items);
+		const summary = summarize(byCase.get(caseId) ?? []);
 		const outputs = items.filter(item => judged(item) && item.result);
 		const variants = new Map<string, { rounds: number[]; itemIds: string[] }>();
 		for (const item of outputs) {
@@ -46,8 +54,10 @@ export function buildRepeatReport(run: RunDetail) {
 			})),
 		};
 	});
-	const summary = summarize(run.items);
+	const summary = summarize(attempts);
 	return {
+        retryCount: attempts.filter(i => (i.attempt ?? 0) > 0).length,
+        firstSummary: summarize(attempts.filter(i => !i.attempt)),
 		repeatCount, caseCount: cases.length, summary,
 		passRate: gradingSummary(run.items).legacy.rate,
 		grading: gradingSummary(run.items),
@@ -73,7 +83,8 @@ export function repeatReportMarkdown(run: RunDetail, report = buildRepeatReport(
 		`# 重复多轮评测报告：${escapeMarkdown(run.name)}`, "",
 		`批次：${run.id} · 创建：${run.createdAt} · 状态：${run.status}${report.partial ? "（阶段性报告，样本未全部完成）" : ""}`,
 		`${report.caseCount} 个案例 × ${report.repeatCount} 轮；完整执行 ${report.completedRounds} 轮。`, "",
-		`- 旧版文本通过率：${rate(report.passRate)}（${report.grading.legacy.numerator}/${report.grading.legacy.denominator}）；失败 ${report.summary.failed}，无法判定 ${report.summary.inconclusive}，执行错误率 ${rate(report.grading.executionErrors.rate)}（${report.grading.executionErrors.numerator}/${report.grading.executionErrors.denominator}），取消 ${report.summary.cancelled}。`,
+		`- 重试执行：${report.retryCount} 次；以下按各轮最新结果统计（含重试）；首次通过 ${report.firstSummary.passed}/${report.firstSummary.total}。`,
+        `- 旧版文本通过率：${rate(report.passRate)}（${report.grading.legacy.numerator}/${report.grading.legacy.denominator}）；失败 ${report.summary.failed}，无法判定 ${report.summary.inconclusive}，执行错误率 ${rate(report.grading.executionErrors.rate)}（${report.grading.executionErrors.numerator}/${report.grading.executionErrors.denominator}），取消 ${report.summary.cancelled}。`,
 		...report.grading.groups.map(g => `- 任务 ${escapeMarkdown(g.name)}（规则 ${g.ruleHash?.slice(0, 12) ?? "未判分"}）：已判定通过率 ${rate(g.passRate.rate)}（${g.passRate.numerator}/${g.passRate.denominator}）；全部成功 ${rate(g.successRatio.rate)}（${g.successRatio.numerator}/${g.successRatio.denominator}）；覆盖率 ${rate(g.coverage.rate)}（${g.coverage.numerator}/${g.coverage.denominator}）；关键约束 ${rate(g.constraints.rate)}（${g.constraints.numerator}/${g.constraints.denominator}），未判定约束 ${g.unknownConstraints}；验证错误 ${g.verifierErrors}。`),
 		`- 全轮通过案例：${report.allRoundsPassedCases}/${report.caseCount}；通过/失败波动案例：${report.judgmentChangedCases}。`,
 		`- 输出变化案例：${report.outputChangedCases}/${report.comparableCases} 个可比较案例；未配置内容规则：${report.withoutContentAssertions}。`,
@@ -96,6 +107,10 @@ export function repeatReportMarkdown(run: RunDetail, report = buildRepeatReport(
 		}
 		lines.push("");
 	}
-	lines.push("摘录最多展示 20 个案例、每案例 10 条异常和 3 个输出版本；完整原文、逐轮状态与断言证据见批次详情或 JSON 导出。", "", report.method, "");
+	if (report.retryCount) {
+  lines.push("## 执行尝试历史", "");
+  for (const item of run.items) lines.push(`- ${escapeMarkdown(item.snapshot.definition.id)} · 第 ${item.round ?? 1} 轮 · ${item.attempt ? `重试 ${item.attempt}` : "首次执行"}：${status[item.status]}`);
+ }
+ lines.push("摘录最多展示 20 个案例、每案例 10 条异常和 3 个输出版本；完整原文、逐轮状态与断言证据见批次详情或 JSON 导出。", "", report.method, "");
 	return lines.join("\n");
 }

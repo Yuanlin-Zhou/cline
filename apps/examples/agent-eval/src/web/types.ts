@@ -1,41 +1,120 @@
 import type { EvalCase, EvalCaseResult, EvalDefaults } from "../types.js";
 
-export type Module = { id: string; name: string; description: string; tags?: string[]; archived?: boolean; createdAt: string };
-export type SavedCase = {
-	id: string; moduleId: string; revision: number; definition: EvalCase;
-	defaults: EvalDefaults; updatedAt: string; archived?: boolean;
+export type Module = {
+	id: string;
+	name: string;
+	description: string;
+	tags?: string[];
+	archived?: boolean;
+	createdAt: string;
 };
-export type ItemStatus = "queued" | "running" | "passed" | "failed" | "error" | "cancelled" | "inconclusive";
+export type SavedCase = {
+	id: string;
+	moduleId: string;
+	revision: number;
+	definition: EvalCase;
+	defaults: EvalDefaults;
+	updatedAt: string;
+	archived?: boolean;
+};
+export type ItemStatus =
+	| "queued"
+	| "running"
+	| "passed"
+	| "failed"
+	| "error"
+	| "cancelled"
+	| "inconclusive";
 export type RunItem = {
-	id: string; runId: string; verifierSnapshots?: import("../grading/uploaded-verifiers.js").UploadedVerifier[]; snapshot: SavedCase; moduleName: string;
-	status: ItemStatus; text: string; result?: EvalCaseResult; error?: string;
+	/** Attempts share the original root; missing attempt means the legacy first execution (0). */
+	rootItemId?: string;
+	attempt?: number;
+	previousItemId?: string;
+	id: string;
+	runId: string;
+	verifierSnapshots?: import("../grading/uploaded-verifiers.js").UploadedVerifier[];
+	snapshot: SavedCase;
+	moduleName: string;
+	status: ItemStatus;
+	text: string;
+	result?: EvalCaseResult;
+	error?: string;
 	phase?: "executing" | "verifying";
 	sessionId?: string;
 	lastActivityAt?: string;
 	activity?: import("./activity.js").Activity;
 	activities?: import("./activity.js").Activity[];
-	workspace?: string; startedAt?: string; endedAt?: string;
+	workspace?: string;
+	startedAt?: string;
+	endedAt?: string;
 	/** One-based repetition index; legacy items belong to round 1. */
 	round?: number;
 	interrupted?: boolean;
 };
 export type Run = {
-	id: string; name: string; note?: string; status: "queued" | "running" | "completed" | "cancelled" | "interrupted";
-	createdAt: string; endedAt?: string; concurrency: number; parentRunId?: string;
+	id: string;
+	name: string;
+	note?: string;
+	status: "queued" | "running" | "completed" | "cancelled" | "interrupted";
+	createdAt: string;
+	endedAt?: string;
+	concurrency: number;
+	parentRunId?: string;
 	repeatCount?: number;
+	retryRevision?: number;
 };
 export type RunDetail = Run & { items: RunItem[] };
 export type Summary = {
-	total: number; passed: number; failed: number; error: number; cancelled: number; inconclusive: number;
-	queued: number; running: number; tokens: number; cost: number | null; durationMs: number;
+	retryCount?: number;
+	total: number;
+	passed: number;
+	failed: number;
+	error: number;
+	cancelled: number;
+	inconclusive: number;
+	queued: number;
+	running: number;
+	tokens: number;
+	cost: number | null;
+	durationMs: number;
 };
+export function latestAttempts<
+	T extends { id?: string; rootItemId?: string; attempt?: number },
+>(items: T[]): T[] {
+	const groups = new Map<string, T>();
+	items.forEach((item, index) => {
+		const key = item.rootItemId ?? item.id ?? `untracked-${index}`;
+		const previous = groups.get(key);
+		if (!previous || (item.attempt ?? 0) > (previous.attempt ?? 0))
+			groups.set(key, item);
+	});
+	return [...groups.values()];
+}
+export const canRetry = (item: { status: string }) =>
+	["failed", "error", "inconclusive", "cancelled"].includes(item.status);
 export function summarize(items: RunItem[]): Summary {
-	const value: Summary = { total: items.length, passed: 0, failed: 0, error: 0, cancelled: 0, inconclusive: 0, queued: 0, running: 0, tokens: 0, cost: null, durationMs: 0 };
+	const value: Summary = {
+		total: items.length,
+		passed: 0,
+		failed: 0,
+		error: 0,
+		cancelled: 0,
+		inconclusive: 0,
+		queued: 0,
+		running: 0,
+		tokens: 0,
+		cost: null,
+		durationMs: 0,
+	};
 	let knownCost = 0;
 	let costComplete = items.length > 0;
+	for (const item of latestAttempts(items)) value[item.status]++;
+	value.total = latestAttempts(items).length;
+	value.retryCount = items.filter((i) => (i.attempt ?? 0) > 0).length;
 	for (const item of items) {
-		value[item.status]++;
-		value.tokens += (item.result?.usage.inputTokens ?? 0) + (item.result?.usage.outputTokens ?? 0);
+		value.tokens +=
+			(item.result?.usage.inputTokens ?? 0) +
+			(item.result?.usage.outputTokens ?? 0);
 		value.durationMs += item.result?.durationMs ?? 0;
 		if (item.result?.usage.totalCost === undefined) costComplete = false;
 		else knownCost += item.result.usage.totalCost;

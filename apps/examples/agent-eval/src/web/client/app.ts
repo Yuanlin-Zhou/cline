@@ -1,3 +1,5 @@
+import { rangeSelection } from "./range-selection.js";
+import { latestAttempts, canRetry } from "../types.js";
 import { deleteCasesDialog, deleteModuleDialog, archivedModulesDialog } from "./resource-delete.js";
 import { verifierManager, canLeaveVerifierManager } from "./verifier-manager.js";
 import { batchConversationImport } from "./batch-conversations.js";
@@ -22,7 +24,7 @@ import type {
 	ToolMode,
 } from "../../types.js";
 import { caseExample, replayConfig, IMPORT_FIELDS, REPLAY_MODES, type ReplayMode } from "../../replay.js";
-import type { RepeatReport } from "../repeat-report.js";
+import { buildRepeatReport, type RepeatReport } from "../repeat-report.js";
 import { gradingEditor, gradingPanel, gradingMetrics } from "./grading.js";
 import { gradingSummary } from "../../grading/summary.js";
 import type {
@@ -57,6 +59,7 @@ type StateResponse = {
 type RunDetailResponse = Run & { items: RunItem[]; summary: Summary; repeatReport: RepeatReport };
 
 type CaseRunItem = {
+ rootItemId?: string; attempt?: number;
 	sessionId?: string;
 	round?: number;
 	id: string;
@@ -268,10 +271,11 @@ function toast(message: string, kind: "success" | "error" = "success"): void {
 	setTimeout(() => el.remove(), 4000);
 }
 
-function openModal(options: { title: string; body: HTMLElement; wide?: boolean; actions: (close: () => void) => HTMLElement[] }): () => void {
+function openModal(options: { title: string; body: HTMLElement; wide?: boolean; beforeClose?: () => boolean; actions: (close: () => void) => HTMLElement[] }): () => void {
 	const overlay = h("dialog", { class: "Modal-overlay", "aria-label": options.title }) as HTMLDialogElement;
 	const modal = h("div", { class: options.wide ? "Modal Modal--wide" : "Modal" });
 	function close() {
+        if (options.beforeClose && !options.beforeClose()) return;
 		overlay.close();
 		overlay.remove();
 	}
@@ -281,84 +285,531 @@ function openModal(options: { title: string; body: HTMLElement; wide?: boolean; 
 		if (event.target === overlay) close();
 	});
 	document.body.append(overlay);
-	 overlay.addEventListener("close", () => overlay.remove());
+	 overlay.addEventListener("cancel", event => { event.preventDefault(); close(); });
+ overlay.addEventListener("close", () => overlay.remove());
 	overlay.showModal();
 	return close;
 }
 
-function openCaseTransfer(operation: "copy" | "move", sources: SavedCase[], state: StateResponse, onSuccess: (cases: SavedCase[]) => void = () => render(), hiddenCount = 0): void {
+type CopyDraft = { definition: EvalCase; defaults: EvalDefaults };
+type CopyEditor = {
+	seed: SavedCase;
+	state: StateResponse;
+	save: (draft: CopyDraft) => void;
+	cancel: () => void;
+	dirty?: () => boolean;
+};
+async function editCopyDraft(
+	seed: SavedCase,
+	snapshot: StateResponse,
+): Promise<CopyDraft | undefined> {
+	const app = document.getElementById("app")!;
+	const previous = [...app.childNodes];
+	const focused = document.activeElement as HTMLElement | null;
+	previous.forEach((node) => node.remove());
+	const editors = new Map(workspaceEditors);
+	const host = h("div", { class: "CopyEditor" });
+	let accepted = false;
+	let cancel: () => void = () => {};
+	const options: CopyEditor = {
+		seed: structuredClone(seed),
+		state: snapshot,
+		save: () => {},
+		cancel: () => cancel(),
+	};
+	return new Promise((resolve) => {
+		let value: CopyDraft | undefined;
+		const close = openModal({
+			title: "编辑副本（尚未创建）",
+			body: host,
+			wide: true,
+			beforeClose: () =>
+				accepted ||
+				!options.dirty?.() ||
+				window.confirm("放弃本次副本编辑？原案例不会改变。"),
+			actions: () => [],
+		});
+		cancel = close;
+		options.save = (draft) => {
+			value = draft;
+			accepted = true;
+			close();
+		};
+		host.closest("dialog")!.addEventListener(
+			"close",
+			() => {
+				workspaceEditors.clear();
+				editors.forEach((value, key) => workspaceEditors.set(key, value));
+				if (!app.childNodes.length) app.append(...previous);
+				focused?.focus();
+				resolve(value);
+			},
+			{ once: true },
+		);
+		void renderCaseDetail(host, undefined, seed.moduleId, options).catch(
+			(error) => {
+				host.replaceChildren(
+					flash(String(error)),
+					h("button", { class: "btn", onclick: close }, "关闭"),
+				);
+			},
+		);
+	});
+}
+
+function openCaseTransfer(
+	operation: "copy" | "move",
+	sources: SavedCase[],
+	state: StateResponse,
+	onSuccess: (cases: SavedCase[]) => void = () => render(),
+	hiddenCount = 0,
+): void {
 	const label = operation === "copy" ? "复制" : "移动";
-	const modules = state.modules.filter(m => operation === "copy" || sources.some(c => c.moduleId !== m.id));
-	if (!modules.length) { toast("请先创建其他模块作为移动目标", "error"); return; }
-	const target = select("transfer-target", (operation === "move" ? [["", "请选择目标模块"] as [string, string], ...modules.map(m => [m.id, `${m.name}（${state.cases.filter(c => c.moduleId === m.id).length} 个案例）`] as [string, string])] : modules.map(m => [m.id, `${m.name}（${state.cases.filter(c => c.moduleId === m.id).length} 个案例）`] as [string, string])), operation === "move" ? "" : modules.find(m => m.id === sources[0].moduleId)?.id ?? modules[0].id) as HTMLSelectElement;
-	const policy = select("transfer-policy", [["rename", "自动重命名"], ["abort", "遇到同名案例时中止"]], operation === "copy" ? "rename" : "abort") as HTMLSelectElement;
+	const modules = state.modules.filter(
+		(m) => operation === "copy" || sources.some((c) => c.moduleId !== m.id),
+	);
+	if (!modules.length) {
+		toast("请先创建其他模块作为移动目标", "error");
+		return;
+	}
+	const target = select(
+		"transfer-target",
+		operation === "move"
+			? [
+					["", "请选择目标模块"] as [string, string],
+					...modules.map(
+						(m) =>
+							[
+								m.id,
+								`${m.name}（${state.cases.filter((c) => c.moduleId === m.id).length} 个案例）`,
+							] as [string, string],
+					),
+				]
+			: modules.map(
+					(m) =>
+						[
+							m.id,
+							`${m.name}（${state.cases.filter((c) => c.moduleId === m.id).length} 个案例）`,
+						] as [string, string],
+				),
+		operation === "move"
+			? ""
+			: (modules.find((m) => m.id === sources[0].moduleId)?.id ??
+					modules[0].id),
+	) as HTMLSelectElement;
+	const policy = select(
+		"transfer-policy",
+		[
+			["rename", "自动重命名"],
+			["abort", "遇到同名案例时中止"],
+		],
+		operation === "copy" ? "rename" : "abort",
+	) as HTMLSelectElement;
 	const previewArea = h("div", { class: "TransferPreview" });
 	const errorBox = h("div", { role: "alert" });
-	const submit = h("button", { class: "btn btn-primary", disabled: true }, `确认${label}`) as HTMLButtonElement;
+	const submit = h(
+		"button",
+		{ class: "btn btn-primary", disabled: true },
+		`确认${label}`,
+	) as HTMLButtonElement;
 	let selected = sources;
+	const drafts = new Map<string, CopyDraft>();
+	for (const source of sources) {
+		const original = state.cases.find((c) => c.id === source.id);
+		if (
+			original &&
+			JSON.stringify([source.definition, source.defaults]) !==
+				JSON.stringify([original.definition, original.defaults])
+		)
+			drafts.set(
+				source.id,
+				structuredClone({
+					definition: source.definition,
+					defaults: source.defaults,
+				}),
+			);
+	}
+	let copyDirty = drafts.size > 0;
+	const enabled = new Set<keyof EvalDefaults>();
+	const replayOverride = select(
+		"copy-replay",
+		[
+			["", "保留各案例回放方式"],
+			...REPLAY_MODES.map((m) => [m.value, m.label] as [string, string]),
+		],
+		"",
+	) as HTMLSelectElement;
+	const common = h("details", { class: "Box Box-body mt-2" });
+	common.append(h("summary", {}, "统一调整运行配置（仅覆盖勾选字段）"));
+	const commonFields = h("div");
+	if (operation === "copy" && sources.length > 1)
+		appendConfigFields(commonFields, "copy-common", sources[0].defaults, true);
+	const keys: Array<[keyof EvalDefaults, string]> = [
+		["providerId", "Provider"],
+		["modelId", "模型"],
+		["apiKeyEnv", "密钥环境变量"],
+		["baseUrl", "Base URL"],
+		["headers", "默认请求头"],
+		["tools", "工具范围"],
+		["maxIterations", "迭代上限"],
+		["timeoutMs", "超时"],
+		["systemPrompt", "系统提示词"],
+		["cwd", "工作区目录"],
+		["workspace", "工作区方式"],
+	];
+	const toggles = h(
+		"div",
+		{ class: "flex-center gap-2 wrap" },
+		...keys.map(([key, label]) =>
+			h(
+				"label",
+				{ class: "form-check" },
+				h("input", {
+					type: "checkbox",
+					onchange: (event: Event) => {
+						(event.target as HTMLInputElement).checked
+							? enabled.add(key)
+							: enabled.delete(key);
+						copyDirty = true;
+						void refreshPreview();
+					},
+				}),
+				label +
+					(new Set(sources.map((c) => JSON.stringify(c.defaults[key]))).size > 1
+						? "（各案例不同）"
+						: ""),
+			),
+		),
+	);
+	common.append(
+		h(
+			"p",
+			{ class: "form-hint" },
+			"各案例未勾选的字段保留各自原值。逐项编辑的副本优先于统一设置。默认值展示第一个案例配置；不同原值不自动统一。",
+		),
+		toggles,
+		field("回放方式", replayOverride),
+		commonFields,
+	);
+	const getDraft = (source: SavedCase): CopyDraft | undefined => {
+		if (drafts.has(source.id)) return drafts.get(source.id);
+		if (!enabled.size && !replayOverride.value) return undefined;
+		const config = readConfig("copy-common", true);
+		const draft = structuredClone({
+			definition: source.definition,
+			defaults: source.defaults,
+		});
+		for (const key of enabled) {
+			Object.assign(draft.defaults, { [key]: config[key] });
+			if (
+				[
+					"tools",
+					"maxIterations",
+					"timeoutMs",
+					"systemPrompt",
+					"cwd",
+					"workspace",
+				].includes(key)
+			)
+				Object.assign(draft.definition, { [key]: config[key] });
+			if (key === "headers") {
+				draft.defaults.headers = config.headers;
+				draft.defaults.headersEnv = config.headersEnv;
+			}
+		}
+		if (replayOverride.value)
+			draft.definition.replayMode = replayOverride.value as ReplayMode;
+		return draft;
+	};
 	let preview: TransferPreview | undefined;
 	let generation = 0;
 	let submitting = false;
 	let closed = false;
 	let uncertain = false;
-	const request = () => ({ operation, targetModuleId: target.value, conflictPolicy: policy.value, items: selected.map(c => ({ id: c.id, revision: c.revision })) });
+	const request = () => ({
+		operation,
+		targetModuleId: target.value,
+		conflictPolicy: policy.value,
+		items: selected.map((c) => ({
+			id: c.id,
+			revision: c.revision,
+			...(operation === "copy" ? { draft: getDraft(c) } : {}),
+		})),
+	});
 	async function refreshPreview(refreshSources = false) {
 		const current = ++generation;
-		preview = undefined; submit.disabled = true;
-		if (!target.value) { previewArea.textContent = "请选择目标模块以查看预览。"; errorBox.replaceChildren(); return; }
+		preview = undefined;
+		submit.disabled = true;
+		if (!target.value) {
+			previewArea.textContent = "请选择目标模块以查看预览。";
+			errorBox.replaceChildren();
+			return;
+		}
 		previewArea.textContent = "正在预览…";
 		errorBox.replaceChildren();
 		try {
 			if (refreshSources) {
 				const latest = await api<StateResponse>("/api/state");
 				if (current !== generation || closed) return;
-				selected = selected.map(c => latest.cases.find(item => item.id === c.id) ?? c);
+				selected = selected.map(
+					(c) => latest.cases.find((item) => item.id === c.id) ?? c,
+				);
 			}
-			const next = await api<TransferPreview>("/api/cases/transfer/preview", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(request()) });
+			const next = await api<TransferPreview>("/api/cases/transfer/preview", {
+				method: "POST",
+				headers: JSON_HEADERS,
+				body: JSON.stringify(request()),
+			});
 			if (current !== generation || closed) return;
 			preview = next;
 			submit.textContent = `确认${label} ${next.items.length} 个案例`;
-			previewArea.replaceChildren(h("p", { class: "muted small" }, `${next.items.length} 个案例 → ${next.items[0].targetModuleName}。历史执行记录和快照保持不变。`),
-				h("div", { class: "TableWrap" }, h("table", { class: "Table" },
-					h("thead", {}, h("tr", {}, ...["来源模块", "原案例 ID", "目标案例 ID", "处理结果"].map(t => h("th", {}, t)))),
-					h("tbody", {}, ...next.items.map(item => h("tr", {}, h("td", {}, item.sourceModuleName), h("td", {}, item.originalDefinitionId), h("td", {}, item.proposedDefinitionId), h("td", {}, item.result === "unchanged" ? "保持原样" : item.conflict && !next.canApply ? "同名冲突" : item.originalDefinitionId !== item.proposedDefinitionId ? "重命名后" + label : label)))))));
-			if (!next.canApply) errorBox.append(flash("目标模块存在同名案例，请选择自动重命名或其他模块。", "warning"));
+			previewArea.replaceChildren(
+				h(
+					"p",
+					{ class: "muted small" },
+					`${next.items.length} 个案例 → ${next.items[0].targetModuleName}。历史执行记录和快照保持不变。`,
+				),
+				h(
+					"div",
+					{ class: "TableWrap" },
+					h(
+						"table",
+						{ class: "Table" },
+						h(
+							"thead",
+							{},
+							h(
+								"tr",
+								{},
+								...["来源模块", "原案例 ID", "目标案例 ID", "处理结果"].map(
+									(t) => h("th", {}, t),
+								),
+							),
+						),
+						h(
+							"tbody",
+							{},
+							...next.items.map((item) =>
+								h(
+									"tr",
+									{},
+									h("td", {}, item.sourceModuleName),
+									h("td", {}, item.originalDefinitionId),
+									h("td", {}, item.proposedDefinitionId),
+									h(
+										"td",
+										{},
+										item.result === "unchanged"
+											? "保持原样"
+											: item.conflict && !next.canApply
+												? "同名冲突"
+												: item.originalDefinitionId !==
+														item.proposedDefinitionId
+													? "重命名后" + label
+													: label,
+									),
+								),
+							),
+						),
+					),
+				),
+			);
+			if (operation === "copy") {
+				for (const [index, item] of next.items.entries()) {
+					const source = selected.find((c) => c.id === item.id)!;
+					const edit = h(
+						"button",
+						{
+							class: "btn btn-sm",
+							onclick: async () => {
+								if (submitting) return;
+								const current = getDraft(source) ?? {
+									definition: source.definition,
+									defaults: source.defaults,
+								};
+								const result = await editCopyDraft(
+									{
+										...source,
+										...structuredClone(current),
+										moduleId: target.value,
+									},
+									state,
+								);
+								if (result) {
+									drafts.set(source.id, result);
+									copyDirty = true;
+									await refreshPreview();
+								}
+							},
+						},
+						drafts.has(source.id) ? "继续编辑副本（已修改）" : "编辑副本配置",
+					);
+					previewArea
+						.querySelectorAll("tbody tr")
+						[index]?.lastElementChild?.append(
+							h("div", { class: "mt-2" }, edit),
+						);
+				}
+			}
+
+			if (!next.canApply)
+				errorBox.append(
+					flash(
+						"目标模块存在同名案例，请选择自动重命名或其他模块。",
+						"warning",
+					),
+				);
 			submit.disabled = !next.canApply || submitting || uncertain;
 		} catch (error) {
 			if (current !== generation || closed) return;
-			previewArea.replaceChildren(); errorBox.replaceChildren(flash(error instanceof Error ? error.message : String(error)));
+			previewArea.replaceChildren();
+			errorBox.replaceChildren(
+				flash(error instanceof Error ? error.message : String(error)),
+			);
 		}
 	}
-	const body = h("div", { class: "CaseTransfer" }, h("p", {}, `将${label} ${sources.length} 个已保存案例。${hiddenCount ? `其中 ${hiddenCount} 个已选案例被当前筛选隐藏，仍会一并处理。` : ""}`),
-		field("目标模块", target), field("同名处理", policy), previewArea, errorBox);
-	const closeModal = openModal({ title: `${label}案例到模块`, body, wide: true, actions: close => [
-		h("button", { class: "btn", onclick: () => { if (!submitting) { closed = true; generation++; close(); } } }, "取消"),
-		h("button", { class: "btn", onclick: () => { if (!submitting && !uncertain) void refreshPreview(true); } }, "刷新预览"), submit,
-	] });
+	replayOverride.onchange = () => {
+		copyDirty = true;
+		void refreshPreview();
+	};
+	commonFields.addEventListener("input", () => {
+		copyDirty = true;
+		void refreshPreview();
+	});
+	commonFields.addEventListener("change", () => {
+		copyDirty = true;
+		void refreshPreview();
+	});
+	const body = h(
+		"div",
+		{ class: "CaseTransfer" },
+		h(
+			"p",
+			{},
+			`将${label} ${sources.length} 个已保存案例。${hiddenCount ? `其中 ${hiddenCount} 个已选案例被当前筛选隐藏，仍会一并处理。` : ""}`,
+		),
+		field("目标模块", target),
+		field("同名处理", policy),
+		...(operation === "copy" && sources.length > 1 ? [common] : []),
+		previewArea,
+		errorBox,
+	);
+	const closeModal = openModal({
+		title: `${label}案例到模块`,
+		body,
+		wide: true,
+		beforeClose: () =>
+			closed ||
+			(!submitting &&
+				(!copyDirty || window.confirm("放弃尚未创建的副本及配置修改？"))),
+		actions: (close) => [
+			h(
+				"button",
+				{
+					class: "btn",
+					onclick: () => {
+						if (!submitting) close();
+					},
+				},
+				"取消",
+			),
+			h(
+				"button",
+				{
+					class: "btn",
+					onclick: () => {
+						if (!submitting && !uncertain) void refreshPreview(true);
+					},
+				},
+				"刷新预览",
+			),
+			submit,
+		],
+	});
 	const dialog = body.closest("dialog")!;
-	dialog.addEventListener("cancel", e => { if (submitting) e.preventDefault(); });
-	dialog.addEventListener("close", () => { closed = true; generation++; });
-	dialog.addEventListener("click", e => { if (submitting && e.target === dialog) e.stopImmediatePropagation(); }, true);
-	target.onchange = policy.onchange = () => { if (!submitting && !uncertain) void refreshPreview(); };
+	dialog.addEventListener("cancel", (e) => {
+		if (submitting) e.preventDefault();
+	});
+	dialog.addEventListener("close", () => {
+		closed = true;
+		generation++;
+	});
+	dialog.addEventListener(
+		"click",
+		(e) => {
+			if (submitting && e.target === dialog) e.stopImmediatePropagation();
+		},
+		true,
+	);
+	target.onchange = policy.onchange = () => {
+		if (!submitting && !uncertain) void refreshPreview();
+	};
 	submit.onclick = async () => {
 		if (!preview?.canApply || submitting || uncertain) return;
-		submitting = true; submit.disabled = true; target.disabled = policy.disabled = true;
+		submitting = true;
+		submit.disabled = true;
+		target.disabled = policy.disabled = true;
 		try {
-			const result = await api<{ cases: SavedCase[]; copied: number; moved: number; unchanged: number }>("/api/cases/transfer", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ ...request(), items: preview.items.map(item => ({ id: item.id, revision: item.revision, expectedDefinitionId: item.proposedDefinitionId })) }) });
-			closed = true; closeModal();
-			toast(`已复制 ${result.copied} 个，移动 ${result.moved} 个，保持原样 ${result.unchanged} 个`);
+			const result = await api<{
+				cases: SavedCase[];
+				copied: number;
+				moved: number;
+				unchanged: number;
+			}>("/api/cases/transfer", {
+				method: "POST",
+				headers: JSON_HEADERS,
+				body: JSON.stringify({
+					...request(),
+					items: preview.items.map((item) => ({
+						id: item.id,
+						revision: item.revision,
+						expectedDefinitionId: item.proposedDefinitionId,
+						expectedDraftFingerprint: item.draftFingerprint,
+						...(operation === "copy"
+							? { draft: getDraft(selected.find((c) => c.id === item.id)!) }
+							: {}),
+					})),
+				}),
+			});
+			closed = true;
+			closeModal();
+			toast(
+				`已复制 ${result.copied} 个，移动 ${result.moved} 个，保持原样 ${result.unchanged} 个`,
+			);
 			onSuccess(result.cases);
-			const link = h("a", { class: "toast", href: `#/cases/${target.value}` }, "查看目标模块");
-			document.getElementById("toast-root")!.append(link); setTimeout(() => link.remove(), 8000);
+			const link = h(
+				"a",
+				{ class: "toast", href: `#/cases/${target.value}` },
+				"查看目标模块",
+			);
+			document.getElementById("toast-root")!.append(link);
+			setTimeout(() => link.remove(), 8000);
 		} catch (error) {
 			const status = (error as { status?: number }).status;
-			if (status === 409) { submitting = false; await refreshPreview(); errorBox.append(flash("提交前数据已变化。请刷新预览，检查最新结果后再次确认。", "warning")); }
-			else {
+			if (status === 409) {
+				submitting = false;
+				await refreshPreview();
+				errorBox.append(
+					flash(
+						"提交前数据已变化。请刷新预览，检查最新结果后再次确认。",
+						"warning",
+					),
+				);
+			} else {
 				uncertain = !status || status === 503;
-				errorBox.replaceChildren(flash(uncertain ? "网络中断，无法确认提交结果。请关闭弹窗并刷新目标模块核对，避免重复复制。" : String(error)));
+				errorBox.replaceChildren(
+					flash(
+						uncertain
+							? "网络中断，无法确认提交结果。请关闭弹窗并刷新目标模块核对，避免重复复制。"
+							: String(error),
+					),
+				);
 				submit.disabled = true;
 			}
-		} finally { submitting = false; target.disabled = policy.disabled = uncertain; }
+		} finally {
+			submitting = false;
+			target.disabled = policy.disabled = uncertain;
+		}
 	};
 	void refreshPreview();
 }
@@ -611,7 +1062,7 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
 			const hay = [c.definition.id, c.definition.description ?? "", latest?.sessionId ?? "", ...(c.definition.tags ?? [])].join(" ").toLowerCase();
 			return hay.includes(query);
 		});
-		tableBody.replaceChildren(...visible.map((c) => caseRow(c, selection, renderTable, s)));
+		tableBody.replaceChildren(...visible.map((c) => caseRow(c, selection, refreshSelection, s)));
 		if (!visible.length) tableBody.append(h("tr", {}, h("td", { colspan: 7, class: "empty" }, "没有匹配的案例，试试调整筛选条件或导入案例。")));
 		selectionInfo.textContent = selection.size ? `已选 ${selection.size} 个案例` : `${visible.length} 个案例`;
 		runSelectedBtn.disabled = selection.size === 0;
@@ -659,6 +1110,20 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
 	replayFilter.addEventListener("change", renderTable);
 	resultFilter.addEventListener("change", renderTable);
 
+ const refreshSelection = () => {
+  selectionInfo.textContent = `已选 ${selection.size} 个案例`;
+  runSelectedBtn.disabled = !selection.size; batchBar.hidden = !selection.size;
+  batchCount.textContent = `已选 ${selection.size} 个案例，其中 ${[...selection].filter(id => !visible.some(c => c.id === id)).length} 个不在当前筛选结果中`;
+  selectAll.checked = !!visible.length && visible.every(c => selection.has(c.id));
+  selectAll.indeterminate = visible.some(c => selection.has(c.id)) && !selectAll.checked;
+  caseListState.set(moduleId ?? "", { search: val("case-search"), replay: val("case-replay"), result: val("case-result"), selection });
+ };
+ const gesture = rangeSelection(tableWrap, () => visible.map(c => c.id), selection, refreshSelection);
+ for (const control of [searchBox,replayFilter,resultFilter]) control.addEventListener(control===searchBox?"input":"change",()=>gesture.reset());
+ toolbar.append(h("div", { class: "flex-center gap-2 wrap" },
+  ...["全选筛选结果","反选筛选结果","清空选择"].map((label,index)=>h("button",{class:"btn btn-sm",onclick:()=>{if(index===2)selection.clear();else visible.forEach(c=>index===1&&selection.has(c.id)?selection.delete(c.id):selection.add(c.id));renderTable();}},label)),
+  h("span",{class:"muted small"},"拖动复选框列或 Shift 连选")));
+
 	main.append(toolbar, batchBar, tableWrap);
 	layout.append(main);
 	app.append(layout);
@@ -691,12 +1156,12 @@ function moduleItem(module: Pick<Module, "id" | "name" | "description">, active:
 
 function caseRow(c: SavedCase, selection: Set<string>, rerender: () => void, s: StateResponse): HTMLElement {
 	const latest = s.latest[c.id];
-	const tr = h("tr", { class: "clickable", onclick: () => navigate(`#/case/${c.id}`) });
+	const tr = h("tr", { class: "clickable", "data-selection-row": c.id, onclick: () => navigate(`#/case/${c.id}`) });
 	tr.append(
 		h("td", {}, h("input", {
 			type: "checkbox",
 			checked: selection.has(c.id),
-			"aria-label": `选择案例 ${c.definition.id}`,
+			"aria-label": `选择案例 ${c.definition.id}`, "data-selection-id": c.id,
 			onclick: (e: Event) => e.stopPropagation(),
 			onchange: (e: Event) => {
 				const checked = (e.target as HTMLInputElement).checked;
@@ -1003,12 +1468,12 @@ function fieldDocs(): HTMLElement {
  return box;
 }
 
-async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: string): Promise<void> {
+async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: string, copy?: CopyEditor): Promise<void> {
 	const epoch = renderEpoch;
 	app.append(loading());
 	let s: StateResponse;
 	try {
-		const [snapshot, item] = await Promise.all([getState(), id ? api<SavedCase>(`/api/cases/${id}`) : Promise.resolve(undefined)]);
+		const [snapshot, item] = await Promise.all([copy ? Promise.resolve(copy.state) : getState(), id ? api<SavedCase>(`/api/cases/${id}`) : Promise.resolve(undefined)]);
 		s = snapshot;
 		if (item) {
 			s.cases = [...s.cases.filter(c => c.id !== item.id), item];
@@ -1022,7 +1487,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 	if (epoch !== renderEpoch) return;
 	state = s;
 
-	const existing = id ? s.cases.find((c) => c.id === id) : undefined;
+	const existing = copy?.seed ?? (id ? s.cases.find((c) => c.id === id) : undefined);
 	if (id && !existing) {
 		app.replaceChildren(flash("案例不存在或已删除", "warning"));
 		return;
@@ -1033,7 +1498,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 		return;
 	}
 	const isNew = !existing;
-	const definition: EvalCase = existing?.definition ?? {
+	const definition: EvalCase = structuredClone(existing?.definition ?? {
 		id: "new-case",
 		replayMode: "single-turn",
 		tags: [],
@@ -1041,7 +1506,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 		history: [],
 		prompt: "",
 		assertions: { finishReason: "completed" },
-	};
+	});
 	const defaults: EvalDefaults = { ...(existing?.defaults ?? s.settings) };
 	for (const key of ["cwd", "workspace", "systemPrompt", "tools", "maxIterations", "timeoutMs"] as const) {
 		if (definition[key] !== undefined) Object.assign(defaults, { [key]: definition[key] });
@@ -1076,6 +1541,12 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 			h("button", { class: "btn btn-primary", id: "case-run", onclick: () => runDraft(replayMode) }, `运行${replayLabel(replayMode)}`),
 		),
 	);
+if(copy) {
+  crumbs.replaceChildren(h("span",{},`编辑副本 → ${module.name}（原案例不变）`));
+  header.querySelector("h1")!.textContent="编辑副本";
+  header.querySelector(".page-desc")!.textContent="应用修改后返回复制预览，确认创建前不会保存副本。";
+  header.querySelector(".page-actions")!.replaceChildren(h("button",{class:"btn",onclick:copy.cancel},"取消编辑"),h("button",{class:"btn btn-primary",onclick:()=>saveCase()},"应用副本修改"),h("button",{id:"case-run",hidden:true,disabled:true}));
+ }
 	app.append(header);
 	const modeCards = h("div", { class: "replay-cards", role: "group", "aria-label": "回放方式" });
 	for (const mode of REPLAY_MODES) {
@@ -1212,7 +1683,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 	historyBox2.append(historyList);
 
 	right.append(resultPanel, historyBox2);
-	layout.append(left, right);
+	layout.append(left); if(!copy)layout.append(right);
 	app.append(layout);
 	if (new URLSearchParams(location.hash.split("?")[1]).get("tab") === "grading") document.getElementById("case-editor-tab-1")?.click();
 	const updateMode = (): void => {
@@ -1284,14 +1755,24 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 	const readAssertionsFromForm = (): EvalAssertions | undefined => replyChecks.read();
 
 	const readDefaultsFromForm = (): EvalDefaults => readConfig("f", true, replayMode === "full-task");
-	const savedForm = JSON.stringify({ definition: readDefinitionFromForm(false), defaults: readDefaultsFromForm() });
-	function transferSaved(operation: "copy" | "move") {
-		if (!existing) return;
-		try {
-			if (JSON.stringify({ definition: readDefinitionFromForm(), defaults: readDefaultsFromForm() }) !== savedForm) { toast("有未保存的修改，请先保存案例后再复制或移动。", "error"); return; }
-		} catch { toast("请先保存有效的案例配置。", "error"); return; }
-		openCaseTransfer(operation, [existing], s, cases => { if (operation === "move") render(); else navigate(`#/case/${cases[0].id}`); });
-	}
+	const initialEditorForm = structuredClone({ definition: readDefinitionFromForm(false), defaults: readDefaultsFromForm() });
+ const savedForm = JSON.stringify(initialEditorForm);
+ if(copy)copy.dirty=()=>{try{return JSON.stringify({definition:readDefinitionFromForm(),defaults:readDefaultsFromForm()})!==savedForm;}catch{return true;}};
+
+ function transferSaved(operation: "copy" | "move") {
+  if(!existing)return;
+  const launch=(source:SavedCase)=>openCaseTransfer(operation,[source],s,cases=>{if(operation==="move")render();else navigate(`#/case/${cases[0].id}`);});
+  let dirty=true;
+  try { dirty=JSON.stringify({definition:readDefinitionFromForm(),defaults:readDefaultsFromForm()})!==savedForm; } catch { /* Saved version remains available even if the current draft is invalid. */ }
+  if(dirty&&operation==="move"){toast("请先保存案例后再移动。","error");return;}
+  if(!dirty){launch(existing);return;}
+  openModal({title:"复制哪个版本？",body:h("p",{},"当前有未保存的修改。选择用于副本的内容，原案例不会被保存或覆盖。"),actions:close=>[
+   h("button",{class:"btn",onclick:close},"取消"),
+   h("button",{class:"btn",onclick:()=>{close();launch(existing);}},"使用已保存版本"),
+   h("button",{class:"btn btn-primary",onclick:()=>{try{if(!validateCaseForm())return;const draft={definition:readDefinitionFromForm(),defaults:readDefaultsFromForm()};close();launch({...existing,...draft});}catch(error){toast(String(error),"error");}}},"使用当前编辑内容"),
+  ]});
+ }
+
 	const validateCaseForm = (): boolean => {
 		for (const error of app.querySelectorAll(".field-error")) error.remove();
 		for (const control of app.querySelectorAll("[aria-invalid]")) control.removeAttribute("aria-invalid");
@@ -1305,7 +1786,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 			first ??= control;
 		};
 		if (!val("f-id").trim()) invalid("f-id", "请填写案例 ID，例如 history-bun-install。");
-		else if (s.cases.some((c) => c.moduleId === module.id && c.id !== existing?.id && c.definition.id === val("f-id").trim())) invalid("f-id", "此模块已存在相同案例 ID，请使用其他 ID。");
+		else if (!copy && s.cases.some((c) => c.moduleId === module.id && c.id !== existing?.id && c.definition.id === val("f-id").trim())) invalid("f-id", "此模块已存在相同案例 ID，请使用其他 ID。");
 		if (!val("f-prompt").trim()) invalid("f-prompt", replayMode === "single-turn" ? "请填写本轮问题。" : "请填写任务指令。");
 		for (const id of replayMode === "full-task" ? ["f-maxiter", "f-timeout"] : ["f-timeout"]) {
 			const value = Number(val(id));
@@ -1327,6 +1808,16 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 		if (!def.id) return toast("案例 ID 不能为空", "error");
 		if (!def.prompt.trim()) return toast("Prompt 不能为空", "error");
 		const nextDefaults = readDefaultsFromForm();
+        if(copy){
+   const draft=structuredClone({definition:copy.seed.definition,defaults:copy.seed.defaults});
+   for(const part of ["definition","defaults"] as const){
+    const before=initialEditorForm[part] as unknown as Record<string,unknown>;
+    const after=(part==="definition"?def:nextDefaults) as unknown as Record<string,unknown>;
+    const target=draft[part] as unknown as Record<string,unknown>;
+    for(const key of new Set([...Object.keys(before),...Object.keys(after)]))if(JSON.stringify(before[key])!==JSON.stringify(after[key])){if(after[key]===undefined)delete target[key];else target[key]=structuredClone(after[key]);}
+   }
+   copy.save(draft);return;
+  }
 		try {
 			if (isNew) {
 				const created = await api<SavedCase>("/api/cases", {
@@ -1356,6 +1847,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 		if (!def.id) return toast("案例 ID 不能为空", "error");
 		if (!def.prompt.trim()) return toast("Prompt 不能为空", "error");
 		const nextDefaults = readDefaultsFromForm();
+
 		try {
 			const run = await api<Run>("/api/runs", {
 				method: "POST",
@@ -1413,7 +1905,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 				return;
 			}
 			historyList.replaceChildren(...runs.map((run) => {
-				const item = run.items[0];
+				const item = latestAttempts(run.items).at(-1);
 				const row = h("div", { class: "flex-between gap-2", style: "padding:6px 0;border-bottom:1px solid var(--color-border-muted)" });
 				row.append(
 					h("div", { class: "flex-center gap-2 wrap" },
@@ -1421,7 +1913,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 						h("span", { class: "mono" }, item?.modelId ?? "—"),
 						h("span", { class: "muted small" }, `v${item?.revision ?? 0}`),
 						h("span", { class: "muted small" }, fmtTime(run.createdAt)),
-						...run.items.map(i => h("div", {}, h("span", { class: "muted small" }, `第 ${i.round ?? 1} 轮`), sessionIdLabel(i.sessionId))),
+						...run.items.map(i => h("div", {}, h("span", { class: "muted small" }, `第 ${i.round ?? 1} 轮 · ${i.attempt ? `重试 ${i.attempt} 次` : "首次执行"}`), sessionIdLabel(i.sessionId))),
 					),
 					h("div", { class: "flex-center gap-2" },
 						h("span", { class: "muted small" }, fmtDuration(item?.durationMs)),
@@ -1435,7 +1927,7 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 		}
 	};
 
-	void loadHistory();
+	if(!copy)void loadHistory();
 }
 
 const inlineInspectors = new WeakMap<HTMLElement, { id: string; view: ReturnType<typeof createItemInspector> }>();
@@ -1565,22 +2057,26 @@ async function renderNewRun(app: HTMLElement): Promise<void> {
 		moduleChecks.append(label);
 	}
 
-	const renderCaseChecks = (): void => {
+	const runSelection = new Set<string>();
+ let runGesture: ReturnType<typeof rangeSelection> | undefined;
+ const renderCaseChecks = (): void => {
+        runGesture?.reset();
 		caseList.replaceChildren();
 		const cases = s.cases.filter((c) => selectedModules.has(c.moduleId));
+        runSelection.clear(); cases.forEach(c=>{if(!excludedCases.has(c.id))runSelection.add(c.id);});
 		if (!cases.length) {
 			caseList.append(h("div", { class: "muted small" }, "未选择模块"));
 			return;
 		}
 		for (const c of cases) {
-			caseList.append(h("label", { class: "form-check", style: "padding-left:8px" },
+			caseList.append(h("label", { class: "form-check", "data-selection-row": c.id, style: "padding-left:8px" },
 				h("input", {
 					type: "checkbox",
-					checked: !excludedCases.has(c.id),
+					checked: !excludedCases.has(c.id), "data-selection-id": c.id,
 					onchange: (e: Event) => {
 						const checked = (e.target as HTMLInputElement).checked;
-						if (checked) excludedCases.delete(c.id);
-						else excludedCases.add(c.id);
+						if (checked) { excludedCases.delete(c.id);runSelection.add(c.id); }
+						else { excludedCases.add(c.id);runSelection.delete(c.id); }
 						updatePreview();
 					},
 				}),
@@ -1589,6 +2085,17 @@ async function renderNewRun(app: HTMLElement): Promise<void> {
 			));
 		}
 	};
+
+ runGesture = rangeSelection(caseList, () => s.cases.filter(c=>selectedModules.has(c.moduleId)).map(c=>c.id), runSelection, () => {
+  for(const c of s.cases.filter(c=>selectedModules.has(c.moduleId))) runSelection.has(c.id)?excludedCases.delete(c.id):excludedCases.add(c.id);
+  updatePreview();
+ });
+ caseList.before(h("div",{class:"flex-center gap-2 wrap"},...(["全选","反选","清空"] as const).map(label=>h("button",{class:"btn btn-sm",onclick:()=>{
+  for(const c of s.cases.filter(c=>selectedModules.has(c.moduleId))) {
+   const checked = label==="全选" || (label==="反选"&&excludedCases.has(c.id));
+   checked?excludedCases.delete(c.id):excludedCases.add(c.id);
+  } renderCaseChecks();updatePreview();
+ }},label)),h("span",{class:"muted small"},"拖动复选框列或 Shift 连选")));
 
 	const replayBox = h("div", { class: "Box mt-3" });
 	replayBox.append(h("div", { class: "Box-header" }, "回放方式"));
@@ -1762,7 +2269,7 @@ async function renderRuns(app: HTMLElement): Promise<void> {
 			h("td", {},
 				h("a", { class: "case-name", href: `#/run/${run.id}` }, run.name),
 				run.note ? h("div", { class: "muted small" }, run.note) : h("span", {}),
-				h("div", { class: "muted small" }, `${fmtTime(run.createdAt)} · ${run.repeatCount ?? 1} 轮`),
+				h("div", { class: "muted small" }, `${fmtTime(run.createdAt)} · ${run.repeatCount ?? 1} 轮 · 重试 ${run.summary.retryCount ?? 0} 次`),
 			),
 			h("td", {}, runStatusBadge(run.status), failed ? h("div", { class: "muted small mt-2" }, `${summary.failed} 验收失败 · ${summary.error} 执行错误 · ${summary.inconclusive} 无法判定`) : null),
 			h("td", { class: "num" },
@@ -1780,7 +2287,7 @@ async function renderRuns(app: HTMLElement): Promise<void> {
 			} }, "取消"));
 		}
 		if (failed + summary.cancelled > 0 && ["completed", "cancelled", "interrupted"].includes(run.status)) {
-			actions.append(h("button", { class: "btn btn-sm", onclick: () => rerunFailed(run.id) }, "重跑未通过案例"));
+			actions.append(h("button", { class: "btn btn-sm", onclick: () => rerunFailed(run.id) }, "重试未通过案例"));
 		}
 		tr.append(actions);
 		tbody.append(tr);
@@ -1804,17 +2311,139 @@ async function renderRuns(app: HTMLElement): Promise<void> {
 	search.addEventListener("input", apply); filter.addEventListener("change", apply); apply();
 }
 
-async function rerunFailed(runId: string): Promise<void> {
+async function rerunFailed(runId: string, itemIds?: string[]): Promise<void> {
 	try {
-		const run = await api<Run>("/api/runs", {
-			method: "POST",
-			headers: JSON_HEADERS,
-			body: JSON.stringify({ parentRunId: runId, name: "未通过案例重跑", concurrency: 1 }),
+		const run = await api<RunDetailResponse>(`/api/runs/${runId}`);
+		const candidates = latestAttempts(run.items).filter(
+			(i) => canRetry(i) && (!itemIds || itemIds.includes(i.id)),
+		);
+		if (!candidates.length) throw Error("没有可重试的未通过案例");
+		const reasons: Array<[ItemStatus, string]> = [
+			["failed", "断言失败"],
+			["error", "执行错误"],
+			["inconclusive", "无法判定"],
+			["cancelled", "已取消"],
+		];
+		const enabled = new Set(
+			reasons
+				.filter(([key]) => candidates.some((i) => i.status === key))
+				.map(([key]) => key),
+		);
+		const selected = () => candidates.filter((i) => enabled.has(i.status));
+		const reasonControls = h("div", {
+			class: "RetryReasons",
+			role: "group",
+			"aria-label": "按失败原因选择",
 		});
-		toast("已创建重跑批次");
-		navigate(`#/run/${run.id}`);
+		const message = h("p", { class: "form-hint" });
+		const errorBox = h("div", { role: "alert" });
+		const requestId = crypto.randomUUID();
+		let busy = false;
+		let pendingBody: string | undefined;
+		const submit = h(
+			"button",
+			{ class: "btn btn-primary" },
+			"确认重试",
+		) as HTMLButtonElement;
+		const update = () => {
+			const items = selected();
+			const caseCount = new Set(items.map((i) => i.snapshot.id)).size;
+			const direct = items.some(
+				(i) =>
+					(i.snapshot.definition.workspace ?? i.snapshot.defaults.workspace)
+						?.mode === "direct",
+			);
+			message.textContent = `将在当前评测重试 ${caseCount} 个案例、${items.length} 次执行，使用原配置和验证脚本快照，保留全部历史。${direct ? "直接执行模式将再次操作原目录当前内容。" : ""}`;
+			submit.disabled = busy || !items.length;
+			submit.textContent = `确认重试 ${items.length} 次执行`;
+		};
+		const boxes: HTMLInputElement[] = [];
+		for (const [key, label] of reasons) {
+			const count = candidates.filter((i) => i.status === key).length;
+			const box = h("input", {
+				type: "checkbox",
+				checked: enabled.has(key),
+				disabled: !count,
+				"data-retry-status": key,
+				onchange: () => {
+					box.checked ? enabled.add(key) : enabled.delete(key);
+					pendingBody = undefined;
+					update();
+				},
+			}) as HTMLInputElement;
+			boxes.push(box);
+			reasonControls.append(
+				h("label", { class: "form-check" }, box, `${label}（${count}）`),
+			);
+		}
+		const all = h(
+			"button",
+			{
+				class: "btn btn-sm",
+				onclick: () => {
+					for (const box of boxes)
+						if (!box.disabled) {
+							box.checked = true;
+							enabled.add(box.dataset.retryStatus as ItemStatus);
+						}
+					pendingBody = undefined;
+					update();
+				},
+			},
+			"全部未通过",
+		);
+		const close = openModal({
+			title: "按失败原因重试",
+			body: h("div", {}, reasonControls, all, message, errorBox),
+			beforeClose: () => !busy,
+			actions: (cancel) => [
+				h("button", { class: "btn", onclick: cancel }, "取消"),
+				submit,
+			],
+		});
+		submit.onclick = async () => {
+			if (busy || !selected().length) return;
+			const request =
+				pendingBody ??
+				JSON.stringify({
+					requestId,
+					expectedRetryRevision: run.retryRevision ?? 0,
+					itemIds: selected().map((i) => i.id),
+					statuses: [...enabled],
+				});
+			pendingBody = request;
+			busy = true;
+			boxes.forEach((box) => (box.disabled = true));
+			(all as HTMLButtonElement).disabled = true;
+			update();
+			try {
+				await api(`/api/runs/${runId}/retry`, {
+					method: "POST",
+					headers: JSON_HEADERS,
+					body: request,
+				});
+				busy = false;
+				close();
+				toast("已在当前评测中排队重试");
+				if (location.hash === `#/run/${runId}`) render();
+				else navigate(`#/run/${runId}`);
+			} catch (error) {
+				errorBox.textContent = String(error);
+				busy = false;
+				const status = (error as { status?: number }).status;
+				if (status === 409) {
+					submit.disabled = true;
+					submit.textContent = "范围已变化，请关闭并刷新";
+					return;
+				}
+				// Keep the exact request after unknown delivery; changing reasons requires reopening.
+				submit.disabled = false;
+				submit.textContent = "重发相同重试请求";
+			}
+		};
+		update();
 	} catch (error) {
-		toast(error instanceof Error ? error.message : String(error), "error");
+		toast(String(error), "error");
 	}
 }
 
@@ -1850,7 +2479,7 @@ function repeatBatch(run: RunDetailResponse): void {
 }
 
 function renderRepeatReport(target: HTMLElement, run: RunDetailResponse): void {
-	const report = run.repeatReport;
+	const report = run.repeatReport ?? buildRepeatReport(run);
 	const signature = JSON.stringify(report);
 	if (target.dataset.signature === signature) return;
 	target.dataset.signature = signature;
@@ -1860,13 +2489,13 @@ function renderRepeatReport(target: HTMLElement, run: RunDetailResponse): void {
 		h("h2", { class: "section-title" }, "重复多轮评测报告"),
 		h("p", {}, `${report.caseCount} 个案例 × ${report.repeatCount} 轮 · 完整执行 ${report.completedRounds} 轮${report.partial ? " · 阶段性结果，样本未全部完成" : ""}`),
 		h("div", { class: "ReviewSummary" }, h("strong", {}, `全轮通过 ${report.allRoundsPassedCases}/${report.caseCount}`), h("span", {}, `通过/失败波动 ${report.judgmentChangedCases} 个案例`), h("span", {}, `输出变化 ${report.outputChangedCases}/${report.comparableCases} 个可比较案例`)),
-		h("p", { class: "muted small" }, report.method),
+		h("details", {class:"Verifier-details"},h("summary",{},"多轮比较口径"),h("p",{class:"muted small"},report.method)),
 		gradingMetrics(report.grading),
-		h("p", { class: "muted small" }, `${report.withoutContentAssertions} 个案例未配置内容判定规则。文本一致率 = 最常见输出次数 / 可比较输出次数；少于 2 次输出显示 —。`),
+		report.withoutContentAssertions ? h("p", { class: "muted small" }, `${report.withoutContentAssertions} 个案例未配置内容判定规则。`) : h("span",{hidden:true}),
 	);
-	const table = h("table", { class: "Table" }, h("thead", {}, h("tr", {}, ...["轮次", "旧版通过 / 已判定", "旧版文本通过率", "验收失败", "错误 / 未判定 / 取消", "待完成", "累计耗时"].map(label => h("th", {}, label)))));
+	const table = h("table", { class: "Table" }, h("thead", {}, h("tr", {}, ...["轮次", "通过 / 失败", "错误 / 未判定 / 取消", "待完成", "累计耗时"].map(label => h("th", {}, label)))));
 	const body = h("tbody");
-	for (const r of report.rounds) body.append(h("tr", {}, ...[String(r.round), `${r.grading.legacy.numerator} / ${r.grading.legacy.denominator}`, rate(r.passRate), String(r.failed), `${r.error} / ${r.inconclusive} / ${r.cancelled}`, String(r.queued + r.running), fmtDuration(r.durationMs)].map(value => h("td", {}, value))));
+	for (const r of report.rounds) body.append(h("tr", {}, ...[String(r.round), `${r.passed} / ${r.failed}`, `${r.error} / ${r.inconclusive} / ${r.cancelled}`, String(r.queued + r.running), fmtDuration(r.durationMs)].map(value => h("td", {}, value))));
 	table.append(body); target.append(h("div", { class: "TableWrap" }, table), h("h3", { class: "section-title mt-3" }, "案例对比（展开查看逐轮输出与失败依据）"));
 	const items = new Map(run.items.map(item => [item.id, item]));
 	for (const c of [...report.cases].sort((a, b) => Number(b.judgmentChanged) - Number(a.judgmentChanged) || b.failed + b.error - a.failed - a.error || b.outputVariants - a.outputVariants)) {
@@ -1918,43 +2547,64 @@ async function renderRunDetail(app: HTMLElement, runId: string): Promise<void> {
 	let itemView: ReturnType<typeof createItemInspector> | undefined;
 	let inspectorItem: string | undefined;
 	let lastRunStatus = "";
+ const attemptChoice = new Map<string, string>();
+ let metricsOpen = false;
+ const reportMode = select("report-attempt-mode", [["latest", "各轮最新结果（含重试）"], ["first", "仅首次执行结果"]], "") as HTMLSelectElement;
+ reportMode.value = "latest";
+ reportMode.onchange = () => renderRepeatReport(repeatReport, reportMode.value === "first" ? { ...detail, items: detail.items.filter(i => !i.attempt), repeatReport: buildRepeatReport({...detail,items:detail.items.filter(i=>!i.attempt)}) } : detail);
 	const applyFilters = () => {
 		const query = (search as HTMLInputElement).value.toLowerCase();
 		const value = (filter as HTMLSelectElement).value;
 		const module = (moduleFilter as HTMLSelectElement).value;
 		const round = (roundFilter as HTMLSelectElement).value;
-		const visible = detail.items.filter(i => (!round || (i.round ?? 1) === Number(round)) && (!value || (value === "issues" ? ["failed", "error", "inconclusive"].includes(i.status) : i.status === value)) && (!module || i.moduleName === module) && `${i.snapshot.definition.id} ${i.snapshot.definition.description ?? ""}`.toLowerCase().includes(query));
-		count.textContent = `${visible.length} / ${detail.items.length} 次执行`;
+		const effective = latestAttempts(detail.items);
+		const visible = effective.filter(i => (!round || (i.round ?? 1) === Number(round)) && (!value || (value === "issues" ? ["failed", "error", "inconclusive"].includes(i.status) : i.status === value)) && (!module || i.moduleName === module) && `${i.snapshot.definition.id} ${i.snapshot.definition.description ?? ""}`.toLowerCase().includes(query));
+		count.textContent = `${visible.length} / ${effective.length} 项结果`;
 		if (!visible.some(i => i.id === selectedId)) selectedId = visible[0]?.id;
-		for (const item of detail.items) {
+		for (const [id,row] of rows) { if (!effective.some(i=>i.id===id)) { row.remove();rows.delete(id); } }
+        const visibleIds = new Set(visible.map(i=>i.id));
+        for (const item of effective) {
 			let row = rows.get(item.id);
 			if (!row) {
 				row = h("button", { class: "RunItem", type: "button", onclick: () => { selectedId = item.id; applyFilters(); } });
 				rows.set(item.id, row); list.append(row);
 			}
-			row.hidden = !visible.some(i => i.id === item.id);
+			row.hidden = !visibleIds.has(item.id);
 			row.setAttribute("aria-pressed", String(item.id === selectedId));
-			const signature = JSON.stringify([item.status, item.phase, item.result?.durationMs]);
+			const signature = JSON.stringify([item.status, item.phase, item.result?.durationMs, item.attempt]);
 			if (row.dataset.signature !== signature) {
 				row.dataset.signature = signature;
-				row.replaceChildren(h("span", { class: "RunItem-head" }, h("span", { class: "case-name" }, item.snapshot.definition.id), item.status === "running" && item.phase === "verifying" ? badge("验证中", "Label--attention") : statusBadge(item.status)), h("span", { class: "muted small" }, `第 ${item.round ?? 1} 轮 · ${item.moduleName} · ${replayLabel(item.snapshot.definition.replayMode)} · ${fmtDuration(item.result?.durationMs)}`));
+				row.replaceChildren(h("span", { class: "RunItem-head" }, h("span", { class: "case-name" }, item.snapshot.definition.id), item.status === "running" && item.phase === "verifying" ? badge("验证中", "Label--attention") : statusBadge(item.status)), h("span", { class: "muted small" }, `第 ${item.round ?? 1} 轮 · 重试 ${item.attempt ?? 0} 次 · ${item.moduleName} · ${replayLabel(item.snapshot.definition.replayMode)} · ${fmtDuration(item.result?.durationMs)}`));
 			}
 		}
-		const selected = detail.items.find(i => i.id === selectedId);
+		const current = detail.items.find(i => i.id === selectedId);
+  const rootId = current?.rootItemId ?? current?.id;
+  const attempts = detail.items.filter(i => (i.rootItemId ?? i.id) === rootId);
+  const selected = attempts.find(i => i.id === attemptChoice.get(rootId!)) ?? current;
 		if (!selected) {
 			inspector.replaceChildren(h("div", { class: "empty" }, h("div", { class: "empty-title" }, "没有匹配的案例"), h("div", { class: "empty-desc" }, "调整结果、模块或搜索条件后重试。")));
 			inspectorItem = undefined; return;
 		}
 		if (inspectorItem !== selected.id) {
-			itemView = createItemInspector(runId, selected); inspector.replaceChildren(itemView.element); inspectorItem = selected.id;
+			itemView = createItemInspector(runId, selected);
+   const history = select("item-attempt", attempts.map(i => [i.id, `${i.attempt ? `第 ${i.attempt} 次重试` : "首次执行"} · ${({queued:"排队中",running:"运行中",passed:"通过",failed:"失败",error:"执行错误",cancelled:"已取消",inconclusive:"无法判定"})[i.status]}`]), selected.id) as HTMLSelectElement;
+   history.setAttribute("aria-label", "执行尝试历史");
+   history.onchange = () => { attemptChoice.set(rootId!, history.value); inspectorItem = undefined; applyFilters(); };
+   const retry = h("button", { class: "btn btn-sm", "data-item-retry":"true", disabled: ["queued", "running"].includes(detail.status) || !current || !canRetry(current), onclick: () => rerunFailed(runId, [current!.id]) }, "重试此案例");
+   inspector.replaceChildren(h("div", { class: "flex-center gap-2 wrap mb-2" }, history, retry), itemView.element); inspectorItem = selected.id;
 		} else {
 			itemView?.update(selected);
 		}
+  const retryButton=inspector.querySelector<HTMLButtonElement>("[data-item-retry]");
+  if(retryButton)retryButton.disabled=["queued","running"].includes(detail.status)||!current||!canRetry(current);
+  const history=inspector.querySelector<HTMLSelectElement>("#item-attempt");
+  if(history)for(const option of history.options){const attempt=attempts.find(i=>i.id===option.value);if(attempt)option.textContent=`${attempt.attempt ? `第 ${attempt.attempt} 次重试` : "首次执行"} · ${STATUS_META[attempt.status].label}`;}
+
 	};
 	const update = (run: RunDetailResponse) => {
 		detail = run;
 		const value = run.summary;
-		const legacyMetrics = gradingSummary(run.items).legacy; const judged = legacyMetrics.denominator;
+
 		const settled = value.passed + value.failed + value.error + value.inconclusive + value.cancelled;
 		const running = ["queued", "running"].includes(run.status);
 		status.replaceChildren(runStatusBadge(run.status));
@@ -1964,30 +2614,30 @@ async function renderRunDetail(app: HTMLElement, runId: string): Promise<void> {
 				try { await api(`/api/runs/${runId}/cancel`, { method: "POST", headers: JSON_HEADERS }); toast("已请求停止评测"); }
 				catch (error) { toast(String(error), "error"); }
 			} }, "停止评测"));
-			else if (value.failed + value.error + value.inconclusive + value.cancelled > 0) actions.append(h("button", { class: "btn btn-primary", onclick: () => rerunFailed(runId) }, "重跑未通过案例"));
+			else if (value.failed + value.error + value.inconclusive + value.cancelled > 0) actions.append(h("button", { class: "btn btn-primary", onclick: () => rerunFailed(runId) }, "重试未通过案例"));
 			actions.append(h("button", { class: "btn", onclick: () => download(`/api/runs/${runId}/export?format=json`) }, "导出 JSON"), h("button", { class: "btn", onclick: () => download(`/api/runs/${runId}/export?format=csv`) }, "导出 CSV"));
 			actions.append(h("button", { class: "btn", onclick: () => download(`/api/runs/${runId}/export?format=markdown`) }, "导出简报"));
 			if (!running) actions.append(h("button", { class: "btn", onclick: () => repeatBatch(detail) }, "重复评测本批次"));
 		}
-		summary.replaceChildren(
-			h("div", { class: "RunSummary-primary" }, h("strong", {}, judged ? `${Math.round((gradingSummary(run.items).legacy.rate ?? 0) * 100)}%` : "—"), h("span", {}, "旧版文本通过率"), h("span", { class: "muted small" }, `${gradingSummary(run.items).legacy.numerator} / ${judged} 已判定`)),
-			h("div", { class: "RunSummary-counts" }, ...(["passed", "failed", "error", "inconclusive", "cancelled", "running", "queued"] as const).map(key => h("span", { class: "flex-center gap-1" }, statusBadge(key), h("b", {}, String(value[key]))))),
-			h("div", { class: "RunSummary-meta muted small" }, `已结束 ${settled} / ${value.total} · 累计执行耗时 ${fmtDuration(value.durationMs)} · Token ${fmtTokens(value.tokens)} · 费用 ${value.cost === null ? "未提供" : fmtCost(value.cost)}`),
-			statusBar(value), gradingMetrics(gradingSummary(run.items)),
-			h("div", { class: "muted small" }, "通过率 = 通过 /（通过 + 断言失败）；执行错误与取消单独统计。"),
-		);
-		const table = h("table", { class: "Table" }, h("thead", {}, h("tr", {}, ...["模块", "通过 / 总数", "旧版文本通过率", "失败 / 错误 / 未判定", "累计执行耗时"].map(label => h("th", {}, label)))));
+  const metrics = gradingMetrics(gradingSummary(run.items));
+  const fold = metrics.querySelector("details"); if(fold){ fold.open=metricsOpen;fold.ontoggle=()=>{if(fold.isConnected)metricsOpen=fold.open;}; }
+  summary.replaceChildren(
+   metrics,
+   h("div", { class: "RunSummary-counts", hidden: value.failed + value.error + value.inconclusive + value.cancelled + value.running + value.queued === 0 }, ...(["failed", "error", "inconclusive", "cancelled", "running", "queued"] as const).filter(key => value[key] > 0).map(key => h("span", { class: "flex-center gap-1" }, statusBadge(key), h("b", {}, String(value[key]))))),
+   h("div", { class: "RunSummary-meta muted small" }, `已结束 ${settled} / ${value.total} · 重试 ${run.items.filter(i => (i.attempt ?? 0) > 0).length} 次 · 累计执行耗时 ${fmtDuration(value.durationMs)} · Token ${fmtTokens(value.tokens)} · 费用 ${value.cost === null ? "未提供" : fmtCost(value.cost)}`), statusBar(value),
+  );
+		const table = h("table", { class: "Table" }, h("thead", {}, h("tr", {}, ...["模块", "通过 / 总数", "判定明细", "失败 / 错误 / 未判定", "累计执行耗时"].map(label => h("th", {}, label)))));
 		const body = h("tbody", {});
 		for (const [name, m] of Object.entries(moduleStats(run.items))) {
 			const metrics = gradingSummary(run.items.filter(i => i.moduleName === name));
-			body.append(h("tr", {}, h("td", {}, name), h("td", {}, `${m.passed} / ${m.total}`), h("td", {}, metrics.legacy.rate === null ? "—" : `${Math.round(metrics.legacy.rate * 100)}% (${metrics.legacy.numerator}/${metrics.legacy.denominator})`), h("td", {}, `${m.failed} / ${metrics.executionErrors.numerator} / ${run.items.filter(i => i.moduleName === name && i.status === "inconclusive").length}`), h("td", {}, fmtDuration(m.durationMs))));
+			body.append(h("tr", {}, h("td", {}, name), h("td", {}, `${m.passed} / ${m.total}`), h("td", {}, [metrics.legacy.denominator ? `回复检查 ${metrics.legacy.numerator}/${metrics.legacy.denominator}` : "", metrics.groups.length ? `任务验收 ${metrics.groups.reduce((n,g)=>n+g.passRate.numerator,0)}/${metrics.groups.reduce((n,g)=>n+g.passRate.denominator,0)}` : ""].filter(Boolean).join(" · ") || "待判定"), h("td", {}, `${m.failed} / ${metrics.executionErrors.numerator} / ${latestAttempts(run.items).filter(i => i.moduleName === name && i.status === "inconclusive").length}`), h("td", {}, fmtDuration(m.durationMs))));
 		}
 		table.append(body); stats.replaceChildren(h("div", { class: "TableWrap" }, table));
-		renderRepeatReport(repeatReport, run);
+		renderRepeatReport(repeatReport, reportMode.value === "first" ? { ...run, items: run.items.filter(i => !i.attempt), repeatReport: buildRepeatReport({...run,items:run.items.filter(i=>!i.attempt)}) } : run);
 		applyFilters();
 	};
 	const results = h("section", {}, h("div", { class: "ResultFilters" }, search, filter, moduleFilter, roundFilter, count), h("div", { class: "RunWorkbench" }, list, inspector));
-	app.append(h("div", { class: "crumbs" }, h("a", { href: "#/runs" }, "评测批次"), h("span", {}, "/"), h("span", {}, runId.slice(0, 8))), h("div", { class: "page-head flex-between wrap gap-3" }, h("div", {}, h("div", { class: "flex-center gap-2 wrap" }, title, status), h("p", { class: "page-desc" }, `创建于 ${fmtTime(detail.createdAt)} · ${detail.repeatCount ?? 1} 轮 · 并发 ${detail.concurrency}${detail.note ? ` · ${detail.note}` : ""}`)), actions), summary, panelTabs("run-detail", [["案例结果", results], ["多轮报告", repeatReport], ["模块统计", stats]]));
+	app.append(h("div", { class: "crumbs" }, h("a", { href: "#/runs" }, "评测批次"), h("span", {}, "/"), h("span", {}, runId.slice(0, 8))), h("div", { class: "page-head flex-between wrap gap-3" }, h("div", {}, h("div", { class: "flex-center gap-2 wrap" }, title, status), h("p", { class: "page-desc" }, `创建于 ${fmtTime(detail.createdAt)} · ${detail.repeatCount ?? 1} 轮 · 并发 ${detail.concurrency}${detail.note ? ` · ${detail.note}` : ""}`)), actions), summary, panelTabs("run-detail", [["案例结果", results], ["多轮报告", h("div", {}, field("统计结果", reportMode), repeatReport)], ["模块统计", stats]]));
 	search.addEventListener("input", applyFilters); filter.addEventListener("change", applyFilters); moduleFilter.addEventListener("change", applyFilters); roundFilter.addEventListener("change", applyFilters);
 	update(detail);
 	if (["queued", "running"].includes(detail.status) || detail.items.some(i => ["queued", "running"].includes(i.status))) activePoll = pollRun(runId, update);
@@ -2011,15 +2661,16 @@ function statusBar(summary: Summary): HTMLElement {
 
 function moduleStats(items: RunItem[]): Record<string, { total: number; passed: number; failed: number; error: number; cancelled: number; durationMs: number }> {
 	const map: Record<string, { total: number; passed: number; failed: number; error: number; cancelled: number; durationMs: number }> = {};
-	for (const item of items) {
+	for (const item of latestAttempts(items)) {
 		const entry = map[item.moduleName] ??= { total: 0, passed: 0, failed: 0, error: 0, cancelled: 0, durationMs: 0 };
 		entry.total++;
 		if (item.status === "passed") entry.passed++;
 		else if (item.status === "failed") entry.failed++;
 		else if (item.status === "error") entry.error++;
 		else if (item.status === "cancelled") entry.cancelled++;
-		entry.durationMs += item.result?.durationMs ?? 0;
+
 	}
+	for(const item of items) map[item.moduleName].durationMs += item.result?.durationMs ?? 0;
 	return map;
 }
 
@@ -2041,8 +2692,10 @@ function createItemInspector(runId: string, initial: RunItem) {
 		title.replaceChildren(h("span", {}, item.snapshot.definition.id), statusBadge(item.status));
 		meta.replaceChildren(h("span", {}, `v${item.snapshot.revision} · ${item.snapshot.defaults.modelId} · ${replayLabel(item.snapshot.definition.replayMode)}`), sessionIdLabel(item.sessionId ?? item.result?.sessionId));
 		const expanded = progress.querySelector("details")?.open;
-		progress.replaceChildren(executionStatus(item));
-		if(item.snapshot.definition.replayMode === "full-task" && item.workspace) { const mode = item.result?.workspaceInfo?.mode ?? (item.snapshot.definition.workspace ?? item.snapshot.defaults.workspace)?.mode ?? "copy"; progress.append(h("p", {class:"muted small"}, `${mode === "direct" ? "直接执行" : "复制后执行"} · 实际目录：${item.workspace}`)); }
+		const active = ["queued","running"].includes(item.status);
+        const execution = active ? h("div") : h("details", {class:"Verifier-details"},h("summary",{},"执行详情"));
+        execution.append(executionStatus(item)); progress.replaceChildren(execution);
+		if(item.snapshot.definition.replayMode === "full-task" && item.workspace) { const mode = item.result?.workspaceInfo?.mode ?? (item.snapshot.definition.workspace ?? item.snapshot.defaults.workspace)?.mode ?? "copy"; execution.append(h("p", {class:"muted small"}, `${mode === "direct" ? "直接执行" : "复制后执行"} · 实际目录：${item.workspace}`)); }
 		const details = progress.querySelector("details"); if (details && expanded) details.open = true;
 	};
 	const renderTab = async () => {

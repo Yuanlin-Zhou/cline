@@ -5,13 +5,13 @@ import { access } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { CatalogError, SqliteCatalog, type CatalogRepository } from "./catalog.js";
 import { MongoCatalog, mongoConfig, type MongoConfig } from "./mongo-catalog.js";
-import { TransferError } from "./transfer.js";
+import { TransferError, parseTransfer } from "./transfer.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEvalSuite } from "../schema.js";
 import { EvalStore, type RunSource } from "./store.js";
 import { EvalQueue, type Executor } from "./queue.js";
-import { summarize, type Module, type Run, type RunItem, type SavedCase } from "./types.js";
+import { latestAttempts, summarize, type Module, type Run, type RunItem, type SavedCase } from "./types.js";
 import { artifacts, artifactText, archivedArtifacts, archivedArtifactText } from "./workspace.js";
 import { buildRepeatReport, repeatReportMarkdown } from "./repeat-report.js";
 import { loadVerifiers, publicVerifier, resolveVerifiers, uploadedPlaceholder } from "../grading/verifiers.js";
@@ -74,7 +74,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					const allItems = store.list<import("./types.js").RunItem>("item");
 					const { cases, modules } = await catalog.snapshot();
 					const activeIds = new Set(cases.map(c => c.id));
-					const latest = Object.fromEntries(allItems.filter(i => activeIds.has(i.snapshot.id) && !["queued", "running", "cancelled"].includes(i.status)).map(i => [i.snapshot.id, { status: i.status, runId: i.runId, revision: i.snapshot.revision, modelId: i.snapshot.defaults.modelId, sessionId: i.result?.sessionId, durationMs: i.result?.durationMs, endedAt: i.endedAt }]));
+					const latest = Object.fromEntries(latestAttempts(allItems).filter(i => activeIds.has(i.snapshot.id) && ((i.attempt ?? 0) > 0 || !["queued", "running", "cancelled"].includes(i.status))).map(i => [i.snapshot.id, { status: i.status, runId: i.runId, revision: i.snapshot.revision, modelId: i.snapshot.defaults.modelId, sessionId: i.result?.sessionId, durationMs: i.result?.durationMs, endedAt: i.endedAt }]));
 					return json({ modules, cases, settings: store.settings(), runs: store.list<Run>("run").reverse().map(run => ({ ...run, summary: summarize(allItems.filter(i => i.runId === run.id)) })), latest });
 				}
 				if (route === "/api/verifiers" && method === "GET") {
@@ -133,7 +133,8 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					}
 					if (kind === "verifier-tests" && testId) {
 						const test = verifierTests.get(testId, runId, itemId); if (!test) return json({ error: "试验证记录不存在" }, 404);
-						if (action === "cancel" && method === "POST") { verifierTests.cancel(testId); return json({ status: "cancelling" }); }
+
+					if (action === "cancel" && method === "POST") { verifierTests.cancel(testId); return json({ status: "cancelling" }); }
 						if (action === "evidence" && method === "GET") {
 							const ref = test.evidence.refs.find(r => r.id === evidenceId); if (!ref) return json({ error: "试验证证据不存在" }, 404);
 							return json({ text: (await readEvidence(directory, ref, 4 * 1024 * 1024)).toString("utf8") });
@@ -222,8 +223,12 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					for (const cwd of [suite.defaults.cwd, suite.cases[0].cwd]) if (cwd && !path.isAbsolute(cwd)) throw new Error("fixture 目录须为绝对路径");
 					return json(await catalog.createCase(body.moduleId, suite.defaults, suite.cases[0]), 201);
 				}
-				if (route === "/api/cases/transfer/preview" && request.method === "POST") return json(await catalog.previewTransfer(await readJsonBody(request)));
-				if (route === "/api/cases/transfer" && request.method === "POST") return json(await catalog.transferCases(await readJsonBody(request)));
+				if (["/api/cases/transfer/preview", "/api/cases/transfer"].includes(route) && method === "POST") {
+     const applying = route === "/api/cases/transfer";
+     const body = parseTransfer(await readJsonBody(request), applying);
+     for (const item of body.items) if (item.draft) { validateWorkspacePaths(item.draft.definition,item.draft.defaults); await resolveVerifiers(item.draft.definition,verifierRepository); }
+     return json(applying ? await catalog.transferCases(body) : await catalog.previewTransfer(body));
+    }
 
 				const caseActionMatch = route.match(/^\/api\/cases\/([^/]+)\/(duplicate|archive|unarchive)$/);
 				if (caseActionMatch && method === "POST") {
@@ -239,7 +244,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					if (!allItems.some(i => i.snapshot.id === targetId) && !await catalog.getCase(targetId)) throw new CatalogError("案例不存在或已删除", 404);
 					return json(store.list<Run>("run").reverse().map(run => {
 						const items = allItems.filter(i => i.runId === run.id && i.snapshot.id === targetId);
-						return { ...run, summary: summarize(items), items: items.map(i => ({ id: i.id, round: i.round ?? 1, status: i.status, revision: i.snapshot.revision, modelId: i.snapshot.defaults.modelId, sessionId: i.result?.sessionId, durationMs: i.result?.durationMs, endedAt: i.endedAt })) };
+						return { ...run, summary: summarize(items), items: items.map(i => ({ id: i.id, rootItemId: i.rootItemId, attempt: i.attempt ?? 0, round: i.round ?? 1, status: i.status, revision: i.snapshot.revision, modelId: i.snapshot.defaults.modelId, sessionId: i.result?.sessionId, durationMs: i.result?.durationMs, endedAt: i.endedAt })) };
 					}).filter(run => run.items.length > 0));
 				}
 				const caseMatch = route.match(/^\/api\/cases\/([^/]+)$/);
@@ -292,7 +297,7 @@ export async function createEvalServer(options: { directory?: string; port?: num
 						sources = snapshot.cases.filter(c => body.caseIds?.includes(c.id) || body.moduleIds?.includes(c.moduleId)).map(c => ({ snapshot: c, moduleName: snapshot.modules.find(m => m.id === c.moduleId)!.name }));
 					}
 					if (!sources && body.parentRunId) {
-						const items = store.detail(body.parentRunId).items.filter(i => body.rerunScope === "all" || ["failed", "error", "cancelled", "inconclusive"].includes(i.status));
+						const items = latestAttempts(store.detail(body.parentRunId).items).filter(i => body.rerunScope === "all" || ["failed", "error", "cancelled", "inconclusive"].includes(i.status));
 						sources = [...new Map(items.map(i => [i.snapshot.id, { snapshot: i.snapshot, moduleName: i.moduleName, verifierSnapshots: i.verifierSnapshots }])).values()];
 					}
 					const prepared = [];
@@ -306,9 +311,10 @@ export async function createEvalServer(options: { directory?: string; port?: num
 					}
 					const run = store.createRun(body, prepared); queue.kick(); return json(run, 202);
 				}
-				const runMatch = route.match(/^\/api\/runs\/([^/]+)(?:\/(cancel|export|artifacts))?$/);
+				const runMatch = route.match(/^\/api\/runs\/([^/]+)(?:\/(cancel|export|artifacts|retry))?$/);
 				if (runMatch) {
 					const [, id, action] = runMatch;
+					if (action === "retry" && method === "POST") { const response = store.retryRun(id, await readJsonBody(request)); queue.kick(); return json(response, 202); }
 					if (action === "cancel" && method === "POST") { queue.cancel(id); return json(store.detail(id)); }
 					if (method === "GET") {
 						const run = store.detail(id);
@@ -322,12 +328,13 @@ export async function createEvalServer(options: { directory?: string; port?: num
 						if (action === "export") {
 							if (url.searchParams.get("format") === "markdown") return new Response(repeatReportMarkdown(run), { headers: { "Content-Type": "text/markdown; charset=utf-8", "Content-Disposition": `attachment; filename="eval-${id}-repeat-report.md"` } });
 							if (url.searchParams.get("format") === "csv") {
-								const rows = [["module", "case", "revision", "mode", "model", "status", "duration_ms", "tokens", "cost", "error", "round", "item_id", "output", "failed_assertions", "session_id", "grading_mode", "grading_verdict", "grading_status", "failed_rules", "evidence_ids", "rule_hash"], ...run.items.map(i => [i.moduleName, i.snapshot.definition.id, i.snapshot.revision, i.snapshot.definition.replayMode ?? "single-turn", i.snapshot.defaults.modelId, i.status, i.result?.durationMs, (i.result?.usage.inputTokens ?? 0) + (i.result?.usage.outputTokens ?? 0), i.result?.usage.totalCost ?? "", i.error ?? i.result?.error ?? "", i.round ?? 1, i.id, i.result?.text ?? i.text, i.result?.assertions.filter(a => !a.passed).map(a => a.message).join("; "), i.result?.sessionId, i.snapshot.definition.grading ? "task" : "legacy-text", i.result?.grading?.verdict, i.result?.grading?.status, i.result?.grading?.results.filter(r => r.status === "fail").map(r => r.id).join("; "), i.result?.evidence?.refs.map(r => r.id).join("; "), i.result?.grading?.ruleHash])];
+                                const latestIds = new Set(latestAttempts(run.items).map(i => i.id));
+								const rows = [["module", "case", "revision", "mode", "model", "status", "duration_ms", "tokens", "cost", "error", "round", "item_id", "output", "failed_assertions", "session_id", "grading_mode", "grading_verdict", "grading_status", "failed_rules", "evidence_ids", "rule_hash", "root_item_id", "attempt", "previous_item_id", "is_latest"], ...run.items.map(i => [i.moduleName, i.snapshot.definition.id, i.snapshot.revision, i.snapshot.definition.replayMode ?? "single-turn", i.snapshot.defaults.modelId, i.status, i.result?.durationMs, (i.result?.usage.inputTokens ?? 0) + (i.result?.usage.outputTokens ?? 0), i.result?.usage.totalCost ?? "", i.error ?? i.result?.error ?? "", i.round ?? 1, i.id, i.result?.text ?? i.text, i.result?.assertions.filter(a => !a.passed).map(a => a.message).join("; "), i.result?.sessionId, i.snapshot.definition.grading ? "task" : "legacy-text", i.result?.grading?.verdict, i.result?.grading?.status, i.result?.grading?.results.filter(r => r.status === "fail").map(r => r.id).join("; "), i.result?.evidence?.refs.map(r => r.id).join("; "), i.result?.grading?.ruleHash, i.rootItemId ?? i.id, i.attempt ?? 0, i.previousItemId ?? "", latestIds.has(i.id)])];
 								return new Response(`\uFEFF${rows.map(row => row.map(csvCell).join(",")).join("\r\n")}`, { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="eval-${id}.csv"` } });
 							}
-							return new Response(JSON.stringify({ ...run, summary: summarize(run.items), gradingSummary: gradingSummary(run.items), repeatReport: buildRepeatReport(run) }, null, 2), { headers: { "Content-Type": "application/json", "Content-Disposition": `attachment; filename="eval-${id}.json"` } });
+							return new Response(JSON.stringify({ ...run, latestItemIds: latestAttempts(run.items).map(i => i.id), retryCount: run.items.filter(i => (i.attempt ?? 0) > 0).length, summary: summarize(run.items), gradingSummary: gradingSummary(run.items), repeatReport: buildRepeatReport(run) }, null, 2), { headers: { "Content-Type": "application/json", "Content-Disposition": `attachment; filename="eval-${id}.json"` } });
 						}
-						return json({ ...run, summary: summarize(run.items), gradingSummary: gradingSummary(run.items), repeatReport: buildRepeatReport(run) });
+						return json({ ...run, latestItemIds: latestAttempts(run.items).map(i => i.id), retryCount: run.items.filter(i => (i.attempt ?? 0) > 0).length, summary: summarize(run.items), gradingSummary: gradingSummary(run.items), repeatReport: buildRepeatReport(run) });
 					}
 				}
 				return json({ error: "接口不存在" }, 404);

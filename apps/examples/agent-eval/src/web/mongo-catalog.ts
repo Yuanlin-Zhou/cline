@@ -209,7 +209,8 @@ export class MongoCatalog implements CatalogRepository {
 			for (const [index, item] of plan.items.entries()) {
 				const source = await this.source(item.id, session);
 				if (item.result === "unchanged") { cases.push(caseFromDocument(source)); continue; }
-				const next: CaseDocument = { ...source, moduleId: request.targetModuleId, definition: { ...source.definition, id: item.proposedDefinitionId }, updatedAt: new Date() };
+				const draft = request.items[index].draft;
+                const next: CaseDocument = { ...source, ...(draft ? { defaults: structuredClone(draft.defaults) } : {}), moduleId: request.targetModuleId, definition: { ...(draft?.definition ?? source.definition), id: item.proposedDefinitionId }, updatedAt: new Date() };
 				if (request.operation === "copy") { next._id = ids[index]; next.revision = 1; next.createdAt = new Date(); await this.cases.insertOne(next, { session }); }
 				else { next.revision++; await this.cases.updateOne({ _id: source._id, revision: source.revision }, { $set: { moduleId: next.moduleId, definition: next.definition, revision: next.revision, updatedAt: next.updatedAt } }, { session }); }
 				cases.push(caseFromDocument(next));

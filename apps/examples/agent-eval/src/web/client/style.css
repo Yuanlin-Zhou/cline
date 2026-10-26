@@ -754,3 +754,23 @@ button, input, select, textarea, a, summary { scroll-margin: 20px; }
 .VerifierManager-editor textarea { min-height: 300px; font-family: var(--font-mono, monospace); tab-size: 4; white-space: pre; overflow: auto; }
 .VerifierManager .Verifier-actions { flex-wrap: wrap; }
 .VerifierManager .Verifier-actions input { max-width: 360px; }
+
+.selecting-cases { user-select: none; cursor: cell; }
+[data-selection-row]:has(input[data-selection-id]:checked) { background: var(--bg-subtle, #eff6ff); }
+input[data-selection-id] { cursor: cell; }
+.CaseTable td:first-child { min-width: 38px; }
+.ResultMetrics { min-width: 0; }
+.ResultMetrics-primary { margin: 4px 0; font-size: 18px; font-weight: 600; }
+.ResultMetrics-issues { color: var(--color-danger-fg, #b42318); }
+.ResultMetrics table { width: 100%; }
+.ResultMetrics td { overflow-wrap: anywhere; }
+@media(max-width:600px) { .ResultMetrics-primary { font-size:16px; } .ResultMetrics table { font-size:12px; } }
+.ResultMetrics summary { list-style: none; }
+.ResultMetrics summary::-webkit-details-marker { display: none; }
+.RetryReasons { display: flex; flex-wrap: wrap; gap: 12px 20px; margin-bottom: 12px; }
+.CopyEditor .CaseLayout { display: block; }
+.RunSummary { padding: 16px 20px; gap: 10px 20px; }
+.RunSummary > .ResultMetrics { flex: 1 1 280px; }
+.RunSummary .ResultMetrics > .Verifier-details { margin: 4px 0; }
+.RunSummary .ResultMetrics > .Verifier-details > summary { padding: 4px 0; }
+.RunSummary-counts { align-self: flex-start; margin-top: 6px; }

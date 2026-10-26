@@ -1,8 +1,10 @@
+import { latestAttempts } from "../web/types.js";
 import type { EvalCaseResult } from "../types.js";
 
-type Item = { status: string; snapshot: { id: string; definition: { id: string; grading?: unknown } }; result?: EvalCaseResult };
+type Item = { id?: string; rootItemId?: string; attempt?: number; status: string; snapshot: { id: string; definition: { id: string; grading?: unknown } }; result?: EvalCaseResult };
 const fraction = (numerator: number, denominator: number) => ({ numerator, denominator, rate: denominator ? numerator / denominator : null });
 export function gradingSummary(items: Item[]) {
+ items = latestAttempts(items);
 	const settled = items.filter(i => !["queued", "running", "cancelled"].includes(i.status));
 	const legacy = settled.filter(i => !i.snapshot.definition.grading);
 	const groups = new Map<string, Item[]>();

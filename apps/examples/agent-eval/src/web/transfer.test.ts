@@ -83,3 +83,24 @@ test("transfer HTTP routes report input, stale revision, and missing module erro
 		expect((await post("", applyBody)).status).toBe(409);
 	} finally { app.server.stop(true); app.store.db.close(); }
 });
+
+test("copy drafts are validated, previewed and committed atomically without changing originals", () => {
+ const [source,target]=store.activeModules();const a=seed(source.id,"original"),b=seed(source.id,"other");
+ const draft={definition:{...a.definition,id:"renamed",prompt:"modified",timeoutMs:12345,headers:{"x-case":"new"}},defaults:{...a.defaults,modelId:"different-model",headersEnv:{Authorization:"OTHER_KEY"}}};
+ const body={operation:"copy",targetModuleId:target.id,conflictPolicy:"abort",items:[{id:a.id,revision:a.revision,draft},{id:b.id,revision:b.revision}]};
+ const preview=store.previewTransfer(structuredClone(body));expect(preview.items[0].proposedDefinitionId).toBe("renamed");expect(preview.items[0].draftFingerprint).toBeString();
+ const input={...body,items:body.items.map((item,index)=>({...item,expectedDefinitionId:preview.items[index].proposedDefinitionId,...(item.draft?{expectedDraftFingerprint:preview.items[index].draftFingerprint}:{})}))};
+ expect(()=>store.transferCases({...input,items:input.items.map((item,index)=>index?item:{...item,draft:{...draft,definition:{...draft.definition,prompt:"changed after preview"}}})})).toThrow("预览");
+ expect(store.activeCases()).toHaveLength(2);
+ const copies=store.transferCases(structuredClone(input)).cases;
+ expect(copies[0].definition).toMatchObject({id:"renamed",prompt:"modified",timeoutMs:12345,headers:{"x-case":"new"}});expect(copies[0].defaults).toMatchObject({modelId:"different-model",headersEnv:{authorization:"OTHER_KEY"}});expect(copies[0].revision).toBe(1);expect(copies[0].id).not.toBe(a.id);expect(store.require<SavedCase>("case",a.id)).toEqual(a);
+ expect(()=>store.previewTransfer({...body,operation:"move"})).toThrow("只有复制");
+ expect(()=>store.previewTransfer({...body,items:[{...body.items[0],draft:{...draft,definition:{...draft.definition,timeoutMs:-1}}}]})).toThrow();
+ expect(()=>store.previewTransfer({...body,items:[{...body.items[0],draft:{...draft,defaults:{...draft.defaults,cwd:"relative"}}}]})).toThrow("绝对路径");
+});
+
+test("same-module edited copy keeps an explicitly available name",()=>{
+ const source=seed(store.activeModules()[0].id,"source");const request={operation:"copy",targetModuleId:source.moduleId,conflictPolicy:"abort",items:[{id:source.id,revision:source.revision,draft:{definition:{...source.definition,id:"explicit-name"},defaults:source.defaults}}]};
+ const preview=store.previewTransfer(structuredClone(request));expect(preview.items[0].proposedDefinitionId).toBe("explicit-name");
+ const copied=store.transferCases({...request,items:request.items.map(i=>({...i,expectedDefinitionId:"explicit-name",expectedDraftFingerprint:preview.items[0].draftFingerprint}))}).cases[0];expect(copied.definition.id).toBe("explicit-name");
+});

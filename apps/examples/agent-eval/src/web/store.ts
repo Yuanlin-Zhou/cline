@@ -4,7 +4,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { parseEvalSuite } from "../schema.js";
 import type { EvalCase, EvalDefaults, EvalSuite } from "../types.js";
-import type { Module, Run, RunDetail, RunItem, SavedCase } from "./types.js";
+import { latestAttempts, canRetry, type Module, type Run, type RunDetail, type RunItem, type SavedCase } from "./types.js";
 
 import { planTransfer, parseTransfer, TransferError, type TransferRequest, type TransferPreview } from "./transfer.js";
 
@@ -29,7 +29,7 @@ export class EvalStore {
 			for (const run of this.list<Run>("run")) if (["queued", "running"].includes(run.status)) {
 				run.status = "interrupted"; run.endedAt = now(); this.put("run", run.id, run);
 				for (const item of this.items(run.id)) if (["queued", "running"].includes(item.status)) {
-					item.status = "error"; item.interrupted = true; item.error = "服务重启，执行已中断。请创建重跑批次。"; item.endedAt = now(); this.put("item", item.id, item);
+					item.status = "error"; item.interrupted = true; item.error = "服务重启，执行已中断。请在当前评测内重试。"; item.endedAt = now(); this.put("item", item.id, item);
 				}
 			}
 		})();
@@ -94,10 +94,12 @@ export class EvalStore {
 			if (plan.items.some((item, index) => item.proposedDefinitionId !== request.items[index].expectedDefinitionId)) throw new TransferError("预览已变化，请重新预览并确认");
 			const cases: SavedCase[] = [];
 			let copied = 0; let moved = 0; let unchanged = 0;
-			for (const item of plan.items) {
+			for (const [index, item] of plan.items.entries()) {
 				const source = this.require<SavedCase>("case", item.id);
 				if (item.result === "unchanged") { cases.push(source); unchanged++; continue; }
 				const next = structuredClone(source);
+                const draft = request.items[index].draft;
+                if (draft) { next.definition = structuredClone(draft.definition); next.defaults = structuredClone(draft.defaults); }
 				next.moduleId = request.targetModuleId;
 				next.definition.id = item.proposedDefinitionId;
 				next.updatedAt = now();
@@ -148,6 +150,108 @@ export class EvalStore {
 	}
 	items(runId: string) { return this.list<RunItem>("item").filter(item => item.runId === runId); }
 	detail(id: string): RunDetail { return { ...this.require<Run>("run", id), items: this.items(id) }; }
+	retryRun(id: string, input: unknown): { run: Run; itemIds: string[] } {
+		const body = input as {
+			requestId: string;
+			expectedRetryRevision: number;
+			itemIds?: string[];
+			statuses?: string[];
+		};
+		if (
+			!body ||
+			typeof body.requestId !== "string" ||
+			!/^[a-zA-Z0-9-]{1,100}$/.test(body.requestId) ||
+			!Number.isInteger(body.expectedRetryRevision) ||
+			body.expectedRetryRevision < 0 ||
+			(body.itemIds !== undefined &&
+				(!Array.isArray(body.itemIds) ||
+					!body.itemIds.length ||
+					body.itemIds.some((x) => typeof x !== "string") ||
+					new Set(body.itemIds).size !== body.itemIds.length))
+		)
+			throw new TransferError("重试参数无效", 400);
+		if (
+			body.statuses !== undefined &&
+			(!Array.isArray(body.statuses) ||
+				!body.statuses.length ||
+				new Set(body.statuses).size !== body.statuses.length ||
+				body.statuses.some((status) => !canRetry({ status })))
+		)
+			throw new TransferError("请选择有效的失败原因", 400);
+		const fingerprint = JSON.stringify([
+			body.expectedRetryRevision,
+			body.itemIds ? [...body.itemIds].sort() : null,
+			body.statuses ? [...body.statuses].sort() : null,
+		]);
+		return this.db
+			.transaction(() => {
+				const saved = this.get<{
+					fingerprint: string;
+					response: { run: Run; itemIds: string[] };
+				}>("retry", `${id}:${body.requestId}`);
+				if (saved) {
+					if (saved.fingerprint !== fingerprint)
+						throw new TransferError("重试请求标识已用于其他参数");
+					return saved.response;
+				}
+				const run = this.get<Run>("run", id);
+				if (!run) throw new TransferError("评测不存在", 404);
+				if (
+					["queued", "running"].includes(run.status) ||
+					(run.retryRevision ?? 0) !== body.expectedRetryRevision
+				)
+					throw new TransferError("评测已变化或仍在运行，请刷新后重试");
+				const latest = latestAttempts(this.items(id));
+				const selected = body.itemIds
+					? latest.filter((i) => body.itemIds!.includes(i.id))
+					: latest.filter(
+							(i) =>
+								canRetry(i) &&
+								(!body.statuses || body.statuses.includes(i.status)),
+						);
+				if (
+					!selected.length ||
+					(body.itemIds && selected.length !== body.itemIds.length) ||
+					selected.some(
+						(i) =>
+							!canRetry(i) ||
+							(body.statuses && !body.statuses.includes(i.status)),
+					)
+				)
+					throw new TransferError("请选择当前未通过的最新执行");
+				const itemIds: string[] = [];
+				for (const previous of selected) {
+					const root = this.require<RunItem>(
+						"item",
+						previous.rootItemId ?? previous.id,
+					);
+					const item: RunItem = {
+						id: randomUUID(),
+						runId: id,
+						rootItemId: root.id,
+						previousItemId: previous.id,
+						attempt: (previous.attempt ?? 0) + 1,
+						round: root.round ?? 1,
+						snapshot: structuredClone(root.snapshot),
+						moduleName: root.moduleName,
+						verifierSnapshots: structuredClone(root.verifierSnapshots ?? []),
+						status: "queued",
+						text: "",
+					};
+					this.put("item", item.id, item);
+					itemIds.push(item.id);
+				}
+				run.status = "queued";
+				delete run.endedAt;
+				run.retryRevision = (run.retryRevision ?? 0) + 1;
+				this.put("run", id, run);
+				const response = { run, itemIds };
+				this.put("retry", `${id}:${body.requestId}`, { fingerprint, response });
+				return response;
+			})
+			.immediate();
+	}
+
 	createRun(input: RunInput, resolvedSources?: RunSource[]): Run {
 		const concurrency = input.concurrency ?? 1;
 		if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("并发数须为 1–4");
@@ -160,7 +264,7 @@ export class EvalStore {
 		else if (input.draft?.length) {
 			sources = input.draft.map(draft => ({ snapshot: { id: randomUUID(), moduleId: draft.moduleId, revision: 0, definition: { ...draft.definition, replayMode: input.replayMode as "single-turn" | "full-task" | "function-call" }, defaults: draft.defaults, updatedAt: now() }, moduleName: this.require<Module>("module", draft.moduleId).name }));
 		} else if (input.parentRunId) {
-			const items = this.detail(input.parentRunId).items.filter(i => input.rerunScope === "all" || ["failed", "error", "cancelled", "inconclusive"].includes(i.status));
+			const items = latestAttempts(this.detail(input.parentRunId).items).filter(i => input.rerunScope === "all" || ["failed", "error", "cancelled", "inconclusive"].includes(i.status));
 			// Repeated failures select a case once, retaining the original input snapshot.
 			sources = [...new Map(items.map(i => [i.snapshot.id, { snapshot: i.snapshot, moduleName: i.moduleName, verifierSnapshots: i.verifierSnapshots }])).values()];
 		}
