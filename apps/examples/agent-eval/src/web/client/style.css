@@ -755,6 +755,27 @@ button, input, select, textarea, a, summary { scroll-margin: 20px; }
 .VerifierManager .Verifier-actions { flex-wrap: wrap; }
 .VerifierManager .Verifier-actions input { max-width: 360px; }
 
+/* Verifier cards own their spacing; global stacked .Box margins do not apply. */
+.VerifierManager .Resource-cards > .VerifierCard { margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+.VerifierCard > .section-title { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
+.VerifierCard .VerifierCard-filename { margin: 0; overflow-wrap: anywhere; }
+.VerifierCard-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; margin-top: auto; }
+.VerifierCard-footer > .form-hint { margin: 0; }
+.VerifierCard-footer > .Verifier-actions { margin: 0; gap: 8px; }
+.VerifierCard-info { min-width: 0; font-size: 12px; }
+.VerifierCard-info > summary { color: var(--color-fg-muted); cursor: pointer; list-style: none; }
+.VerifierCard-info > summary::-webkit-details-marker { display: none; }
+.VerifierCard-metadata { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; margin: 12px 0 0; line-height: 1.6; }
+.VerifierCard-metadata dt { color: var(--color-fg-muted); }
+.VerifierCard-metadata dd { margin: 0; overflow-wrap: anywhere; }
+.VerifierCard-footer > .VerifierCard-info[open] { flex-basis: 100%; }
+.VerifierManager-editor > .VerifierCard-info { margin-bottom: 16px; }
+@media (max-width: 480px) {
+ .VerifierManager .Resource-cards { grid-template-columns: minmax(0, 1fr); }
+ .VerifierCard-footer .btn, .VerifierCard-info > summary { min-height: 44px; }
+ .VerifierCard-info > summary { display: flex; align-items: center; }
+}
+
 .selecting-cases { user-select: none; cursor: cell; }
 [data-selection-row]:has(input[data-selection-id]:checked) { background: var(--bg-subtle, #eff6ff); }
 input[data-selection-id] { cursor: cell; }

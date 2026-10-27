@@ -1,31 +1,99 @@
 import { node, action, row, verifierDialog, downloadScript } from "./verifier-ui.js";
 type Api = <T>(path: string, init?: RequestInit) => Promise<T>;
 type Reference = { id: string; name: string; moduleId: string; moduleName: string; archived: boolean };
-type Script = { id: string; label: string; filename?: string; version: string; runtime?: string; source?: string; referenceCount?: number };
+type Script = { id: string; label: string; filename?: string; version: string; sha256?: string; runtime?: string; source?: string; referenceCount?: number };
 type Detail = Script & { content: string; token: string; references: Reference[] };
 const headers = { "Content-Type": "application/json" };
 let leave: (() => boolean) | undefined;
 export const canLeaveVerifierManager = () => leave?.() ?? true;
+function scriptInfo(script: Script, title = "详细信息") {
+	const info = node("details", "", "VerifierCard-info");
+	info.append(node("summary", title));
+	const values = node("dl", "", "VerifierCard-metadata");
+	for (const [label, value] of [
+		["来源", script.source === "uploaded" ? "用户上传" : "配置注册"],
+		["文件名", script.filename || "未提供"],
+		[
+			"运行环境",
+			script.runtime === "python" ? "Python" : script.runtime || "未声明",
+		],
+		["版本", (script.source === "uploaded" ? script.sha256 ?? script.version : script.version) || "未声明"],
+	])
+		values.append(node("dt", label), node("dd", value));
+	info.append(values);
+	if (script.source === "uploaded" && script.runtime !== "python")
+		info.append(
+			node(
+				"p",
+				"当前管理页支持编辑 Python；此兼容脚本保持原有使用方式。",
+				"form-hint",
+			),
+		);
+	return info;
+}
 export function verifierManager(api: Api) {
 	const root = node("section", "", "VerifierManager"), search = node("input", "", "form-control");
 	search.placeholder = "搜索名称或文件名"; search.setAttribute("aria-label", "搜索验证脚本");
 	const feedback = node("p", "", "flash flash-success"); feedback.hidden = true; feedback.setAttribute("role", "status");
 	const list = node("div", "", "Resource-cards"), status = node("p", "", "form-hint"), error = node("p", "", "Grading-error");
 	error.setAttribute("role", "alert"); status.setAttribute("role", "status");
+	const registryNote = node("p", "配置注册的验证器由服务端维护，此处只读。", "form-hint");
+	registryNote.hidden = true;
 	let scripts: Script[] = [], loading = false;
 	const refresh = action("刷新列表", () => { void load(); });
 	function paint() {
-		const q = search.value.toLowerCase(), visible = scripts.filter(s => `${s.label} ${s.filename ?? ""}`.toLowerCase().includes(q));
-		list.replaceChildren(); status.textContent = `${visible.length} 个验证脚本`;
+		const q = search.value.toLowerCase(),
+			visible = scripts.filter((s) =>
+				`${s.label} ${s.filename ?? ""}`.toLowerCase().includes(q),
+			);
+		list.replaceChildren();
+		status.textContent = `${visible.length} 个验证脚本 · 引用数包含已归档案例`;
+		registryNote.hidden = !scripts.some((s) => s.source !== "uploaded");
 		for (const s of visible) {
-			const card = node("article", "", "Box Box-body");
-			card.append(node("h2", s.label, "section-title"), node("p", `${s.filename ?? "配置注册程序"} · ${s.runtime === "python" ? "Python" : "其他运行环境"} · ${s.version}`, "form-hint"));
-			if (s.source === "uploaded" && s.runtime === "python") card.append(node("p", `${s.referenceCount ?? 0} 个案例引用（包含已归档案例）`, "form-hint"), row(action("查看 / 编辑", () => { void open(s.id); }), action("下载", () => { void download(s.id); }), action("删除", () => { void open(s.id, true); })));
-			else card.append(node("p", s.source === "uploaded" ? "当前管理页编辑功能支持 Python，兼容脚本保留原使用方式。" : "配置注册程序由服务端配置文件维护，此处只读。", "form-hint"));
+			const editable = s.source === "uploaded" && s.runtime === "python";
+			const card = node("article", "", "Box Box-body VerifierCard");
+			card.append(node("h2", s.label, "section-title"));
+			if (s.filename)
+				card.append(node("p", s.filename, "form-hint VerifierCard-filename"));
+			const footer = node("div", "", "VerifierCard-footer");
+			if (editable) {
+				const count = s.referenceCount ?? 0;
+				footer.append(
+					node(
+						"span",
+						count ? `${count} 个案例引用` : "未引用",
+						"form-hint VerifierCard-references",
+					),
+					row(
+						action("查看 / 编辑", () => {
+							void open(s.id);
+						}),
+						action("下载", () => {
+							void download(s.id);
+						}),
+						action("删除", () => {
+							void open(s.id, true);
+						}),
+					),
+				);
+			} else
+				footer.append(
+					node(
+						"span",
+						s.source === "uploaded" ? "兼容脚本 · 只读" : "配置注册 · 只读",
+						"form-hint VerifierCard-source",
+					),
+					scriptInfo(s),
+				);
+			card.append(footer);
 			list.append(card);
 		}
-		if (!visible.length) list.append(node("p", "暂无匹配的脚本，可上传 .py 文件开始使用。", "empty"));
+		if (!visible.length)
+			list.append(
+				node("p", "暂无匹配的脚本，可上传 .py 文件开始使用。", "empty"),
+			);
 	}
+
 	async function load() {
 		if (loading) return; loading = true; refresh.disabled = true; error.textContent = "";
 		try { scripts = (await api<{ verifiers: Script[] }>("/api/verifiers?manage=1")).verifiers; paint(); }
@@ -60,6 +128,7 @@ export function verifierManager(api: Api) {
 		paintRefs();
 		if (deleting) body.append(node("p", `永久删除「${detail!.label}」？历史执行保存的脚本快照会保留。`), node("p", "仍被案例引用时不能删除。请先替换或移除这些案例中的规则，再刷新引用。", "form-hint"), refs);
 		else {
+			if (detail) body.append(scriptInfo(detail, "脚本信息"));
 			const file = node("input", "", "form-control"); file.type = "file"; file.accept = ".py"; file.id = "manage-script-file";
 			file.onchange = () => { void (async () => { const f = file.files?.[0]; if (!f || busy) return; busy = true; submit.disabled = true; problem.textContent = "";
 				try { if (!f.name.endsWith(".py")) throw Error("请选择 .py 文件"); if (f.size > 1024 * 1024) throw Error("脚本不能超过 1 MiB"); code.value = new TextDecoder("utf-8", { fatal: true }).decode(await f.arrayBuffer()); filename.value = f.name; if (!name.value) name.value = f.name; }
@@ -89,6 +158,6 @@ export function verifierManager(api: Api) {
 		leave = () => { if (!canClose()) return false; saved = true; modal.close(); return true; };
 	}
 	search.oninput = paint;
-	root.append(node("h1", "验证脚本", "page-title"), node("p", "集中管理用户上传的 Python 验证器。编辑保留原绑定，删除前检查全部案例引用。", "page-desc"), row(action("上传 Python 脚本", () => { void open(); }, true), refresh, search), error, feedback, status, list);
+	root.append(node("h1", "验证脚本", "page-title"), node("p", "管理验证脚本，查看案例引用。", "page-desc"), row(action("上传 Python 脚本", () => { void open(); }, true), refresh, search), error, feedback, status, registryNote, list);
 	void load(); return root;
 }
