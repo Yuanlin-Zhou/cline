@@ -100,7 +100,6 @@ export function judgeModelEditor(
 			headerEditor(`${id}-headers`, model, "Judge 自定义请求头"),
 		);
 		error.textContent = "";
-		element.dispatchEvent(new Event("input", { bubbles: true }));
 	};
 	const actions = node("div", "", "flex-center gap-2 wrap");
 	if (allowDefaults)
@@ -205,11 +204,7 @@ export function judgeEditor(options: {
 		"form-hint",
 	);
 	const modelFold = node("details", "", "Verifier-details");
-	const modelSummary = node(
-		"summary",
-		`Judge 模型 · ${initial?.model?.modelId || "尚未配置"}`,
-	);
-	modelFold.append(modelSummary);
+	modelFold.append(node("summary", "Judge 模型（独立于被测模型）"));
 	modelFold.open = !initial?.model;
 	const model = judgeModelEditor(
 		`${id}-model`,
@@ -218,15 +213,7 @@ export function judgeEditor(options: {
 		options.execution,
 	);
 	modelFold.append(model.element);
-	const refreshModelSummary = () => {
-		modelSummary.textContent = `Judge 模型 · ${model.element.querySelector<HTMLInputElement>(`#${id}-model-model`)?.value || "尚未配置"}`;
-	};
-	modelFold.addEventListener("toggle", refreshModelSummary);
-	model.element.addEventListener("input", refreshModelSummary);
-	const affects = checkbox(
-		"参与通过判定（关闭时仅评分）",
-		initial?.affectsOutcome ?? false,
-	);
+	const affects = checkbox("影响通过结果", initial?.affectsOutcome ?? false);
 	affects.control.id = `${id}-affects`;
 	const threshold = textField(`${id}-threshold`, initial?.passScore ?? 80);
 	threshold.setAttribute("type", "number");
@@ -311,7 +298,6 @@ export function judgeEditor(options: {
 			parent;
 			parent = parent.parentElement
 		) {
-			if (parent instanceof HTMLDetailsElement) parent.open = true;
 			const panel = parent.closest('[role="tabpanel"]');
 			if (panel?.id)
 				document
@@ -322,23 +308,7 @@ export function judgeEditor(options: {
 		else if (!result.control.checked && !trajectory.control.checked)
 			result.control.focus();
 		else {
-			const message = String(e);
-			if (
-				/timeout|maxInput|resultFiles|rubric|超时|上限|文件|标准/.test(message)
-			) {
-				advanced.open = true;
-				(/timeout|超时/.test(message)
-					? timeout
-					: /maxInput|上限/.test(message)
-						? limit
-						: /rubric|标准/.test(message)
-							? rubric
-							: files
-				).focus();
-			} else {
-				modelFold.open = true;
-				model.element.querySelector<HTMLInputElement>("input")?.focus();
-			}
+			modelFold.open = true;
 		}
 	};
 	const read = (validate = true): JudgeConfig | undefined => {
@@ -398,14 +368,7 @@ export function judgeEditor(options: {
 			enabled.control.checked = true;
 			body.hidden = false;
 			reference.focus();
-			for (
-				let parent = element.parentElement;
-				parent;
-				parent = parent.parentElement
-			)
-				if (parent instanceof HTMLDetailsElement) parent.open = true;
-			element.scrollIntoView({ block: "start" });
-			reference.focus({ preventScroll: true });
+			element.scrollIntoView({ block: "center" });
 		},
 		setMode: (value: string) => {
 			mode = value;

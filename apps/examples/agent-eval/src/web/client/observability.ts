@@ -24,13 +24,12 @@ export function executionStatus(item: RunItem): HTMLElement {
 }
 
 export function syncStatus(runId: string): HTMLElement {
-	const node = el("div", "记录已加载；运行时自动同步。", "SyncStatus muted small"); node.hidden=true; node.dataset.runSync = runId; node.setAttribute("role", "status"); return node;
+	const node = el("div", "记录已加载；运行时自动同步。", "SyncStatus muted small"); node.dataset.runSync = runId; node.setAttribute("role", "status"); return node;
 }
 
 export function showSyncStatus(runId: string, error?: string): void {
 	for (const node of document.querySelectorAll<HTMLElement>("[data-run-sync]")) if (node.dataset.runSync === runId) {
-		node.hidden = !error;
-        node.textContent = error ? `页面同步失败：${error}。保留已有内容，正在重试；这不代表评测停止。` : `页面同步正常 · 最近同步 ${new Date().toLocaleTimeString()}`;
+		node.textContent = error ? `页面同步失败：${error}。保留已有内容，正在重试；这不代表评测停止。` : `页面同步正常 · 最近同步 ${new Date().toLocaleTimeString()}`;
 		node.classList.toggle("SyncStatus-error", Boolean(error));
 	}
 }

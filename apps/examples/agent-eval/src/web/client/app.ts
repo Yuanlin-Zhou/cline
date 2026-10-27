@@ -139,116 +139,6 @@ function field(label: string, control: HTMLElement, hint?: string): HTMLElement 
 	return group;
 }
 
-// Native popovers escape clipped tables and support light-dismiss / Escape.
-function actionMenu(
-	label: string,
-	entries: Array<[string, () => void, boolean?]>,
-): HTMLElement {
-	const id = `actions-${crypto.randomUUID()}`;
-	const popup = h("div", {
-		id,
-		popover: "auto",
-		class: "ActionMenu",
-		role: "menu",
-		"aria-label": label,
-	});
-	const trigger = h(
-		"button",
-		{
-			type: "button",
-			class: "btn btn-sm",
-			popovertarget: id,
-			"aria-haspopup": "menu",
-			"aria-expanded": "false",
-			"aria-label": label,
-		},
-		label.startsWith("更多操作 ")
-			? "更多"
-			: label.startsWith("管理模块 ")
-				? "•••"
-				: label,
-		" ▾",
-	);
-	entries.forEach(([text, action, danger]) =>
-		popup.append(
-			h(
-				"button",
-				{
-					type: "button",
-					role: "menuitem",
-					class: danger ? "ActionMenu-danger" : "",
-					onclick: () => {
-						popup.hidePopover();
-						trigger.focus();
-						action();
-					},
-				},
-				text,
-			),
-		),
-	);
-	popup.addEventListener("beforetoggle", (event) => {
-		const open = (event as ToggleEvent).newState === "open";
-		trigger.setAttribute("aria-expanded", String(open));
-		if (open) {
-			const r = trigger.getBoundingClientRect();
-			popup.style.left = `${Math.max(8, Math.min(r.right - 224, window.innerWidth - 232))}px`;
-			popup.style.top = `${Math.min(r.bottom + 6, Math.max(8, window.innerHeight - entries.length * 48 - 24))}px`;
-		}
-	});
-	popup.addEventListener("keydown", (event) => {
-		const buttons = [...popup.querySelectorAll<HTMLButtonElement>("button")];
-		const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
-		const next =
-			event.key === "ArrowDown"
-				? (i + 1) % buttons.length
-				: event.key === "ArrowUp"
-					? (i + buttons.length - 1) % buttons.length
-					: event.key === "Home"
-						? 0
-						: event.key === "End"
-							? buttons.length - 1
-							: -1;
-		if (next >= 0) {
-			event.preventDefault();
-			buttons[next].focus();
-		}
-		if (event.key === "Escape") trigger.focus();
-	});
-	trigger.addEventListener("keydown", (event) => {
-		if (event.key === "ArrowDown") {
-			event.preventDefault();
-			popup.showPopover();
-			popup.querySelector<HTMLButtonElement>("button")?.focus();
-		}
-	});
-	return h(
-		"span",
-		{ class: "ActionMenu-anchor", onclick: (e: Event) => e.stopPropagation() },
-		trigger,
-		popup,
-	);
-}
-
-function revealInvalid(root: HTMLElement): void {
-	const target =
-		root.querySelector<HTMLElement>('[aria-invalid="true"], :invalid') ??
-		root.querySelector<HTMLElement>("input,textarea,select");
-	if (!target) return;
-	for (
-		let parent: HTMLElement | null = target.parentElement;
-		parent;
-		parent = parent.parentElement
-	) {
-		if (parent instanceof HTMLDetailsElement) parent.open = true;
-		if (parent.getAttribute("role") === "tabpanel")
-			document
-				.querySelector<HTMLButtonElement>(`[aria-controls="${parent.id}"]`)
-				?.click();
-	}
-	target.focus();
-}
-
 // Panels stay mounted so switching views preserves drafts and control state.
 function panelTabs(id: string, entries: Array<[string, HTMLElement]>): HTMLElement {
 	const bar = h("div", { class: "tab-bar", role: "tablist", "aria-label": "切换视图" });
@@ -387,10 +277,9 @@ const loadItem=itemLoader(api);
 
 /* ----------------------------- Toast / modal ----------------------------- */
 
-function toast(message: string, kind: "success" | "error" | "info" = "success"): void {
+function toast(message: string, kind: "success" | "error" = "success"): void {
 	const root = document.getElementById("toast-root")!;
 	const el = h("div", { class: `toast ${kind}` }, message);
-	el.setAttribute("role", kind === "error" ? "alert" : "status");
 	root.append(el);
 	setTimeout(() => el.remove(), 4000);
 }
@@ -490,12 +379,12 @@ function openCaseTransfer(
 ): void {
  if(sources.some(c=>(c as SavedCase & {summary?:boolean}).summary)){
   const original=sources;
-  toast("正在加载所选案例…", "info");
+  toast("正在加载所选案例…");
   void Promise.all(sources.map(c=>api<SavedCase>(`/api/cases/${c.id}`))).then(full=>{
    if(full.some((c,i)=>c.revision!==original[i].revision))throw Error("所选案例已变化，请刷新后重试");
    const ids=new Set(full.map(c=>c.id));
    openCaseTransfer(operation,full,{...state,cases:[...state.cases.filter(c=>!ids.has(c.id)),...full]},onSuccess,hiddenCount);
-  }).catch(e=>toast(String(e),"error")).finally(()=>document.querySelectorAll(".toast.info").forEach(node=>node.remove()));return;
+  }).catch(e=>toast(String(e),"error"));return;
  }
  const label = operation === "copy" ? "复制" : "移动";
 	const modules = state.modules.filter(
@@ -693,7 +582,7 @@ function openCaseTransfer(
 			});
 			if (current !== generation || closed) return;
 			preview = next;
-			submit.textContent = operation === "copy" ? `创建 ${next.items.length} 个副本` : `移动 ${next.items.length} 个案例`;
+			submit.textContent = `确认${label} ${next.items.length} 个案例`;
 			previewArea.replaceChildren(
 				h(
 					"p",
@@ -712,7 +601,7 @@ function openCaseTransfer(
 							h(
 								"tr",
 								{},
-								...["来源模块", "原名称", operation==="copy"?"副本名称":"目标名称", "处理结果", ...(operation==="copy"?["副本配置"]:[])].map(
+								...["来源模块", "原案例 ID", "目标案例 ID", "处理结果"].map(
 									(t) => h("th", {}, t),
 								),
 							),
@@ -748,8 +637,6 @@ function openCaseTransfer(
 			if (operation === "copy") {
 				for (const [index, item] of next.items.entries()) {
 					const source = selected.find((c) => c.id === item.id)!;
-                    const row=previewArea.querySelectorAll("tbody tr")[index]; const configCell=h("td");row.append(configCell);
-                    const draft=getDraft(source);configCell.append(h("div",{class:"muted small"},`${replayLabel(draft?.definition.replayMode??source.definition.replayMode)} · ${draft?.defaults.modelId??source.defaults.modelId}`));
 					const edit = h(
 						"button",
 						{
@@ -1032,7 +919,6 @@ function flash(text: string, kind: "error" | "warning" | "success" | "info" = "e
 let renderEpoch = 0;
 let lastRenderedHash = location.hash;
 function render(): void {
- document.querySelectorAll(".toast.info").forEach(node=>node.remove());
 	if (!canLeaveVerifierManager()) { history.replaceState(null, "", lastRenderedHash || "#/verifiers"); return; }
 	lastRenderedHash = location.hash;
  routeRequests.abort();routeRequests=new AbortController();
@@ -1176,7 +1062,7 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
 	// Search box + table
 	const savedList = caseListState.get(moduleId ?? "");
 	const searchBox = input("case-search", savedList?.search ?? "", "text");
-	searchBox.setAttribute("placeholder", "搜索案例名称、描述或标签…");
+	searchBox.setAttribute("placeholder", "按名称、ID 或标签筛选…");
 	const replayFilter = select("case-replay", [["", "全部回放方式"], ["single-turn", "单轮回放"], ["full-task", "多轮回放（完整任务）"], ["function-call", "单轮函数调用"]], "");
 	const resultFilter = select("case-result", [["", "全部结果"], ["passed", "通过"], ["failed", "失败"], ["error", "执行错误"], ["inconclusive", "无法判定"], ["none", "未运行"]], "");
 	(replayFilter as HTMLSelectElement).value = savedList?.replay ?? "";
@@ -1198,7 +1084,7 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
 			return hay.includes(query);
 		});
 		tableBody.replaceChildren(...visible.map((c) => caseRow(c, selection, refreshSelection, s)));
-		if (!visible.length) tableBody.append(h("tr", {}, h("td", { colspan: 6, class: "empty" }, "没有匹配的案例，试试调整筛选条件或导入案例。")));
+		if (!visible.length) tableBody.append(h("tr", {}, h("td", { colspan: 7, class: "empty" }, "没有匹配的案例，试试调整筛选条件或导入案例。")));
 		selectionInfo.textContent = selection.size ? `已选 ${selection.size} 个案例` : `${visible.length} 个案例`;
 		runSelectedBtn.disabled = selection.size === 0;
 		batchBar.hidden = selection.size === 0;
@@ -1220,7 +1106,7 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
 			h("th", {}, "案例"),
 			h("th", {}, "回放方式"),
 			h("th", {}, "标签"),
-
+			h("th", { class: "num" }, "版本"),
 			h("th", {}, "最近结果"),
 			h("th", { class: "CaseTable-actionsCell" }, "操作"),
 		),
@@ -1255,10 +1141,9 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
  };
  const gesture = rangeSelection(tableWrap, () => visible.map(c => c.id), selection, refreshSelection);
  for (const control of [searchBox,replayFilter,resultFilter]) control.addEventListener(control===searchBox?"input":"change",()=>gesture.reset());
- toolbar.append(actionMenu("选择操作", [
-  ...["全选筛选结果","反选筛选结果","清空选择"].map((label,index):[string,()=>void]=>[label,()=>{if(index===2)selection.clear();else visible.forEach(c=>index===1&&selection.has(c.id)?selection.delete(c.id):selection.add(c.id));renderTable();}]),
-  ["如何快速选择？",()=>openModal({title:"快速选择案例",body:h("p",{},"拖动复选框列可连续选择；按住 Shift 点击可选择一段。筛选后已选案例仍会保留，操作条会提示隐藏数量。"),actions:close=>[h("button",{class:"btn",onclick:close},"知道了")]})]
- ]));
+ toolbar.append(h("div", { class: "flex-center gap-2 wrap" },
+  ...["全选筛选结果","反选筛选结果","清空选择"].map((label,index)=>h("button",{class:"btn btn-sm",onclick:()=>{if(index===2)selection.clear();else visible.forEach(c=>index===1&&selection.has(c.id)?selection.delete(c.id):selection.add(c.id));renderTable();}},label)),
+  h("span",{class:"muted small"},"拖动复选框列或 Shift 连选")));
 
 	main.append(toolbar, batchBar, tableWrap);
 	layout.append(main);
@@ -1281,7 +1166,11 @@ function moduleItem(module: Pick<Module, "id" | "name" | "description">, active:
 	if (!actions) return link;
 	const wrapper = h("div", { class: "module-entry" });
 	const actionBar = h("div", { class: "module-actions" });
- actionBar.append(actionMenu(`管理模块 ${module.name}`, [["编辑模块",actions.onEdit],["归档模块",actions.onArchive],["删除模块及全部案例",actions.onDelete,true]]));
+	actionBar.append(
+		h("button", { class: "btn btn-sm btn-icon", title: "编辑模块", onclick: (e: Event) => { e.stopPropagation(); actions.onEdit(); } }, "编辑"),
+		h("button", { class: "btn btn-sm btn-icon", title: "归档模块", onclick: (e: Event) => { e.stopPropagation(); actions.onArchive(); } }, "归档"),
+		h("button", { class: "btn btn-sm btn-danger", title: "删除模块及全部案例", onclick: (e: Event) => { e.stopPropagation(); actions.onDelete(); } }, "删除"),
+	);
 	wrapper.append(link, actionBar);
 	return wrapper;
 }
@@ -1306,9 +1195,9 @@ function caseRow(c: SavedCase, selection: Set<string>, rerender: () => void, s: 
 			h("a", { class: "case-name CaseTable-link", href: `#/case/${c.id}`, onclick: (event: Event) => event.stopPropagation() }, c.definition.id),
 			c.definition.description ? h("div", { class: "muted small" }, c.definition.description) : h("span", {}),
 		),
-		h("td", {}, badge(replayLabel(c.definition.replayMode), "Label--neutral")),
+		h("td", {}, badge(replayLabel(c.definition.replayMode), c.definition.replayMode === "full-task" ? "Label--done" : "Label--accent")),
 		h("td", {}, ...tagPills(c.definition.tags)),
-
+		h("td", { class: "num" }, `v${c.revision}`),
 		h("td", {},
 			latest
 				? h("div", { class: "flex-center gap-2 wrap" },
@@ -1322,7 +1211,7 @@ function caseRow(c: SavedCase, selection: Set<string>, rerender: () => void, s: 
 	const actions = h("td", { class: "CaseTable-actionsCell", onclick: (e: Event) => e.stopPropagation() },
 		h("div", { class: "CaseTable-actions" },
 			h("button", { class: "btn btn-sm", onclick: () => runCases([c.id], [], `调试 · ${c.definition.id}`) }, "运行"),
-			actionMenu(`更多操作 ${c.definition.id}`, [["运行案例",()=>runCases([c.id], [], `调试 · ${c.definition.id}`)],["复制案例",()=>openCaseTransfer("copy",[c],s,render)],["移动案例",()=>openCaseTransfer("move",[c],s,render)],["删除案例",()=>deleteCase(c,render),true]]),
+			h("button", { class: "btn btn-sm btn-danger", onclick: () => deleteCase(c, () => render()) }, "删除"),
 		),
 	);
 	tr.append(actions);
@@ -1668,9 +1557,9 @@ async function renderCaseDetail(app: HTMLElement, id?: string, newModuleId?: str
 		),
 		h("div", { class: "page-actions" },
 			h("button", { class: "btn", onclick: () => navigate(`#/cases/${module.id}`) }, "返回"),
-			h("button", { class: "btn btn-primary", onclick: () => saveCase() }, "保存案例"),
-   ...(existing ? [actionMenu("更多", [["复制到…",()=>transferSaved("copy")],["移动到…",()=>transferSaved("move")],["删除案例",()=>deleteCase(existing,()=>navigate(`#/cases/${module.id}`)),true]])] : []),
-   h("button", { class: "btn", id: "case-run", onclick: () => runDraft(replayMode) }, "运行草稿"),
+			h("button", { class: "btn", onclick: () => saveCase() }, "保存"),
+			...(existing ? [h("button", { class: "btn", onclick: () => transferSaved("copy") }, "复制到…"), h("button", { class: "btn", disabled: !s.modules.some(m => m.id !== existing.moduleId), onclick: () => transferSaved("move") }, "移动到…"), h("button", { class: "btn btn-danger", onclick: () => deleteCase(existing, () => navigate(`#/cases/${module.id}`)) }, "删除")] : []),
+			h("button", { class: "btn btn-primary", id: "case-run", onclick: () => runDraft(replayMode) }, `运行${replayLabel(replayMode)}`),
 		),
 	);
 if(copy) {
@@ -1680,14 +1569,14 @@ if(copy) {
   header.querySelector(".page-actions")!.replaceChildren(h("button",{class:"btn",onclick:copy.cancel},"取消编辑"),h("button",{class:"btn btn-primary",onclick:()=>saveCase()},"应用副本修改"),h("button",{id:"case-run",hidden:true,disabled:true}));
  }
 	app.append(header);
-	const modeCards = h("div", { class: "replay-cards replay-compact", role: "group", "aria-label": "回放方式" });
+	const modeCards = h("div", { class: "replay-cards", role: "group", "aria-label": "回放方式" });
 	for (const mode of REPLAY_MODES) {
 		modeCards.append(h("button", { class: "replay-card", "data-mode": mode.value, onclick: () => { replayMode = mode.value; updateMode(); } },
 			h("strong", {}, mode.label), h("span", { class: "form-hint" }, mode.description)));
 	}
 	app.append(modeCards);
 
-	const layout = h("div", { class: "CaseLayout CaseLayout--editing" });
+	const layout = h("div", { class: "CaseLayout" });
 	const left = h("section", { class: "grow" });
 	const right = h("section", { class: "grow" });
 
@@ -1697,7 +1586,7 @@ if(copy) {
 	const formBody = h("div", { class: "Box-body" });
 	formBody.append(
 		h("div", { class: "section-title" }, h("span", {}, "基本信息")),
-		field("案例名称 *", input("f-id", isNew ? "" : definition.id), "模块内唯一，例如 history-bun-install"),
+		field("案例 ID *", input("f-id", isNew ? "" : definition.id), "模块内唯一，例如 history-bun-install"),
 		field("描述", input("f-desc", definition.description ?? ""), "可选，例如：验证模型遵循历史上下文"),
 		field("标签", tagsEditor.element, "新增或选择已有标签，保存后生效。"),
 	);
@@ -1784,22 +1673,12 @@ if(copy) {
 	const ruleIntro = h("div", { class: "GradingWorkspace-intro" }, h("h3", {}, "如何判断评测通过？"), h("p", {}, "选择你要检查的内容。所有影响通过的检查都满足，才算本次评测通过。"), h("p", {class:"form-hint"}, "未配置内容检查时，系统仅检查是否正常结束，不能证明业务任务完成。"));
 	const goals = h("div", { class: "Grading-goals", "aria-label": "添加判定检查" });
 	const goal = (title: string, description: string, click: () => void) => { const button = verifierAction(title, click); button.classList.add("Grading-goal"); button.setAttribute("aria-label", title); button.append(h("span", {class:"form-hint"}, description)); return button; };
-	const replyFold=h("details",{class:"RuleSection"},h("summary",{},"最终回复检查"),replyChecks.element) as HTMLDetailsElement;
- const taskFold=h("details",{class:"RuleSection"},h("summary",{},"文件与脚本检查"),taskGrading.element) as HTMLDetailsElement;
- const judgeFold=h("details",{class:"RuleSection"},h("summary",{},"LLM 评分"),llmJudgeEditor.element) as HTMLDetailsElement;
- const replyGoal = goal("最终回复", "检查回复包含、不包含或匹配文字", () => {replyFold.open=true;replyChecks.open();});
-	const fileGoal = goal("文件产物", "检查交付文件和 JSON · 需要完整任务", () => {taskFold.open=true;taskGrading.openFiles();});
-	const scriptGoal = goal("Python 脚本", "自定义检查结果、会话与文件", () => {taskFold.open=true;taskGrading.addScript();});
-	goals.append(replyGoal, fileGoal, scriptGoal,goal("LLM 评分","提供参考答案，自选结果或轨迹，由独立模型评分",()=>{judgeFold.open=true;llmJudgeEditor.open();}));
+	const replyGoal = goal("最终回复", "检查回复包含、不包含或匹配文字", () => replyChecks.open());
+	const fileGoal = goal("文件产物", "检查交付文件和 JSON · 需要完整任务", () => taskGrading.openFiles());
+	const scriptGoal = goal("Python 脚本", "自定义检查结果、会话与文件", () => taskGrading.addScript());
+	goals.append(replyGoal, fileGoal, scriptGoal,goal("LLM 评分","提供参考答案，自选结果或轨迹，由独立模型评分",()=>llmJudgeEditor.open()));
 	const ruleAdvanced = verifierFold("高级判定设置"); ruleAdvanced.append(replyChecks.finishSettings, taskGrading.advanced);
-	rulesPage.append(ruleIntro, goals, replyFold, taskFold, judgeFold, ruleAdvanced);
- const refreshRuleSummaries=()=>{
-  const replyCount=[...replyChecks.element.querySelectorAll<HTMLTextAreaElement>("textarea")].reduce((n,t)=>n+t.value.split(/\r?\n/).filter(v=>v.trim()).length,0);
-  replyFold.querySelector("summary")!.textContent=`最终回复检查 · ${replyCount} 项`;
-  taskFold.querySelector("summary")!.textContent=`文件与脚本检查 · ${taskGrading.element.querySelectorAll(".Grading-rule").length} 项`;
-  judgeFold.querySelector("summary")!.textContent=`LLM 评分 · ${(llmJudgeEditor.element.querySelector("input[type=checkbox]") as HTMLInputElement).checked?"已启用":"未启用"}`;
- };
- rulesPage.addEventListener("input",refreshRuleSummaries);rulesPage.addEventListener("change",refreshRuleSummaries);rulesPage.addEventListener("click",()=>queueMicrotask(refreshRuleSummaries));refreshRuleSummaries();
+	rulesPage.append(ruleIntro, goals, replyChecks.element, taskGrading.element,llmJudgeEditor.element, ruleAdvanced);
 
 	left.append(panelTabs("case-editor", [
 		["输入", h("div", {}, form, historyBox, promptBox, functionChecks.element)],
@@ -1809,7 +1688,7 @@ if(copy) {
 	credBox.setAttribute("open", "");
 
 	// ---- right: result panel ----
-	const resultPanel = h("div", { class: "Box", hidden:true });
+	const resultPanel = h("div", { class: "Box" });
 	const resultHeader = h("div", { class: "Box-header flex-between" },
 		h("span", {}, "执行结果"),
 		h("div", { class: "flex-center gap-2" },
@@ -1821,8 +1700,8 @@ if(copy) {
 	resultBody.append(h("pre", { class: "output placeholder" }, "点击上方「单轮回放」或「多轮回放（完整任务）」开始调试。执行期间此处实时显示输出；结束后展示断言、工具轨迹、Token 与耗时。"));
 	resultPanel.append(resultHeader, resultBody);
 
-	const historyBox2 = h("details", { class: "Box mt-3" });
-	historyBox2.append(h("summary", { class: "Box-header" }, "最近执行与历史记录"));
+	const historyBox2 = h("div", { class: "Box mt-3" });
+	historyBox2.append(h("div", { class: "Box-header" }, "历史记录"));
 	const historyList = h("div", { class: "Box-body", id: "case-history" });
 	historyList.append(h("div", { class: "muted small" }, "加载中…"));
 	historyBox2.append(historyList);
@@ -1844,7 +1723,7 @@ if(copy) {
 		for (const card of modeCards.querySelectorAll<HTMLElement>("button")) {
 			card.setAttribute("aria-pressed", String(card.dataset.mode === replayMode));
 		}
-		document.getElementById("case-run")!.textContent = "运行草稿";
+		document.getElementById("case-run")!.textContent = `运行${replayLabel(replayMode)}`;
 		document.getElementById("prompt-title")!.textContent = single ? "本轮问题 *" : "任务指令 *";
 		document.getElementById("prompt-hint")!.textContent = `示例：${caseExample(replayMode).prompt}`;
 		document.getElementById("history-hint")!.hidden = hasNative;
@@ -1903,9 +1782,6 @@ if(copy) {
 	const readDefaultsFromForm = (): EvalDefaults => readConfig("f", true, replayMode === "full-task");
 	const initialEditorForm = structuredClone({ definition: readDefinitionFromForm(false), defaults: readDefaultsFromForm() });
  const savedForm = JSON.stringify(initialEditorForm);
- const draftStatus=h("span",{class:"muted small",role:"status"},copy?"修改仅应用于副本":"运行草稿不会自动保存");header.querySelector(".page-actions")?.prepend(draftStatus);
- const markDraft=()=>{draftStatus.textContent=copy?"副本有未应用的修改":"有未保存的修改 · 运行使用当前草稿";};
- layout.addEventListener("input",markDraft);layout.addEventListener("change",markDraft);modeCards.addEventListener("click",markDraft);
  if(copy)copy.dirty=()=>{try{return JSON.stringify({definition:readDefinitionFromForm(),defaults:readDefaultsFromForm()})!==savedForm;}catch{return true;}};
 
  function transferSaved(operation: "copy" | "move") {
@@ -1923,19 +1799,19 @@ if(copy) {
  }
 
 	const validateCaseForm = (): boolean => {
-		for (const error of app.querySelectorAll(".CaseFieldError")) error.remove();
+		for (const error of app.querySelectorAll(".field-error")) error.remove();
 		for (const control of app.querySelectorAll("[aria-invalid]")) control.removeAttribute("aria-invalid");
 		let first: HTMLElement | undefined;
 		const invalid = (id: string, message: string) => {
 			const control = document.getElementById(id)!;
 			control.setAttribute("aria-invalid", "true");
-			control.after(h("div", { class: "field-error CaseFieldError", role: "alert" }, message));
+			control.after(h("div", { class: "field-error", role: "alert" }, message));
 			const details = control.closest("details");
 			if (details) details.open = true;
 			first ??= control;
 		};
-		if (!val("f-id").trim()) invalid("f-id", "请填写案例名称，例如 安装依赖。");
-		else if (!copy && s.cases.some((c) => c.moduleId === module.id && c.id !== existing?.id && c.definition.id === val("f-id").trim())) invalid("f-id", "此模块已存在同名案例，请使用其他名称。");
+		if (!val("f-id").trim()) invalid("f-id", "请填写案例 ID，例如 history-bun-install。");
+		else if (!copy && s.cases.some((c) => c.moduleId === module.id && c.id !== existing?.id && c.definition.id === val("f-id").trim())) invalid("f-id", "此模块已存在相同案例 ID，请使用其他 ID。");
 		if (!val("f-prompt").trim()) invalid("f-prompt", replayMode === "single-turn" ? "请填写本轮问题。" : "请填写任务指令。");
 		for (const id of replayMode === "full-task" ? ["f-maxiter", "f-timeout"] : ["f-timeout"]) {
 			const value = Number(val(id));
@@ -2009,7 +1885,6 @@ if(copy) {
 				}),
 			});
 			inlineRunId = run.id;
-            resultPanel.hidden=false; layout.classList.remove("CaseLayout--editing"); resultPanel.scrollIntoView({block:"start"});
 			startInlinePoll(run.id, mode);
 		} catch (error) {
 			toast(error instanceof Error ? error.message : String(error), "error");
@@ -2186,7 +2061,7 @@ async function renderNewRun(app: HTMLElement): Promise<void> {
 	const scopeBody = h("div", { class: "Box-body" });
 	const moduleChecks = h("div", {});
 	const caseChecks = h("div", { class: "mt-3" });
-	const caseCheckLabel = h("div", { class: "section-title mt-2" }, h("span", {}, "选择范围内的案例（先选择模块）"));
+	const caseCheckLabel = h("div", { class: "section-title mt-2" }, h("span", {}, "案例微调（默认全部选中）"));
 	caseChecks.append(caseCheckLabel);
 	const caseList = h("div", { id: "run-case-list", class: "mt-2" });
 	caseChecks.append(caseList);
@@ -2218,7 +2093,6 @@ async function renderNewRun(app: HTMLElement): Promise<void> {
         runGesture?.reset();
 		caseList.replaceChildren();
 		const cases = s.cases.filter((c) => selectedModules.has(c.moduleId));
-        caseCheckLabel.textContent=cases.length?"选择案例（范围内默认全选）":"选择范围内的案例（先选择模块）";
         runSelection.clear(); cases.forEach(c=>{if(!excludedCases.has(c.id))runSelection.add(c.id);});
 		if (!cases.length) {
 			caseList.append(h("div", { class: "muted small" }, "未选择模块"));
@@ -2287,7 +2161,7 @@ async function renderNewRun(app: HTMLElement): Promise<void> {
 		const cases = s.cases.filter((c) => selectedModules.has(c.moduleId) && !excludedCases.has(c.id));
 		const perModule = new Map<string, number>();
 		for (const c of cases) perModule.set(c.moduleId, (perModule.get(c.moduleId) ?? 0) + 1);
-		preview.replaceChildren(h("div", { class: "flash flash-info" }, `${cases.length} 个案例 × ${Number(val("nr-repeat"))||1} 轮 = ${cases.length*(Number(val("nr-repeat"))||1)} 次执行${cases.length ? " · " : ""}${[...perModule.entries()].map(([id, count]) => `${s.modules.find((m) => m.id === id)?.name ?? id} ${count}`).join("、")}`));
+		preview.replaceChildren(h("div", { class: "flash flash-info" }, `将执行 ${cases.length} 个案例${cases.length ? "：" : ""} ${[...perModule.entries()].map(([id, count]) => `${s.modules.find((m) => m.id === id)?.name ?? id} ${count}`).join("、")}`));
 	};
 
 	const stepper = h("div", { class: "Steps", "aria-label": "新建评测步骤" });
@@ -2364,7 +2238,6 @@ async function renderNewRun(app: HTMLElement): Promise<void> {
 	useSettings.addEventListener("change", () => {
 		configFields.style.display = useSettings.checked ? "none" : "";
 	});
-	document.getElementById("nr-repeat")!.addEventListener("input",updatePreview);
 	const updateScope = (): void => { updatePreview(); };
 	for (const box of moduleChecks.querySelectorAll<HTMLInputElement>("input[type=checkbox]")) box.addEventListener("change", updateScope);
 	renderCaseChecks();
@@ -2452,7 +2325,7 @@ async function renderRuns(app: HTMLElement): Promise<void> {
 	table.append(tbody);
 	tableWrap.append(table);
 	app.append(tableWrap);
-	const emptyRow = h("tr", { hidden: true }, h("td", { colspan: 6, class: "empty" }, "没有匹配的评测批次"));
+	const emptyRow = h("tr", { hidden: true }, h("td", { colspan: 7, class: "empty" }, "没有匹配的评测批次"));
 	tbody.append(emptyRow);
 	const apply = () => {
 		let visible = 0;
@@ -2512,7 +2385,7 @@ async function rerunFailed(runId: string, itemIds?: string[]): Promise<void> {
 			);
 			message.textContent = `将在当前评测重试 ${caseCount} 个案例、${items.length} 次执行，使用原配置和验证脚本快照，保留全部历史。${direct ? "直接执行模式将再次操作原目录当前内容。" : ""}`;
 			submit.disabled = busy || !items.length;
-			submit.textContent = `重试 ${items.length} 次执行`;
+			submit.textContent = `确认重试 ${items.length} 次执行`;
 		};
 		const boxes: HTMLInputElement[] = [];
 		for (const [key, label] of reasons) {
@@ -2530,7 +2403,7 @@ async function rerunFailed(runId: string, itemIds?: string[]): Promise<void> {
 			}) as HTMLInputElement;
 			boxes.push(box);
 			reasonControls.append(
-				h("label", { class: "form-check" }, box, h("span",{class:"grow"},label), h("strong",{},count)),
+				h("label", { class: "form-check" }, box, `${label}（${count}）`),
 			);
 		}
 		const all = h(
@@ -2547,11 +2420,11 @@ async function rerunFailed(runId: string, itemIds?: string[]): Promise<void> {
 					update();
 				},
 			},
-			"全选可重试项",
+			"全部未通过",
 		);
 		const close = openModal({
 			title: "按失败原因重试",
-			body: h("div", {}, h("p",{class:"muted small"},"在当前批次重新执行，保留历史。"), reasonControls, h("div",{class:"flex-center gap-2"},all,h("button",{class:"btn btn-sm",onclick:()=>{if(busy||pendingBody)return;enabled.clear();boxes.forEach(box=>box.checked=false);update();}},"清空")), message, errorBox),
+			body: h("div", {}, reasonControls, all, message, errorBox),
 			beforeClose: () => !busy,
 			actions: (cancel) => [
 				h("button", { class: "btn", onclick: cancel }, "取消"),
@@ -2693,14 +2566,13 @@ async function renderRunDetail(app: HTMLElement, runId: string): Promise<void> {
 	const repeatReport = h("section", {});
 	const list = h("div", { class: "RunItems", "aria-label": "案例结果" });
 	const inspector = h("section", { class: "RunInspector", "aria-label": "选中案例详情" });
-	const filter = select("run-result-filter", [["", "全部结果"], ["issues", "仅看未通过"], ["running", "运行中"], ["queued", "排队中"], ["passed", "通过"], ["failed", "断言失败"], ["error", "执行错误"], ["inconclusive", "无法判定"], ["cancelled", "已取消"]], "");
+	const filter = select("run-result-filter", [["", "全部结果"], ["issues", "失败与错误"], ["running", "运行中"], ["queued", "排队中"], ["passed", "通过"], ["failed", "断言失败"], ["error", "执行错误"], ["inconclusive", "无法判定"], ["cancelled", "已取消"]], "");
 	const moduleFilter = select("run-module-filter", [["", "全部模块"], ...[...new Set(detail.items.map(i => i.moduleName))].map(name => [name, name] as [string, string])], "");
 	const roundFilter = select("run-round-filter", [["", "全部轮次"], ...Array.from({ length: detail.repeatCount ?? 1 }, (_, i) => [String(i + 1), `第 ${i + 1} 轮`] as [string, string])], "");
 	roundFilter.setAttribute("aria-label", "按重复轮次筛选");
 	filter.setAttribute("aria-label", "按执行结果筛选"); moduleFilter.setAttribute("aria-label", "按模块筛选");
-	const search = input("run-item-search", ""); search.setAttribute("placeholder", "搜索案例名称或描述…"); search.setAttribute("aria-label", "搜索批次案例");
+	const search = input("run-item-search", ""); search.setAttribute("placeholder", "搜索案例 ID 或描述…"); search.setAttribute("aria-label", "搜索批次案例");
 	const count = h("span", { class: "muted small" });
- const activeFilters=h("div",{class:"ActiveFilters", "aria-label":"已生效筛选"});
 	const rows = new Map<string, HTMLElement>();
 	let selectedId: string | undefined;
 	let itemView: ReturnType<typeof lazyItemInspector> | undefined;
@@ -2721,18 +2593,16 @@ async function renderRunDetail(app: HTMLElement, runId: string): Promise<void> {
 		const value = (filter as HTMLSelectElement).value;
 		const module = (moduleFilter as HTMLSelectElement).value;
 		const round = (roundFilter as HTMLSelectElement).value;
-		activeFilters.replaceChildren();
-        for(const control of [search,filter,moduleFilter,roundFilter]){const input=control as HTMLInputElement|HTMLSelectElement;if(!input.value)continue;const label=input instanceof HTMLSelectElement?input.selectedOptions[0].textContent:input.value;activeFilters.append(h("button",{class:"btn btn-sm FilterChip","aria-label":`移除筛选 ${label}`,onclick:()=>{input.value="";applyFilters();}},label," ×"));}
-        const effective = latestAttempts(detail.items);
-		const visible = effective.filter(i => (!round || (i.round ?? 1) === Number(round)) && (!value || (value === "issues" ? ["failed", "error", "inconclusive", "cancelled"].includes(i.status) : i.status === value)) && (!module || i.moduleName === module) && `${i.snapshot.definition.id} ${i.snapshot.definition.description ?? ""}`.toLowerCase().includes(query));
+		const effective = latestAttempts(detail.items);
+		const visible = effective.filter(i => (!round || (i.round ?? 1) === Number(round)) && (!value || (value === "issues" ? ["failed", "error", "inconclusive"].includes(i.status) : i.status === value)) && (!module || i.moduleName === module) && `${i.snapshot.definition.id} ${i.snapshot.definition.description ?? ""}`.toLowerCase().includes(query));
 		count.textContent = `${visible.length} / ${effective.length} 项结果`;
-		if (!visible.some(i => i.id === selectedId)) selectedId = (selectedId ? undefined : visible.find(i=>i.status==="running") ?? visible.find(i=>["failed","error","inconclusive","cancelled"].includes(i.status)))?.id ?? visible[0]?.id;
+		if (!visible.some(i => i.id === selectedId)) selectedId = visible[0]?.id;
 		for (const [id,row] of rows) { if (!effective.some(i=>i.id===id)) { row.remove();rows.delete(id); } }
         const visibleIds = new Set(visible.map(i=>i.id));
         for (const item of effective) {
 			let row = rows.get(item.id);
 			if (!row) {
-				row = h("button", { class: "RunItem", type: "button", onclick: () => { selectedId = item.id; if(window.matchMedia("(max-width:760px)").matches)mobileCases.open=false; applyFilters(); } });
+				row = h("button", { class: "RunItem", type: "button", onclick: () => { selectedId = item.id; applyFilters(); } });
 				rows.set(item.id, row); list.append(row);
 			}
 			row.hidden = !visibleIds.has(item.id);
@@ -2740,13 +2610,13 @@ async function renderRunDetail(app: HTMLElement, runId: string): Promise<void> {
 			const signature = JSON.stringify([item.status, item.phase, item.result?.durationMs, item.attempt,item.result?.llmJudge?.status,item.result?.llmJudge?.score]);
 			if (row.dataset.signature !== signature) {
 				row.dataset.signature = signature;
-				row.replaceChildren(h("span", { class: "RunItem-head" }, h("span", { class: "case-name" }, item.snapshot.definition.id), item.status === "running" && item.phase === "judging" ? badge("LLM 评分中","Label--attention") : item.status === "running" && item.phase === "verifying" ? badge("验证中", "Label--attention") : statusBadge(item.status)), h("span", { class: "muted small" }, [ (detail.repeatCount??1)>1?`第 ${item.round??1} 轮`:"", item.attempt?`重试 ${item.attempt} 次`:"", item.result?.llmJudge?`评分 ${item.result.llmJudge.score??JUDGE_STATUS[item.result.llmJudge.status]}`:"", fmtDuration(item.result?.durationMs)].filter(Boolean).join(" · ")));
+				row.replaceChildren(h("span", { class: "RunItem-head" }, h("span", { class: "case-name" }, item.snapshot.definition.id), item.status === "running" && item.phase === "judging" ? badge("LLM 评分中","Label--attention") : item.status === "running" && item.phase === "verifying" ? badge("验证中", "Label--attention") : statusBadge(item.status)), h("span", { class: "muted small" }, `第 ${item.round ?? 1} 轮 · 重试 ${item.attempt ?? 0} 次${item.result?.llmJudge ? ` · LLM ${item.result.llmJudge.score??JUDGE_STATUS[item.result.llmJudge.status]}`:""} · ${item.moduleName} · ${replayLabel(item.snapshot.definition.replayMode)} · ${fmtDuration(item.result?.durationMs)}`));
 			}
 		}
 		const current = detail.items.find(i => i.id === selectedId);
   const rootId = current?.rootItemId ?? current?.id;
   let attempts = attemptCache.get(rootId!)?.items ?? (current?[current]:[]);
-  if(current && (current.attempt??0)>0 && attemptCache.get(rootId!)?.latest!==current.id && !attemptsLoading.has(rootId!)){
+  if(current && attemptCache.get(rootId!)?.latest!==current.id && !attemptsLoading.has(rootId!)){
    attemptsLoading.add(rootId!);const key=rootId!,latest=current.id;
    void api<RunItem[]>(`/api/runs/${runId}/items/${latest}/attempts`).then(items=>{attemptCache.set(key,{latest,items});if(list.isConnected)applyFilters();}).catch(e=>toast(String(e),"error")).finally(()=>attemptsLoading.delete(key));
   }
@@ -2756,14 +2626,14 @@ async function renderRunDetail(app: HTMLElement, runId: string): Promise<void> {
 			inspector.replaceChildren(h("div", { class: "empty" }, h("div", { class: "empty-title" }, "没有匹配的案例"), h("div", { class: "empty-desc" }, "调整结果、模块或搜索条件后重试。")));
 			inspectorItem = undefined; return;
 		}
-		inspected=selected; pickerTitle.textContent=`切换案例 · ${current?.snapshot.definition.id??selected.snapshot.definition.id}`;
+		inspected=selected;
 		if (inspectorItem !== selected.id) {
 			itemView = lazyItemInspector(runId, selected);
    const history = select("item-attempt", attempts.map(i => [i.id, `${i.attempt ? `第 ${i.attempt} 次重试` : "首次执行"} · ${({queued:"排队中",running:"运行中",passed:"通过",failed:"失败",error:"执行错误",cancelled:"已取消",inconclusive:"无法判定"})[i.status]}`]), selected.id) as HTMLSelectElement;
    history.setAttribute("aria-label", "执行尝试历史");
    history.onchange = () => { attemptChoice.set(rootId!, history.value); inspectorItem = undefined; applyFilters(); };
    const retry = h("button", { class: "btn btn-sm", "data-item-retry":"true", disabled: ["queued", "running"].includes(detail.status) || !current || !canRetry(current), onclick: () => rerunFailed(runId, [current!.id]) }, "重试此案例");
-   inspector.replaceChildren(h("div", { class: "AttemptControls" }, history, retry), itemView.element); inspectorItem = selected.id;
+   inspector.replaceChildren(h("div", { class: "flex-center gap-2 wrap mb-2" }, history, retry), itemView.element); inspectorItem = selected.id;
 		} else {
 			itemView?.update(selected);
 		}
@@ -2771,7 +2641,6 @@ async function renderRunDetail(app: HTMLElement, runId: string): Promise<void> {
   if(retryButton)retryButton.disabled=["queued","running"].includes(detail.status)||!current||!canRetry(current);
   const history=inspector.querySelector<HTMLSelectElement>("#item-attempt");
   if(history){const signature=attempts.map(i=>i.id).join(",");if(history.dataset.attempts!==signature){history.replaceChildren(...attempts.map(i=>h("option",{value:i.id},`${i.attempt?`第 ${i.attempt} 次重试`:"首次执行"} · ${STATUS_META[i.status].label}`)));history.value=selected.id;history.dataset.attempts=signature;}}
-  if(history)history.hidden=attempts.length<2;
   if(history)for(const option of history.options){const attempt=attempts.find(i=>i.id===option.value);if(attempt)option.textContent=`${attempt.attempt ? `第 ${attempt.attempt} 次重试` : "首次执行"} · ${STATUS_META[attempt.status].label}`;}
 
 	};
@@ -2792,19 +2661,17 @@ async function renderRunDetail(app: HTMLElement, runId: string): Promise<void> {
 				catch (error) { toast(String(error), "error"); }
 			} }, "停止评测"));
 			else if (value.failed + value.error + value.inconclusive + value.cancelled > 0) actions.append(h("button", { class: "btn btn-primary", onclick: () => rerunFailed(runId) }, "重试未通过案例"));
-   actions.append(actionMenu("导出", [["JSON 数据",()=>download(`/api/runs/${runId}/export?format=json`)],["CSV 表格",()=>download(`/api/runs/${runId}/export?format=csv`)],["Markdown 简报",()=>download(`/api/runs/${runId}/export?format=markdown`)]]));
-   if(!running)actions.append(actionMenu("更多",[["重复评测（新批次）",()=>repeatBatch(detail)]]));
+			actions.append(h("button", { class: "btn", onclick: () => download(`/api/runs/${runId}/export?format=json`) }, "导出 JSON"), h("button", { class: "btn", onclick: () => download(`/api/runs/${runId}/export?format=csv`) }, "导出 CSV"));
+			actions.append(h("button", { class: "btn", onclick: () => download(`/api/runs/${runId}/export?format=markdown`) }, "导出简报"));
+			if (!running) actions.append(h("button", { class: "btn", onclick: () => repeatBatch(detail) }, "重复评测本批次"));
 		}
   const metrics = gradingMetrics(run.gradingSummary??gradingSummary(run.items));
   const fold = metrics.querySelector("details"); if(fold){ fold.open=metricsOpen;fold.ontoggle=()=>{if(fold.isConnected)metricsOpen=fold.open;}; }
-  const statistics=metrics.querySelector("details")!;
-  statistics.append(h("p",{class:"form-hint"},`被测执行 · 累计耗时 ${fmtDuration(value.durationMs)} · Token ${fmtTokens(value.tokens)} · 费用 ${value.cost === null ? "未提供" : fmtCost(value.cost)}`));
-  const j=run.judgeSummary??judgeSummary(run.items);
-  if(j.expected)statistics.append(h("p",{class:"form-hint"},`Judge · 耗时 ${fmtDuration(j.durationMs)} · Token ${j.inputTokens+j.outputTokens} · 费用 ${j.cost===null?"未提供":fmtCost(j.cost)}`),...j.groups.map(g=>h("p",{class:"form-hint"},`${g.model} · ${g.rubric}：均分 ${g.average.toFixed(1)}/100（${g.scored} 次）`)));
   summary.replaceChildren(
    metrics,
-   h("div", { class:"RunSummary-attention" },h("span",{class:"muted small"},"需要关注"), h("div", { class: "RunSummary-counts" }, ...(["failed", "error", "inconclusive", "cancelled", "running", "queued"] as const).filter(key => value[key] > 0).map(key => h("span", { class: "flex-center gap-1" }, statusBadge(key), h("b", {}, String(value[key]))))),value.failed+value.error+value.inconclusive+value.cancelled+value.running+value.queued===0?h("p",{class:"muted"},"全部通过"):null),
-   h("div",{class:"RunSummary-progress"},j.expected?h("div",{class:"JudgeSummary"},h("strong",{},`评分 ${j.scored} / ${j.expected}`),h("p",{class:"muted small"},[j.unscored?`未评分 ${j.unscored}`:"",j.errors?`错误 ${j.errors}`:"",j.insufficient?`信息不足 ${j.insufficient}`:""].filter(Boolean).join(" · "))):null,h("p",{class:"muted small"},`已结束 ${settled} / ${value.total} · 重试 ${value.retryCount??run.items.filter(i=>(i.attempt??0)>0).length} 次`)),statusBar(value)
+   ...(() => {const j=run.judgeSummary??judgeSummary(run.items);return j.expected?[h("div",{class:"JudgeSummary"},h("strong",{},`LLM 已评分 ${j.scored}/${j.expected}`),h("span",{class:"muted small"},` · 未评分 ${j.unscored}${j.errors?` · 错误 ${j.errors}`:""}${j.insufficient?` · 信息不足 ${j.insufficient}`:""} · 评分耗时 ${fmtDuration(j.durationMs)} · 评分 Token ${j.inputTokens+j.outputTokens} · 评分费用 ${j.cost===null?"未提供":fmtCost(j.cost)}`),h("details",{class:"Verifier-details"},h("summary",{},"Judge 分组均分"),...j.groups.map(g=>h("p",{},`${g.model} · ${g.rubric}：${g.average.toFixed(1)}/100（${g.scored} 次）`))))]:[];})(),
+   h("div", { class: "RunSummary-counts", hidden: value.failed + value.error + value.inconclusive + value.cancelled + value.running + value.queued === 0 }, ...(["failed", "error", "inconclusive", "cancelled", "running", "queued"] as const).filter(key => value[key] > 0).map(key => h("span", { class: "flex-center gap-1" }, statusBadge(key), h("b", {}, String(value[key]))))),
+   h("div", { class: "RunSummary-meta muted small" }, `已结束 ${settled} / ${value.total} · 重试 ${value.retryCount??run.items.filter(i => (i.attempt ?? 0) > 0).length} 次 · 累计执行耗时 ${fmtDuration(value.durationMs)} · Token ${fmtTokens(value.tokens)} · 费用 ${value.cost === null ? "未提供" : fmtCost(value.cost)}`), statusBar(value),
   );
 		const table = h("table", { class: "Table" }, h("thead", {}, h("tr", {}, ...["模块", "通过 / 总数", "判定明细", "失败 / 错误 / 未判定", "累计执行耗时"].map(label => h("th", {}, label)))));
 		const body = h("tbody", {});
@@ -2816,17 +2683,8 @@ async function renderRunDetail(app: HTMLElement, runId: string): Promise<void> {
 		if(!repeatReport.closest<HTMLElement>("[role=tabpanel]")?.hidden&&reportLoadedRevision!==run.revision)void loadReport();
 		applyFilters();
 	};
- const mobileCases=h("details",{class:"MobileCasePicker"}) as HTMLDetailsElement;
- const pickerTitle=h("summary",{},"切换案例");
- const filterPanel=h("details",{class:"RunFilterPanel"},h("summary",{},"筛选案例"),h("div",{class:"ResultFilters"},search,filter,moduleFilter,...((detail.repeatCount??1)>1?[roundFilter]:[]),count)) as HTMLDetailsElement;
- mobileCases.append(pickerTitle,list);
- const mobile=window.matchMedia("(max-width:760px)");
- const responsive=()=>{mobileCases.open=!mobile.matches;filterPanel.open=!mobile.matches;};responsive();
- mobile.addEventListener("change",responsive);
- const responsiveCleanup=new MutationObserver(()=>{if(!mobileCases.isConnected){mobile.removeEventListener("change",responsive);responsiveCleanup.disconnect();}});responsiveCleanup.observe(document.body,{childList:true,subtree:true});
-
- const results = h("section", {}, filterPanel, activeFilters, h("div", { class: "RunWorkbench" }, mobileCases, inspector));
-	app.append(h("div", { class: "crumbs" }, h("a", { href: "#/runs" }, "评测批次"), h("span", {}, "/"), h("span", {}, runId.slice(0, 8))), h("div", { class: "page-head flex-between wrap gap-3" }, h("div", {}, h("div", { class: "flex-center gap-2 wrap" }, title, status), h("p", { class: "page-desc" }, `${detail.items[0]?.snapshot.defaults.modelId??""} · ${fmtTime(detail.createdAt)}${(detail.repeatCount??1)>1?` · ${detail.repeatCount} 轮`:""} · 并发 ${detail.concurrency}${detail.note ? ` · ${detail.note}` : ""}`)), actions), summary, panelTabs("run-detail", [["案例结果", results], ["多轮报告", h("div", {}, field("统计结果", reportMode), repeatReport)], ["模块统计", stats]]));
+	const results = h("section", {}, h("div", { class: "ResultFilters" }, search, filter, moduleFilter, roundFilter, count), h("div", { class: "RunWorkbench" }, list, inspector));
+	app.append(h("div", { class: "crumbs" }, h("a", { href: "#/runs" }, "评测批次"), h("span", {}, "/"), h("span", {}, runId.slice(0, 8))), h("div", { class: "page-head flex-between wrap gap-3" }, h("div", {}, h("div", { class: "flex-center gap-2 wrap" }, title, status), h("p", { class: "page-desc" }, `创建于 ${fmtTime(detail.createdAt)} · ${detail.repeatCount ?? 1} 轮 · 并发 ${detail.concurrency}${detail.note ? ` · ${detail.note}` : ""}`)), actions), summary, panelTabs("run-detail", [["案例结果", results], ["多轮报告", h("div", {}, field("统计结果", reportMode), repeatReport)], ["模块统计", stats]]));
 	search.addEventListener("input", applyFilters); filter.addEventListener("change", applyFilters); moduleFilter.addEventListener("change", applyFilters); roundFilter.addEventListener("change", applyFilters);
 	update(detail);
 	const resume=()=>{stopPolling();activePoll=pollRun(runId,update,undefined,detail);};
@@ -2878,20 +2736,17 @@ function createItemInspector(runId: string, initial: RunItem) {
 	const tabs = h("div", { class: "tab-bar", "aria-label": "案例详情视图" });
 	const progress = h("div");
 	const sync = syncStatus(runId);
-	const parked=h("div",{hidden:true});
- const element = h("div", {}, title, progress, sync, tabs, content,parked);
- let judgeContent:HTMLElement|undefined, judgeKey="";
+	const element = h("div", {}, title, meta, progress, sync, tabs, content);
 	let conversation: ReturnType<typeof conversationView> | undefined;
 	let trial: ReturnType<typeof verifierTrial> | undefined;
-	const labels = [["result", "结果"], ["conversation", "会话"], ...((initial.snapshot.definition.llmJudge?.enabled || initial.result?.llmJudge)?[["judge","评分"]]:[])];
- const extraLabels=[["input","输入与配置"],["tools","工具诊断"],["artifacts","文件产物"],["verification","脚本试验证"]];
+	const labels = [["result", "结果与断言"], ["judge","LLM 评分"], ["conversation", "会话记录"], ["verification", "脚本试验证"], ["input", "输入快照"], ["tools", "工具诊断"], ["artifacts", "文件产物"]];
 	const setHeader = () => {
 		title.replaceChildren(h("span", {}, item.snapshot.definition.id), statusBadge(item.status));
-		meta.replaceChildren(h("span", {}, `v${item.snapshot.revision} · ${item.snapshot.defaults.modelId} · ${replayLabel(item.snapshot.definition.replayMode)}`));
+		meta.replaceChildren(h("span", {}, `v${item.snapshot.revision} · ${item.snapshot.defaults.modelId} · ${replayLabel(item.snapshot.definition.replayMode)}`), sessionIdLabel(item.sessionId ?? item.result?.sessionId));
 		const expanded = progress.querySelector("details")?.open;
 		const active = ["queued","running"].includes(item.status);
         const execution = active ? h("div") : h("details", {class:"Verifier-details"},h("summary",{},"执行详情"));
-        execution.append(meta, sessionIdLabel(item.sessionId ?? item.result?.sessionId), executionStatus(item)); progress.replaceChildren(execution);
+        execution.append(executionStatus(item)); progress.replaceChildren(execution);
 		if(item.snapshot.definition.replayMode === "full-task" && item.workspace) { const mode = item.result?.workspaceInfo?.mode ?? (item.snapshot.definition.workspace ?? item.snapshot.defaults.workspace)?.mode ?? "copy"; execution.append(h("p", {class:"muted small"}, `${mode === "direct" ? "直接执行" : "复制后执行"} · 实际目录：${item.workspace}`)); }
 		const details = progress.querySelector("details"); if (details && expanded) details.open = true;
 	};
@@ -2903,17 +2758,15 @@ function createItemInspector(runId: string, initial: RunItem) {
 		const currentRevision = ++revision;
 		const result = item.result;
 		if (tab !== "verification") trial?.suspend();
-		for (const b of tabs.querySelectorAll<HTMLButtonElement>("button[data-tab]")) { b.classList.toggle("active", b.dataset.tab === tab); b.setAttribute("aria-pressed", String(b.dataset.tab === tab)); }
-        const more=tabs.querySelector<HTMLButtonElement>(".ActionMenu-anchor > button");if(more){const current=extraLabels.find(([key])=>key===tab);more.textContent=`${current?.[1]??"更多视图"} ▾`;more.classList.toggle("active",!!current);}
-if(judgeContent&&content.contains(judgeContent))parked.append(judgeContent);
+		for (const b of tabs.querySelectorAll("button")) { b.classList.toggle("active", b.dataset.tab === tab); b.setAttribute("aria-pressed", String(b.dataset.tab === tab)); }
 		content.replaceChildren();
 		if (tab === "result") {
 			const reason = item.error ?? result?.error ?? (item.status === "failed" ? result?.assertions.filter(a => !a.passed).map(a => a.message).join("；") || "断言未通过" : "");
 			if (reason) content.append(flash(reason, item.status === "error" ? "warning" : "error"));
-            if(result?.llmJudge){const j=result.llmJudge;content.append(h("div",{class:"JudgeStrip"},h("strong",{},j.status==="scored"?`评分 ${j.score}/100`:JUDGE_STATUS[j.status]),h("span",{class:"muted small"},j.affectsOutcome?j.status==="scored"?`及格分 ${j.passScore} · ${j.meetsThreshold?"达标":"未达标"}`:"参与通过判定":"仅评分"),h("button",{class:"btn btn-sm",onclick:()=>{tab="judge";void renderTab();}},"查看依据")));}
+            if(result?.llmJudge)content.append(judgeResultPanel(result.llmJudge,()=>api(`/api/runs/${runId}/items/${item.id}/judge-scores/official-input`)));
 			if (result && (result.functionCallResponse || item.snapshot.definition.replayMode === "function-call")) content.append(modelResponse(result));
 			else if (result && !["error", "cancelled"].includes(item.status)) content.append(h("div", { class: "section-title mt-3" }, "最终回复"), h("pre", { class: "output" }, result.text || "（无文本回复）"));
-			if (result) {const checks=h("details",{class:"Verifier-details"},h("summary",{},`回复检查明细 · ${result.assertions.filter(a=>a.passed).length}/${result.assertions.length}`));renderAssertions(checks,result);if(result.assertions.length)content.append(checks);}
+			if (result) renderAssertions(content, result);
 
 			if (result) content.append(gradingPanel(result, async id => api(`/api/runs/${runId}/items/${item.id}/evidence/${id}`), { rules: item.snapshot.definition.grading?.rules, verifiers: item.verifierSnapshots, caseUrl: item.snapshot.revision > 0 ? `#/case/${item.snapshot.id}?tab=grading` : undefined }));
 			if (!result || ["error", "cancelled"].includes(item.status)) {
@@ -2923,14 +2776,11 @@ if(judgeContent&&content.contains(judgeContent))parked.append(judgeContent);
 			if (result) content.append(h("div", { class: "metric-row mt-3" }, ...[["耗时", fmtDuration(result.durationMs)], ["迭代", String(result.iterations)], ["输入 Token", fmtTokens(result.usage.inputTokens)], ["输出 Token", fmtTokens(result.usage.outputTokens)], ["费用", fmtCost(result.usage.totalCost)]].map(([label, value]) => h("span", { class: "metric" }, label + " ", h("b", {}, value)))));
 		} else if (tab === "conversation") {
 			conversation ??= conversationView(runId, item.id); content.append(conversation.element); conversation.refresh();
-  } else if(tab === "judge"){
-   const key=JSON.stringify([item.status,result?.llmJudge?.id,result?.llmJudge?.status]);
-   if(!judgeContent||judgeKey!==key){judgeContent?.remove();judgeContent=h("section");judgeKey=key;
-    if(result?.llmJudge)judgeContent.append(judgeResultPanel(result.llmJudge,()=>api(`/api/runs/${runId}/items/${item.id}/judge-scores/official-input`)));
-    const config=item.snapshot.definition.llmJudge;
-    if(config?.enabled&&!['queued','running'].includes(item.status))judgeContent.append(judgeTrial({api,config,runId,itemId:item.id}));
-    else judgeContent.append(h("p",{class:"form-hint"},config?.enabled?"执行结束后可使用本次材料试评分。":"本次执行未启用 LLM 评分。可在案例判定规则中配置参考答案，再选择历史试评分。"));
-   }content.append(judgeContent);
+		} else if(tab === "judge"){
+   if(result?.llmJudge)content.append(judgeResultPanel(result.llmJudge,()=>api(`/api/runs/${runId}/items/${item.id}/judge-scores/official-input`)));
+   const config=item.snapshot.definition.llmJudge;
+   if(config?.enabled&&!['queued','running'].includes(item.status))content.append(judgeTrial({api,config,runId,itemId:item.id}));
+   else content.append(h("p",{class:"form-hint"},config?.enabled?"执行结束后可使用本次材料试评分。":"本次执行未启用 LLM 评分。可在案例判定规则中配置参考答案，再选择历史试评分。"));
 		} else if (tab === "verification") {
 			trial ??= verifierTrial({ runId, itemId: item.id }); content.append(trial.element); trial.resume();
 		} else if (tab === "input") {
@@ -2965,8 +2815,7 @@ if(judgeContent&&content.contains(judgeContent))parked.append(judgeContent);
   if(sameTab&&currentRevision===revision){for(const details of content.querySelectorAll<HTMLDetailsElement>("details"))if(expanded.has(details.querySelector("summary")?.textContent))details.open=true;content.scrollTop=scroll;}
 	};
 	for (const [key, label] of labels) tabs.append(h("button", { type: "button", "data-tab": key, onclick: () => { tab = key; void renderTab(); } }, label));
-	tabs.append(actionMenu("更多视图",extraLabels.map(([key,label]):[string,()=>void]=>[label,()=>{tab=key;void renderTab();}])));
- setHeader(); void renderTab();
+	setHeader(); void renderTab();
 	return { element, update(next: RunItem) {
 		const previous = item; item = next; setHeader();
 		if (tab === "conversation") { conversation?.refresh(previous.status !== next.status); return; }
@@ -2996,140 +2845,42 @@ async function renderSettings(app: HTMLElement): Promise<void> {
 	app.append(loading());
 	let s: StateResponse;
 	try {
-		s = {
-			modules: [],
-			cases: [],
-			runs: [],
-			latest: {},
-			settings: await api<EvalDefaults>("/api/settings"),
-		};
+		s = { modules: [], cases: [], runs: [], latest: {}, settings: await api<EvalDefaults>("/api/settings") };
 	} catch (error) {
-		app.replaceChildren(
-			flash(error instanceof Error ? error.message : String(error)),
-		);
+		app.replaceChildren(flash(error instanceof Error ? error.message : String(error)));
 		return;
 	}
 	state = s;
 
 	app.replaceChildren();
-	app.append(
-		h(
-			"div",
-			{ class: "page-head" },
-			h("h1", { class: "page-title" }, "运行配置"),
-			h(
-				"p",
-				{ class: "page-desc" },
-				"全局默认 Provider / 模型 / 工具 / 超时，新建案例与批量评测时作为默认值",
-			),
-		),
-	);
+	app.append(h("div", { class: "page-head" },
+		h("h1", { class: "page-title" }, "运行配置"),
+		h("p", { class: "page-desc" }, "全局默认 Provider / 模型 / 工具 / 超时，新建案例与批量评测时作为默认值"),
+	));
 
+	const box = h("div", { class: "Box" });
 	const body = h("div", { class: "Box-body" });
-	body.append(
-		h(
-			"p",
-			{ class: "form-hint mb-3" },
-			"全局配置用于新建案例。已保存的案例保留自己的配置；启动评测时可覆盖默认值，并在确认页检查最终生效参数。",
-		),
-	);
+	body.append(h("p", { class: "form-hint mb-3" }, "全局配置用于新建案例。已保存的案例保留自己的配置；启动评测时可覆盖默认值，并在确认页检查最终生效参数。"));
 	appendConfigFields(body, "set", s.settings, true);
-	const sections = [...body.querySelectorAll<HTMLElement>(".ConfigSection")];
-	const saveSettings = (label: string) =>
-		h(
-			"button",
-			{
-				class: "btn btn-primary",
-				onclick: async () => {
-					try {
-						await api("/api/settings", {
-							method: "PUT",
-							headers: JSON_HEADERS,
-							body: JSON.stringify(readConfig("set", true)),
-						});
-						toast("被测模型与执行默认值已保存");
-					} catch (error) {
-						revealInvalid(app);
-						toast(String(error), "error");
-					}
-				},
-			},
-			label,
-		);
-	const modelPanel = h(
-		"section",
-		{ class: "SettingsPanel Box Box-body" },
-		h(
-			"p",
-			{ class: "form-hint" },
-			"新建案例使用这里的默认值；已保存案例保留各自配置。保存同时保留执行默认值。",
-		),
-		sections[0],
-		saveSettings("保存被测模型与执行默认值"),
-	);
-	const executionPanel = h(
-		"section",
-		{ class: "SettingsPanel Box Box-body" },
-		h(
-			"p",
-			{ class: "form-hint" },
-			"与被测模型共用一份运行配置，保存时合并保留两个分区的填写内容。",
-		),
-		sections[1],
-		saveSettings("保存被测模型与执行默认值"),
-	);
-	const judgeBox = h(
-		"section",
-		{ class: "Box Box-body mt-3" },
-		h("h2", { class: "section-title" }, "全局 Judge 默认模型"),
-		h(
-			"p",
-			{ class: "form-hint" },
-			"只用于主动选择此配置的 LLM 评分；保存案例后使用快照，不随全局设置变化。",
-		),
-	);
-	app.append(
-		panelTabs("settings", [
-			["被测模型", modelPanel],
-			["执行默认值", executionPanel],
-			["Judge 默认模型", judgeBox],
-		]),
-	);
-	try {
-		const initial = await api<JudgeModel | null>("/api/judge-settings");
-		if (!judgeBox.isConnected) return;
-		const editor = judgeModelEditor(
-			"global-judge",
-			initial ?? undefined,
-			api,
-			undefined,
-			false,
-		);
-		judgeBox.append(
-			editor.element,
-			h(
-				"button",
-				{
-					class: "btn btn-primary mt-3",
-					onclick: async () => {
-						try {
-							await api("/api/judge-settings", {
-								method: "PUT",
-								headers: JSON_HEADERS,
-								body: JSON.stringify(editor.read()),
-							});
-							toast("Judge 默认配置已保存");
-						} catch (error) {
-							toast(String(error), "error");
-						}
-					},
-				},
-				"保存 Judge 默认配置",
-			),
-		);
-	} catch (error) {
-		judgeBox.append(flash(String(error)));
-	}
+	box.append(body);
+	app.append(box);
+	app.append(h("div", { class: "wizard-actions" },
+		h("button", { class: "btn btn-primary", onclick: async () => {
+			try {
+				const settings = readConfig("set", true);
+				await api("/api/settings", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(settings) });
+				toast("配置已保存");
+			} catch (error) { toast(error instanceof Error ? error.message : String(error), "error"); }
+		} }, "保存配置"),
+	));
+ const judgeBox=h("section",{class:"Box Box-body mt-3"},h("h2",{class:"section-title"},"全局 Judge 默认模型"),h("p",{class:"form-hint"},"只用于主动选择此配置的 LLM 评分；保存案例后使用快照，不随全局设置变化。"));
+ app.append(judgeBox);
+ try{
+  const initial=await api<JudgeModel|null>("/api/judge-settings");
+  if(!judgeBox.isConnected)return;
+  const editor=judgeModelEditor("global-judge",initial??undefined,api,undefined,false);judgeBox.append(editor.element,h("button",{class:"btn btn-primary mt-3",onclick:async()=>{try{await api("/api/judge-settings",{method:"PUT",headers:JSON_HEADERS,body:JSON.stringify(editor.read())});toast("Judge 默认配置已保存");}catch(error){toast(String(error),"error");}}},"保存 Judge 默认配置"));
+ }catch(error){judgeBox.append(flash(String(error)));}
+
 }
 
 /* ----------------------------- Boot ----------------------------- */
