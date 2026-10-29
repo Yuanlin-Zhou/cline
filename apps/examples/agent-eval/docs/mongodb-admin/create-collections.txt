@@ -1,0 +1,806 @@
+use agent_eval
+
+db.runCommand({
+  "create": "agent_eval_cases",
+  "validator": {
+    "$jsonSchema": {
+      "bsonType": "object",
+      "required": [
+        "_id",
+        "schemaVersion",
+        "moduleId",
+        "revision",
+        "archived",
+        "createdAt",
+        "updatedAt",
+        "definition",
+        "defaults"
+      ],
+      "properties": {
+        "_id": {
+          "bsonType": "string",
+          "minLength": 1
+        },
+        "schemaVersion": {
+          "enum": [
+            1
+          ]
+        },
+        "moduleId": {
+          "bsonType": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "bsonType": [
+            "int",
+            "long",
+            "double"
+          ],
+          "minimum": 1,
+          "multipleOf": 1
+        },
+        "archived": {
+          "bsonType": "bool"
+        },
+        "createdAt": {
+          "bsonType": "date"
+        },
+        "updatedAt": {
+          "bsonType": "date"
+        },
+        "definition": {
+          "bsonType": "object",
+          "required": [
+            "id",
+            "replayMode",
+            "prompt",
+            "history"
+          ],
+          "properties": {
+            "id": {
+              "bsonType": "string",
+              "minLength": 1
+            },
+            "llmJudge": {
+              "bsonType": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "bsonType": "bool"
+                },
+                "referenceAnswer": {
+                  "bsonType": "string",
+                  "maxLength": 65536
+                },
+                "rubric": {
+                  "bsonType": "string",
+                  "maxLength": 16384
+                },
+                "targets": {
+                  "bsonType": "array",
+                  "maxItems": 2,
+                  "uniqueItems": true,
+                  "items": {
+                    "enum": [
+                      "result",
+                      "trajectory"
+                    ]
+                  }
+                },
+                "model": {
+                  "bsonType": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "providerId": {
+                      "bsonType": "string"
+                    },
+                    "modelId": {
+                      "bsonType": "string"
+                    },
+                    "baseUrl": {
+                      "bsonType": "string"
+                    },
+                    "apiKeyEnv": {
+                      "bsonType": "string"
+                    },
+                    "headers": {
+                      "bsonType": "object",
+                      "additionalProperties": {
+                        "bsonType": "string"
+                      }
+                    },
+                    "headersEnv": {
+                      "bsonType": "object",
+                      "additionalProperties": {
+                        "bsonType": "string"
+                      }
+                    }
+                  }
+                },
+                "affectsOutcome": {
+                  "bsonType": "bool"
+                },
+                "passScore": {
+                  "bsonType": [
+                    "int",
+                    "long",
+                    "double"
+                  ],
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "timeoutMs": {
+                  "bsonType": [
+                    "int",
+                    "long",
+                    "double"
+                  ],
+                  "minimum": 1000,
+                  "maximum": 300000
+                },
+                "maxInputBytes": {
+                  "bsonType": [
+                    "int",
+                    "long",
+                    "double"
+                  ],
+                  "minimum": 1024,
+                  "maximum": 1048576
+                },
+                "resultFiles": {
+                  "bsonType": "array",
+                  "maxItems": 20,
+                  "uniqueItems": true,
+                  "items": {
+                    "bsonType": "string"
+                  }
+                }
+              }
+            },
+            "workspace": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "mode": {
+                      "enum": [
+                        "copy"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "mode": {
+                      "enum": [
+                        "direct"
+                      ]
+                    }
+                  },
+                  "not": {
+                    "required": [
+                      "copyRoot"
+                    ]
+                  }
+                }
+              ],
+              "bsonType": "object",
+              "required": [
+                "mode"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "copy",
+                    "direct"
+                  ]
+                },
+                "copyRoot": {
+                  "bsonType": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "replayMode": {
+              "enum": [
+                "single-turn",
+                "full-task",
+                "function-call"
+              ]
+            },
+            "prompt": {
+              "bsonType": "string",
+              "minLength": 1
+            },
+            "functionCall": {
+              "bsonType": "object",
+              "required": [
+                "tools"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "tools": {
+                  "bsonType": "array",
+                  "minItems": 1,
+                  "maxItems": 6,
+                  "uniqueItems": true,
+                  "items": {
+                    "enum": [
+                      "read_files",
+                      "search_codebase",
+                      "run_commands",
+                      "fetch_web_content",
+                      "editor",
+                      "skills"
+                    ]
+                  }
+                },
+                "toolChoice": {
+                  "enum": [
+                    "auto",
+                    "required",
+                    "read_files",
+                    "search_codebase",
+                    "run_commands",
+                    "fetch_web_content",
+                    "editor",
+                    "skills"
+                  ]
+                },
+                "history": {
+                  "bsonType": "array",
+                  "maxItems": 500,
+                  "items": {
+                    "bsonType": "object",
+                    "required": [
+                      "role"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "role": {
+                        "enum": [
+                          "system",
+                          "developer",
+                          "user",
+                          "assistant",
+                          "tool"
+                        ]
+                      },
+                      "content": {
+                        "bsonType": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "name": {
+                        "bsonType": "string",
+                        "minLength": 1
+                      },
+                      "tool_call_id": {
+                        "bsonType": "string",
+                        "minLength": 1
+                      },
+                      "tool_calls": {
+                        "bsonType": "array",
+                        "minItems": 1,
+                        "items": {
+                          "bsonType": "object",
+                          "required": [
+                            "id",
+                            "type",
+                            "function"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "id": {
+                              "bsonType": "string",
+                              "minLength": 1
+                            },
+                            "type": {
+                              "enum": [
+                                "function"
+                              ]
+                            },
+                            "function": {
+                              "bsonType": "object",
+                              "required": [
+                                "name",
+                                "arguments"
+                              ],
+                              "additionalProperties": false,
+                              "properties": {
+                                "name": {
+                                  "bsonType": "string",
+                                  "minLength": 1
+                                },
+                                "arguments": {
+                                  "bsonType": "string"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "oneOf": [
+                      {
+                        "properties": {
+                          "role": {
+                            "enum": [
+                              "system",
+                              "developer",
+                              "user"
+                            ]
+                          },
+                          "content": {
+                            "bsonType": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "content"
+                        ],
+                        "not": {
+                          "anyOf": [
+                            {
+                              "required": [
+                                "tool_calls"
+                              ]
+                            },
+                            {
+                              "required": [
+                                "tool_call_id"
+                              ]
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "properties": {
+                          "role": {
+                            "enum": [
+                              "assistant"
+                            ]
+                          }
+                        },
+                        "not": {
+                          "required": [
+                            "tool_call_id"
+                          ]
+                        },
+                        "anyOf": [
+                          {
+                            "required": [
+                              "content"
+                            ],
+                            "properties": {
+                              "content": {
+                                "bsonType": "string",
+                                "minLength": 1
+                              }
+                            }
+                          },
+                          {
+                            "required": [
+                              "tool_calls"
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "properties": {
+                          "role": {
+                            "enum": [
+                              "tool"
+                            ]
+                          },
+                          "content": {
+                            "bsonType": "string"
+                          }
+                        },
+                        "required": [
+                          "content",
+                          "tool_call_id"
+                        ],
+                        "not": {
+                          "required": [
+                            "tool_calls"
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                },
+                "historySource": {
+                  "bsonType": "object",
+                  "required": [
+                    "format",
+                    "notices",
+                    "messages"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "format": {
+                      "enum": [
+                        "cline",
+                        "openai",
+                        "type-data"
+                      ]
+                    },
+                    "sessionId": {
+                      "bsonType": "string",
+                      "minLength": 1
+                    },
+                    "notices": {
+                      "bsonType": "array",
+                      "items": {
+                        "bsonType": "string"
+                      }
+                    },
+                    "messages": {
+                      "bsonType": "array",
+                      "maxItems": 500,
+                      "items": {
+                        "bsonType": "object",
+                        "required": [
+                          "index",
+                          "sourceIndex"
+                        ],
+                        "additionalProperties": false,
+                        "properties": {
+                          "index": {
+                            "bsonType": [
+                              "int",
+                              "long",
+                              "double"
+                            ],
+                            "minimum": 0,
+                            "multipleOf": 1
+                          },
+                          "sourceIndex": {
+                            "bsonType": [
+                              "int",
+                              "long",
+                              "double"
+                            ],
+                            "minimum": 0,
+                            "multipleOf": 1
+                          },
+                          "blockIndex": {
+                            "bsonType": [
+                              "int",
+                              "long",
+                              "double"
+                            ],
+                            "minimum": 0,
+                            "multipleOf": 1
+                          },
+                          "id": {
+                            "bsonType": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "tags": {
+              "bsonType": "array",
+              "items": {
+                "bsonType": "string",
+                "minLength": 1
+              }
+            },
+            "history": {
+              "bsonType": "array",
+              "items": {
+                "bsonType": "object",
+                "required": [
+                  "role",
+                  "content"
+                ],
+                "properties": {
+                  "role": {
+                    "enum": [
+                      "user",
+                      "assistant"
+                    ]
+                  },
+                  "content": {
+                    "bsonType": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "defaults": {
+          "bsonType": "object",
+          "required": [
+            "providerId",
+            "modelId"
+          ],
+          "properties": {
+            "providerId": {
+              "bsonType": "string",
+              "minLength": 1
+            },
+            "modelId": {
+              "bsonType": "string",
+              "minLength": 1
+            },
+            "workspace": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "mode": {
+                      "enum": [
+                        "copy"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "mode": {
+                      "enum": [
+                        "direct"
+                      ]
+                    }
+                  },
+                  "not": {
+                    "required": [
+                      "copyRoot"
+                    ]
+                  }
+                }
+              ],
+              "bsonType": "object",
+              "required": [
+                "mode"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "copy",
+                    "direct"
+                  ]
+                },
+                "copyRoot": {
+                  "bsonType": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "validationLevel": "strict",
+  "validationAction": "error",
+  "collation": {
+    "locale": "simple"
+  }
+});
+
+db.runCommand({
+  "create": "agent_eval_modules",
+  "validator": {
+    "$jsonSchema": {
+      "bsonType": "object",
+      "required": [
+        "_id",
+        "name",
+        "nameKey",
+        "createdAt",
+        "archived",
+        "writeVersion"
+      ],
+      "properties": {
+        "_id": {
+          "bsonType": "string",
+          "minLength": 1
+        },
+        "name": {
+          "bsonType": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "nameKey": {
+          "bsonType": "string",
+          "minLength": 1
+        },
+        "description": {
+          "bsonType": "string"
+        },
+        "tags": {
+          "bsonType": "array",
+          "maxItems": 20,
+          "items": {
+            "bsonType": "string",
+            "minLength": 1
+          }
+        },
+        "createdAt": {
+          "bsonType": "date"
+        },
+        "archived": {
+          "bsonType": "bool"
+        },
+        "writeVersion": {
+          "bsonType": [
+            "int",
+            "long",
+            "double"
+          ],
+          "minimum": 1,
+          "multipleOf": 1
+        }
+      }
+    }
+  },
+  "validationLevel": "strict",
+  "validationAction": "error",
+  "collation": {
+    "locale": "simple"
+  }
+});
+
+db.runCommand({
+  "create": "agent_eval_verifiers",
+  "validator": {
+    "$jsonSchema": {
+      "bsonType": "object",
+      "required": [
+        "_id",
+        "schemaVersion",
+        "label",
+        "filename",
+        "extension",
+        "content",
+        "version",
+        "sha256",
+        "timeoutMs",
+        "createdAt"
+      ],
+      "properties": {
+        "_id": {
+          "bsonType": "string",
+          "pattern": "^uploaded-[0-9a-f-]{36}$"
+        },
+        "schemaVersion": {
+          "enum": [
+            1
+          ]
+        },
+        "label": {
+          "bsonType": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "filename": {
+          "bsonType": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "extension": {
+          "enum": [
+            ".js",
+            ".mjs",
+            ".ts",
+            ".py"
+          ]
+        },
+        "content": {
+          "bsonType": "string",
+          "minLength": 1,
+          "maxLength": 1048576
+        },
+        "version": {
+          "bsonType": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "sha256": {
+          "bsonType": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "timeoutMs": {
+          "enum": [
+            60000
+          ]
+        },
+        "runtime": {
+          "enum": [
+            "bun",
+            "python"
+          ]
+        },
+        "entrypoint": {
+          "enum": [
+            "verify"
+          ]
+        },
+        "contractVersion": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "createdAt": {
+          "bsonType": "date"
+        }
+      }
+    }
+  },
+  "validationLevel": "strict",
+  "validationAction": "error",
+  "collation": {
+    "locale": "simple"
+  }
+});
+
+db.runCommand({
+  "createIndexes": "agent_eval_cases",
+  "indexes": [
+    {
+      "key": {
+        "moduleId": 1,
+        "definition.id": 1
+      },
+      "name": "active_module_case_unique",
+      "unique": true,
+      "partialFilterExpression": {
+        "archived": false
+      },
+      "collation": {
+        "locale": "simple"
+      }
+    },
+    {
+      "key": {
+        "moduleId": 1,
+        "archived": 1,
+        "definition.replayMode": 1,
+        "updatedAt": -1
+      },
+      "name": "module_mode_updated",
+      "collation": {
+        "locale": "simple"
+      }
+    },
+    {
+      "key": {
+        "archived": 1,
+        "definition.replayMode": 1,
+        "definition.tags": 1
+      },
+      "name": "mode_tags",
+      "collation": {
+        "locale": "simple"
+      }
+    }
+  ]
+});
+
+db.runCommand({
+  "createIndexes": "agent_eval_modules",
+  "indexes": [
+    {
+      "key": {
+        "nameKey": 1
+      },
+      "name": "active_module_name_unique",
+      "unique": true,
+      "partialFilterExpression": {
+        "archived": false
+      },
+      "collation": {
+        "locale": "simple"
+      }
+    }
+  ]
+});
