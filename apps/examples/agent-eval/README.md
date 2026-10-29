@@ -8,7 +8,7 @@ This uses the SDK instead of spawning and scraping the terminal CLI. `initialMes
 
 ## MongoDB case and module storage
 
-Set `EVAL_CASE_STORAGE=mongodb` to read and edit cases directly in MongoDB, including cases created by an external generator. Single-turn and full-task cases, tags, copies and moves use the same MongoDB catalog; evaluation history and immutable execution snapshots remain in SQLite. Prepare collections/indexes explicitly and use a replica set for transactions. Existing deployments default to SQLite and are never migrated automatically.
+Set `EVAL_CASE_STORAGE=mongodb` to read and edit cases directly in MongoDB, including cases created by an external generator. Single-turn and full-task cases, tags, copies and moves use the same MongoDB catalog; evaluation history and immutable execution snapshots remain in SQLite. Prepare the three collections explicitly and use a replica set for transactions. Custom indexes are neither created nor required; startup only checks collection existence. Existing deployments default to SQLite and are never migrated automatically.
 
 See [MongoDB setup, document contract and migration](docs/mongodb.md), [the sample document](docs/mongodb-case.example.json), and [Spec 008](../../../specs/008-agent-eval-mongodb-cases.md).
 

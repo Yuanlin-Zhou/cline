@@ -168,7 +168,7 @@ describe("MongoDB replica-set catalog (set EVAL_TEST_MONGODB_URI)", () => {
 		const archived = await seed(source, "archive-test"); await repository.archiveModule(source.id); await repository.setArchived("module", source.id, false);
 		expect((await repository.getCase(archived.id))!.archived).toBe(true);
 	});
-	mongoTest("unique indexes, invalid external documents and preflight enforce the contract", async () => {
+	mongoTest("application name checks work without custom indexes and invalid documents still fail on use", async () => {
 		const module = await repository.createModule("unique"); const c = await seed(module);
 		await expect(seed(module)).rejects.toMatchObject({ status: 409 });
 		await expect(repository.createModule(" UNIQUE ")).rejects.toMatchObject({ status: 409 });
@@ -178,8 +178,47 @@ describe("MongoDB replica-set catalog (set EVAL_TEST_MONGODB_URI)", () => {
 		await expect(repository.cases.insertOne({ ...doc, _id: randomUUID(), archived: false, definition: { ...doc.definition, id: "bad", history: [{ role: "user", content: "" }] } })).rejects.toMatchObject({ code: 121 });
 		await repository.cases.updateOne({ _id: c.id }, { $set: { schemaVersion: 2 as 1 } }, { bypassDocumentValidation: true });
 		await expect(repository.snapshot()).rejects.toMatchObject({ status: 422 });
-		await repository.cases.dropIndex("active_module_case_unique"); await expect(repository.preflight()).rejects.toThrow("索引");
+		expect((await repository.cases.listIndexes().toArray()).map(i => i.name)).toEqual(["_id_"]);
+		expect((await repository.modules.listIndexes().toArray()).map(i => i.name)).toEqual(["_id_"]);
+		await repository.preflight();
+		await repository.db.command({collMod: config.caseCollection, validator: {}, validationLevel: "off"});
+		await repository.preflight();
+		await repository.db.collection("agent_eval_verifiers").drop();
+		await expect(new MongoVerifiers(repository.db, "agent_eval_verifiers").preflight()).rejects.toThrow("agent_eval_verifiers");
 	});
+	mongoTest("Web starts on plain collections while index inspection and DDL are denied", async () => {
+		for (const name of [config.caseCollection, config.moduleCollection, "agent_eval_verifiers"]) await repository.db.command({ collMod: name, validator: {}, validationLevel: "off" });
+		await repository.db.admin().command({ configureFailPoint: "failCommand", mode: "alwaysOn", data: { failCommands: ["listIndexes", "createIndexes", "collMod", "create"], errorCode: 13 } });
+		let app: Awaited<ReturnType<typeof createEvalServer>> | undefined;
+		try {
+			app = await createEvalServer({ directory, port: 0, storage: "mongodb", mongo: config });
+			const response = await fetch(`http://127.0.0.1:${app.server.port}/api/modules`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "plain collection" }) });
+			expect(response.status).toBe(201);
+			expect((await response.json()).name).toBe("plain collection");
+		} finally {
+			await app?.close();
+			await repository.db.admin().command({ configureFailPoint: "failCommand", mode: "off" });
+		}
+	});
+
+	mongoTest("rename and restore reject active names; archive reuse, copies and concurrent case creation remain valid", async () => {
+		const m = await repository.createModule("names"), other = await repository.createModule("other");
+		await expect(repository.updateModule(other.id, { name: "NAMES" })).rejects.toMatchObject({ status: 409 });
+		await repository.archiveModule(m.id);
+		const replacement = await repository.createModule("names");
+		await expect(repository.setArchived("module", m.id, false)).rejects.toMatchObject({ status: 409 });
+		await repository.updateModule(m.id, { name: "other" });
+		await expect(repository.setArchived("module", m.id, false)).rejects.toMatchObject({ status: 409 });
+		await repository.updateModule(m.id, { name: "restored" }); await repository.setArchived("module", m.id, false);
+		const a = await seed(replacement, "a"), b = await seed(replacement, "b");
+		await expect(repository.updateCase(b.id, b.revision, b.defaults, { ...b.definition, id: "a" })).rejects.toMatchObject({ status: 409 });
+		await repository.updateCase(a.id, a.revision, a.defaults, a.definition);
+		const concurrent = await Promise.allSettled([seed(replacement, "parallel"), seed(replacement, "parallel")]);
+		expect(concurrent.filter(r => r.status === "fulfilled")).toHaveLength(1);
+		expect((concurrent.find(r => r.status === "rejected") as PromiseRejectedResult).reason.status).toBe(409);
+		expect((await repository.duplicateCase(b.id)).definition.id).toBe("b-copy1");
+	});
+
 	mongoTest("migration is read-only, atomic, repeatable and reports conflicting existing documents", async () => {
 		const store = new EvalStore(directory); const modules = store.activeModules();
 		const c = store.createCase(modules[0].id, defaults, { id: "old", prompt: "hello", history: [], tags: ["legacy,tag"] });

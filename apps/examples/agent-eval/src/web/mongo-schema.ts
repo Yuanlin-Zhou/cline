@@ -8,12 +8,6 @@ import { CatalogError } from "./catalog.js";
 
 export type CaseDocument = Omit<SavedCase, "id" | "updatedAt" | "archived"> & { _id: string; schemaVersion: 1; createdAt: Date; updatedAt: Date; archived: boolean; provenance?: Record<string, unknown> };
 export type ModuleDocument = Omit<Module, "id" | "createdAt" | "archived"> & { _id: string; nameKey: string; createdAt: Date; archived: boolean; writeVersion: number; provenance?: Record<string, unknown> };
-export const caseIndexes = [
-	{ key: { moduleId: 1, "definition.id": 1 }, name: "active_module_case_unique", unique: true, partialFilterExpression: { archived: false } },
-	{ key: { moduleId: 1, archived: 1, "definition.replayMode": 1, updatedAt: -1 }, name: "module_mode_updated" },
-	{ key: { archived: 1, "definition.replayMode": 1, "definition.tags": 1 }, name: "mode_tags" },
-] as const;
-export const moduleIndexes = [{ key: { nameKey: 1 }, name: "active_module_name_unique", unique: true, partialFilterExpression: { archived: false } }] as const;
 const string = { bsonType: "string", minLength: 1 };
 const workspaceValidator = { oneOf: [{properties:{mode:{enum:["copy"]}}},{properties:{mode:{enum:["direct"]}},not:{required:["copyRoot"]}}], bsonType: "object", required: ["mode"], additionalProperties: false, properties: {mode: {enum:["copy","direct"]},copyRoot: string} };
 const integer = { bsonType: ["int", "long", "double"], minimum: 1, multipleOf: 1 };
@@ -62,6 +56,4 @@ export async function prepareMongoCollections(db: Db, cases: string, modules: st
 		if (await db.listCollections({ name }).hasNext()) await db.command({ collMod: name, validator, validationLevel: "strict", validationAction: "error" });
 		else await db.createCollection(name, { validator, validationLevel: "strict", validationAction: "error" });
 	}
-	await db.collection(cases).createIndexes(caseIndexes.map(index => ({ ...index, key: { ...index.key } })));
-	await db.collection(modules).createIndexes(moduleIndexes.map(index => ({ ...index, key: { ...index.key } })));
 }

@@ -1,7 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { createHash, randomUUID } from "node:crypto";
 import type { Collection, Db } from "mongodb";
-import { isDeepStrictEqual } from "node:util";
 import { CatalogError } from "../web/catalog.js";
 import { mongoFailure } from "../web/mongo-catalog.js";
 
@@ -81,9 +80,8 @@ export class MongoVerifiers implements VerifierRepository {
 	constructor(private db: Db, name: string) { this.collection = db.collection(name); }
 	async preflight() {
 		try {
-			if (!await this.db.listCollections({ name: this.collection.collectionName }).hasNext()) throw new CatalogError("验证脚本集合尚未准备，请运行 mongo:prepare", 503);
-			const options = await this.collection.options();
-			if (!isDeepStrictEqual(options.validator, verifierValidator) || options.validationLevel !== "strict" || options.validationAction !== "error") throw new CatalogError("验证脚本集合合同不符，请运行 mongo:prepare", 503);
+			const exists = await this.db.listCollections({ name: this.collection.collectionName, type: "collection" }, { nameOnly: true }).hasNext();
+			if (!exists) throw new CatalogError(`MongoDB 集合 ${this.collection.collectionName} 尚未创建，请由管理员执行建集合命令`, 503);
 		} catch (error) { throw mongoFailure(error); }
 	}
 	private decode(doc: VerifierDocument) { const { _id, createdAt, ...fields } = doc; if (!(createdAt instanceof Date) || !Number.isFinite(createdAt.getTime())) throw new CatalogError("验证脚本日期无效", 422); return validateUploaded({ ...fields, id: _id, createdAt: createdAt.toISOString() }); }

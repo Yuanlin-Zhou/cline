@@ -1,11 +1,10 @@
 import { caseSummary, type CaseSummary } from "./projections.js";
 import { confirmModuleDeletion, checkDeletion } from "./resource-management.js";
 import { randomUUID } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
 import { MongoClient, MongoError, type ClientSession, type Db, type Collection } from "mongodb";
 import type { EvalCase, EvalDefaults, EvalSuite } from "../types.js";
 import { CatalogError, type CatalogRepository } from "./catalog.js";
-import { caseFromDocument, caseToDocument, moduleFromDocument, moduleToDocument, caseIndexes, moduleIndexes, caseValidator, moduleValidator, type CaseDocument, type ModuleDocument } from "./mongo-schema.js";
+import { caseFromDocument, caseToDocument, moduleFromDocument, moduleToDocument, type CaseDocument, type ModuleDocument } from "./mongo-schema.js";
 import { parseTransfer, planTransfer, TransferError } from "./transfer.js";
 import type { Module, SavedCase } from "./types.js";
 
@@ -44,17 +43,18 @@ export class MongoCatalog implements CatalogRepository {
 		} catch (error) { await client?.close(); throw mongoFailure(error); }
 	}
 	async preflight() {
-		const hello = await this.db.command({ hello: 1 });
-		if (!hello.setName && hello.msg !== "isdbgrid") throw new CatalogError("MongoDB 必须使用副本集或分片部署以支持批量事务", 503);
-		for (const [collection, indexes, validator] of [[this.cases, caseIndexes, caseValidator], [this.modules, moduleIndexes, moduleValidator]] as const) {
-			if (!(await this.db.listCollections({ name: collection.collectionName }).hasNext())) throw new CatalogError("MongoDB 集合尚未准备，请先运行 mongo:prepare", 503);
-			const actual = await collection.listIndexes().toArray();
-			for (const expected of indexes) {
-				const index = actual.find(i => i.name === expected.name);
-				if (!index || !isDeepStrictEqual(index.key, expected.key) || ("unique" in expected && (!index.unique || !isDeepStrictEqual(index.partialFilterExpression, expected.partialFilterExpression))) || (index.collation && index.collation.locale !== "simple")) throw new CatalogError("MongoDB 索引不符合合同，请先运行 mongo:prepare", 503);
-			}
-			const options = await collection.options();
-			if (!isDeepStrictEqual(options.validator, validator) || (options.validationAction && options.validationAction !== "error") || (options.validationLevel && options.validationLevel !== "strict")) throw new CatalogError("MongoDB 文档验证器不符合合同，请先运行 mongo:prepare", 503);
+		for (const collection of [this.cases, this.modules]) {
+			const exists = await this.db
+				.listCollections(
+					{ name: collection.collectionName, type: "collection" },
+					{ nameOnly: true },
+				)
+				.hasNext();
+			if (!exists)
+				throw new CatalogError(
+					`MongoDB 集合 ${collection.collectionName} 尚未创建，请由管理员执行建集合命令`,
+					503,
+				);
 		}
 	}
 	private async guard<T>(callback: () => Promise<T>): Promise<T> { try { return await callback(); } catch (error) { throw mongoFailure(error); } }
@@ -134,17 +134,58 @@ export class MongoCatalog implements CatalogRepository {
 			await this.modules.updateOne({ _id: id }, { $inc: { writeVersion: 1 } }, { session });
 		}
 	}
+	private async assertModuleNameAvailable(
+		nameKey: string,
+		session?: ClientSession,
+		excludeId?: string,
+	) {
+		const duplicate = await this.modules.findOne(
+			{
+				nameKey,
+				archived: false,
+				...(excludeId ? { _id: { $ne: excludeId } } : {}),
+			},
+			{ session, projection: { _id: 1 }, collation: { locale: "simple" } },
+		);
+		if (duplicate)
+			throw new CatalogError("模块名称已存在，请使用其他名称", 409);
+	}
+	private async assertCaseNameAvailable(
+		moduleId: string,
+		name: string,
+		session: ClientSession,
+		excludeId?: string,
+	) {
+		const duplicate = await this.cases.findOne(
+			{
+				moduleId,
+				"definition.id": name,
+				archived: false,
+				...(excludeId ? { _id: { $ne: excludeId } } : {}),
+			},
+			{ session, projection: { _id: 1 }, collation: { locale: "simple" } },
+		);
+		if (duplicate)
+			throw new CatalogError("模块内案例 ID 已存在，请使用其他名称", 409);
+	}
 	private moduleName(name: unknown) { if (typeof name !== "string" || !name.trim() || name.length > 80) throw new CatalogError("模块名称须为 1–80 个字符"); return name.trim(); }
 	private tags(input: unknown) { return (Array.isArray(input) ? input : []).filter(t => typeof t === "string" && t.trim()).map(t => t.trim()).slice(0, 20) as string[]; }
 	async createModule(name: string, description = "", tags: string[] = []) {
 		const module: Module = { id: randomUUID(), name: this.moduleName(name), description, tags: this.tags(tags), archived: false, createdAt: new Date().toISOString() };
-		await this.guard(() => this.modules.insertOne(moduleToDocument(module))); return module;
+		await this.guard(async () => {
+			await this.assertModuleNameAvailable(module.name.trim().toLowerCase());
+			await this.modules.insertOne(moduleToDocument(module));
+		}); return module;
 	}
 	async updateModule(id: string, input: { name?: string; description?: string; tags?: string[] }) {
 		return this.transaction(async session => {
 			await this.touch([id], session, false);
 			const changes: Partial<ModuleDocument> = {};
-			if (input.name !== undefined) { changes.name = this.moduleName(input.name); changes.nameKey = changes.name.toLowerCase(); }
+			if (input.name !== undefined) {
+				changes.name = this.moduleName(input.name); changes.nameKey = changes.name.toLowerCase();
+				const current = await this.modules.findOne({ _id: id }, { session });
+				if (!current!.archived) await this.assertModuleNameAvailable(changes.nameKey, session, id);
+			}
 			if (input.description !== undefined) changes.description = input.description;
 			if (input.tags !== undefined) changes.tags = this.tags(input.tags);
 			await this.modules.updateOne({ _id: id }, { $set: changes }, { session });
@@ -161,9 +202,17 @@ export class MongoCatalog implements CatalogRepository {
 	async setArchived(kind: "case" | "module", id: string, archived: boolean) {
 		if (kind === "module" && archived) return this.archiveModule(id);
 		await this.transaction(async session => {
-			if (kind === "module") { await this.touch([id], session, false); await this.modules.updateOne({ _id: id }, { $set: { archived } }, { session }); }
+			if (kind === "module") {
+				await this.touch([id], session, false);
+				if (!archived) {
+					const current = await this.modules.findOne({ _id: id }, { session });
+					await this.assertModuleNameAvailable(current!.nameKey, session, id);
+				}
+				await this.modules.updateOne({ _id: id }, { $set: { archived } }, { session });
+			}
 			else {
 				const doc = await this.source(id, session); await this.touch([doc.moduleId], session, !archived);
+				if (!archived) await this.assertCaseNameAvailable(doc.moduleId, doc.definition.id, session, id);
 				await this.cases.updateOne({ _id: id }, { $set: { archived, updatedAt: new Date() }, $inc: { revision: 1 } }, { session });
 			}
 		});
@@ -171,7 +220,7 @@ export class MongoCatalog implements CatalogRepository {
 	async createCase(moduleId: string, defaults: EvalDefaults, definition: EvalCase) {
 		const item: SavedCase = { id: randomUUID(), moduleId, defaults, definition, revision: 1, archived: false, updatedAt: new Date().toISOString() };
 		const doc = caseToDocument(item);
-		return this.transaction(async session => { await this.touch([moduleId], session); await this.cases.insertOne(doc, { session }); return caseFromDocument(doc); });
+		return this.transaction(async session => { await this.touch([moduleId], session); await this.assertCaseNameAvailable(moduleId, doc.definition.id, session); await this.cases.insertOne(doc, { session }); return caseFromDocument(doc); });
 	}
 	async updateCase(id: string, revision: number, defaults: EvalDefaults, definition: EvalCase) {
 		return this.transaction(async session => {
@@ -180,6 +229,7 @@ export class MongoCatalog implements CatalogRepository {
 			if (source.archived) throw new CatalogError("案例已归档", 409);
 			await this.touch([source.moduleId], session);
 			const next = caseToDocument({ ...caseFromDocument(source), defaults, definition, revision: revision + 1, updatedAt: new Date().toISOString() });
+			await this.assertCaseNameAvailable(source.moduleId, next.definition.id, session, id);
 			const result = await this.cases.updateOne({ _id: id, revision }, { $set: { definition: next.definition, defaults: next.defaults, revision: next.revision, updatedAt: next.updatedAt } }, { session });
 			if (!result.matchedCount) throw new CatalogError("案例版本已变化", 409);
 			return caseFromDocument(next);

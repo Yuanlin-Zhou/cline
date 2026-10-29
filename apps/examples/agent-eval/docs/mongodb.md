@@ -1,12 +1,12 @@
 # MongoDB case catalog
 
-MongoDB stores **both single-turn and full-task cases**, plus module metadata. SQLite continues to store settings, evaluation batches, execution snapshots and results. CLI JSON suites still work as before. Nothing migrates automatically.
+MongoDB stores **single-turn, function-call and full-task cases**, module metadata and uploaded verification scripts. SQLite continues to store settings, evaluation batches, execution snapshots and results. CLI JSON suites still work as before. Nothing migrates automatically.
 
 The Web service uses the official MongoDB **6.21.0** driver with Bun 1.3.13. Driver 7.7.0/BSON 7 currently invokes an unsupported Bun V8 API, so do not upgrade without testing the Bun runtime.
 
 ## Prepare a replica set
 
-Transactions require a replica set or sharded deployment. A standalone `mongod` is rejected at startup. For local development:
+Transactions require a replica set or sharded deployment. Startup only checks that the three configured collections exist; a standalone `mongod` may pass that check but cannot execute the transaction-based catalog operations. For local development:
 
 ```sh
 docker run -d --name eval-mongo -p 127.0.0.1:27017:27017 \
@@ -28,9 +28,9 @@ export EVAL_MONGODB_VERIFIER_COLLECTION=agent_eval_verifiers
 bun run mongo:prepare
 ```
 
-`mongo:prepare` explicitly creates/updates validators and indexes. It does not rewrite existing documents. Duplicate names may prevent unique-index creation; fix conflicts before proceeding. Existing incompatible documents must be fixed to the contract; they will produce a clear document error when read. `mongo:prepare --seed-modules` additionally creates the four default modules only in an empty catalog. When migrating an existing SQLite catalog, **do not seed modules first**, as newly generated UUIDs would conflict with the original module names.
+`mongo:prepare` explicitly creates/updates the three collections and their field validators. It never creates or drops custom indexes and does not rewrite existing documents. Existing incompatible documents must be fixed to the contract; they will produce a clear document error when read. `mongo:prepare --seed-modules` additionally creates the four default modules only in an empty catalog. When migrating an existing SQLite catalog, **do not seed modules first**, as newly generated UUIDs would conflict with the original module names.
 
-Use a preparation account with `createCollection`, `collMod` and index permissions. The application account needs read/write and transaction access to the two prepared collections, plus catalog/index inspection for startup checks; it does not create collections or install indexes. Use the same database and collection names for the application and external generator. The database is one evaluation catalog; separate environments should use separate databases, with their own module UUIDs.
+Use a preparation account with `createCollection` and `collMod` permissions; no index-management permissions are needed. The application account needs business CRUD access to the three collections and database `listCollections` access. It does not need `listIndexes`, collection options inspection, or DDL privileges. If a DBA has already created the collections, skip `mongo:prepare` locally and use the [native DBA commands](mongodb-admin/README.md) for future validator updates. Use the same database and collection names for the application and external generator. The database is one evaluation catalog; separate environments should use separate databases, with their own module UUIDs.
 
 ## Start the Web UI
 
@@ -40,19 +40,19 @@ export EVAL_DATA_DIR=/absolute/path/eval-history
 bun run web
 ```
 
-`EVAL_DATA_DIR/eval.sqlite` holds history and settings even in MongoDB mode. Keep the original history directory during migration to preserve history links. MongoDB startup validates deployment, collection validators and indexes. Reads always use MongoDB. Connection failures return 503 and never switch to an old SQLite copy. The history list, run details, exports and snapshot reruns remain independent of MongoDB when the running service loses its connection.
+`EVAL_DATA_DIR/eval.sqlite` holds history and settings even in MongoDB mode. Keep the original history directory during migration to preserve history links. MongoDB startup only checks collection existence using name-only collection listing. It does not inspect indexes, compare validators or explicitly verify replica topology. Reads always use MongoDB. Connection failures return 503 and never switch to an old SQLite copy. The history list, run details, exports and snapshot reruns remain independent of MongoDB when the running service loses its connection.
 
 To keep an existing SQLite-only deployment, leave `EVAL_CASE_STORAGE` unset or set it to `sqlite`. Switching back does **not** copy MongoDB edits back into SQLite; that would require a separate migration, so do not use it as a failure fallback.
 
 ## Document contract
 
-See [mongo-schema.ts](../src/web/mongo-schema.ts) for executable validators, indexes and API mappings. See [mongodb-case.example.json](mongodb-case.example.json) for a document using MongoDB Extended JSON dates. It is **not a CLI suite**: replace both UUID placeholders and model settings, then decode the Extended JSON dates before insertion. In mongosh, `EJSON.parse(...)` converts `$date` to BSON dates. In a driver, construct `Date` objects or use its EJSON decoder. Do not store the literal `$date` objects or date strings.
+See [mongo-schema.ts](../src/web/mongo-schema.ts) for executable field validators and API mappings. See [mongodb-case.example.json](mongodb-case.example.json) for a document using MongoDB Extended JSON dates. It is **not a CLI suite**: replace both UUID placeholders and model settings, then decode the Extended JSON dates before insertion. In mongosh, `EJSON.parse(...)` converts `$date` to BSON dates. In a driver, construct `Date` objects or use its EJSON decoder. Do not store the literal `$date` objects or date strings.
 
 Cases use `_id` as the stable internal string UUID, `definition.id` as a module-local business name, `schemaVersion: 1`, positive integer `revision`, explicit boolean `archived`, BSON `createdAt`/`updatedAt`, and complete `definition`/`defaults` objects. `definition.replayMode` is explicitly `single-turn` or `full-task`. API responses map `_id` to `id` and dates to ISO strings. Optional fields must be omitted rather than set to null. Mongo credentials and resolved model credential values are never part of the case document.
 
 Modules contain `_id`, `name`, `nameKey` (`name.trim().toLowerCase()`), `description`, `tags`, `archived`, BSON `createdAt`, and positive `writeVersion`. Names are limited to 80 characters; modules have at most 20 tags. `GET /api/modules` supplies active module UUIDs for an external generator.
 
-Active module names and active business case names within each module have partial unique indexes. Archiving frees a name; restoring an archived item can fail with 409 if another active item occupies it. Module restore does not restore its archived cases. Archive operations increment case revisions to invalidate stale edit windows. Extra root metadata such as `provenance` is preserved when the app edits a case and when it copies one. Execution results belong to SQLite snapshots, not the current MongoDB case.
+No custom indexes are installed or required. The app checks active module names and module-local case names during normal create/edit/restore operations; these checks do not replace a database unique constraint against every multi-instance or external concurrent writer. Existing indexes, if any, are left untouched. The automatic `_id_` index still enforces internal ID uniqueness. Archiving frees a name; restoring an archived item can fail with 409 if another active item occupies it. Module restore does not restore its archived cases. Archive operations increment case revisions to invalidate stale edit windows. Extra root metadata such as `provenance` is preserved when the app edits a case and when it copies one. Execution results belong to SQLite snapshots, not the current MongoDB case.
 
 ## External generation and editing
 

@@ -19,6 +19,6 @@ try {
 			}, { timeoutMS: 15000 });
 		} finally { await session.endSession(); }
 	}
-	console.log("MongoDB collections, validators and indexes are ready.");
+	console.log("MongoDB collections and validators are ready. No custom indexes were created.");
 } catch (error) { console.error(mongoFailure(error).message); process.exitCode = 1; }
 finally { await repository.close(); }

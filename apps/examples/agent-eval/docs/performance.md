@@ -20,7 +20,7 @@ bun scripts/performance-storage.ts /绝对路径/评测数据目录 --rebuild
 
 重建也会先备份、保留原始输入/结果及已持久化进度，并更换游标世代。重建失败不删除原始记录；重新启动后浏览器需要重新同步概览。
 
-MongoDB 模式仍使用 MongoDB 保存案例/模块/上传脚本、本地 SQLite 保存运行历史。本次新增 MongoDB 字段投影查询，没有新增集合、修改文档校验器或新增 MongoDB 索引要求；现有部署应已满足此前 `mongo:prepare` 合同。不要为这次性能优化将 MongoDB 案例迁回 SQLite。
+MongoDB 模式仍使用 MongoDB 保存案例/模块/上传脚本、本地 SQLite 保存运行历史。本次新增 MongoDB 字段投影查询，没有新增集合、修改文档校验器或新增 MongoDB 索引要求；按 SPEC-030，启动仅检查集合存在，既不创建也不要求自定义 MongoDB 索引；字段规则可由管理员用 `mongo:prepare` 或原生命令准备。无自定义索引时部分筛选/排序会扫描集合，原有摘要投影继续保留。不要为这次性能优化将 MongoDB 案例迁回 SQLite。
 
 ## 查询接口
 
