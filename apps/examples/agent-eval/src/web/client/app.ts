@@ -1,3 +1,4 @@
+import { badCaseEditor } from "./bad-case-editor.js";
 import { itemLoader } from "./item-loader.js";
 import type { ItemSummary } from "../projections.js";
 import { judgeEditor, judgeModelEditor, judgeResultPanel } from "./judge-ui.js";
@@ -850,7 +851,7 @@ function confirmModal(title: string, message: string, confirmLabel: string, onCo
 let state: StateResponse | null = null;
 let activePoll: (() => void) | undefined;
 let runScope: { moduleIds: string[]; caseIds: string[]; returnTo: string } | undefined;
-const caseListState = new Map<string, { search: string; replay: string; result: string; selection: Set<string> }>();
+const caseListState = new Map<string, { search: string; replay: string; result: string; bad?: string; selection: Set<string> }>();
 
 function openNewRun(caseIds: string[], moduleIds: string[]): void {
 	runScope = { caseIds, moduleIds, returnTo: location.hash };
@@ -1064,6 +1065,7 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
 	const searchBox = input("case-search", savedList?.search ?? "", "text");
 	searchBox.setAttribute("placeholder", "按名称、ID 或标签筛选…");
 	const replayFilter = select("case-replay", [["", "全部回放方式"], ["single-turn", "单轮回放"], ["full-task", "多轮回放（完整任务）"], ["function-call", "单轮函数调用"]], "");
+	const badFilter = select("case-bad", [["", "全部案例"], ["bad", "Bad case"], ["regular", "非 Bad case"]], savedList?.bad ?? "");
 	const resultFilter = select("case-result", [["", "全部结果"], ["passed", "通过"], ["failed", "失败"], ["error", "执行错误"], ["inconclusive", "无法判定"], ["none", "未运行"]], "");
 	(replayFilter as HTMLSelectElement).value = savedList?.replay ?? "";
 	(resultFilter as HTMLSelectElement).value = savedList?.result ?? "";
@@ -1074,9 +1076,11 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
 		const query = val("case-search").toLowerCase();
 		const replay = val("case-replay");
 		const result = val("case-result");
-		caseListState.set(moduleId ?? "", { search: val("case-search"), replay, result, selection });
+		caseListState.set(moduleId ?? "", { search: val("case-search"), replay, result, bad: val("case-bad"), selection });
 		visible = cases.filter((c) => {
 			const latest = s.latest[c.id];
+			const bad = Boolean(c.definition.badCase || (c.definition as {isBadCase?:boolean}).isBadCase);
+			if (val("case-bad") && bad !== (val("case-bad") === "bad")) return false;
 			if (replay && (c.definition.replayMode ?? "single-turn") !== replay) return false;
 			if (result && (result === "none" ? latest !== undefined : latest?.status !== result)) return false;
 			if (!query) return true;
@@ -1122,13 +1126,15 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
 	const batchBar = h("div", { class: "BatchBar", hidden: true }, batchCount, h("div", { class: "flex-center gap-2 wrap" }, h("button", { class: "btn", onclick: () => transferSelected("copy") }, "复制所选"), h("button", { class: "btn", onclick: () => transferSelected("move") }, "移动所选"), h("button", { class: "btn btn-danger", onclick: () => deleteCasesDialog(s.cases.filter(c => selection.has(c.id)), s.modules, [...selection].filter(id => !visible.some(c => c.id === id)).length, api, () => { selection.clear(); toast("所选案例已删除"); render(); }) }, "删除所选"), h("button", { class: "btn btn-outline", onclick: () => { selection.clear(); renderTable(); } }, "取消选择"), runSelectedBtn));
 
 	const toolbar = h("div", { class: "flex-between mt-3 mb-2 gap-2 wrap" },
-		h("div", { class: "case-filters flex-center gap-2 grow wrap" }, searchBox, replayFilter, resultFilter, selectionInfo),
+		h("div", { class: "case-filters flex-center gap-2 grow wrap" }, searchBox, replayFilter, badFilter, resultFilter, selectionInfo),
 	);
 	searchBox.setAttribute("aria-label", "搜索案例");
 	replayFilter.setAttribute("aria-label", "按回放方式筛选");
 	resultFilter.setAttribute("aria-label", "按最近结果筛选");
 	searchBox.addEventListener("input", renderTable);
 	replayFilter.addEventListener("change", renderTable);
+	badFilter.setAttribute("aria-label", "筛选 Bad case");
+	badFilter.addEventListener("change", renderTable);
 	resultFilter.addEventListener("change", renderTable);
 
  const refreshSelection = () => {
@@ -1137,10 +1143,10 @@ async function renderCases(app: HTMLElement, moduleId?: string): Promise<void> {
   batchCount.textContent = `已选 ${selection.size} 个案例，其中 ${[...selection].filter(id => !visible.some(c => c.id === id)).length} 个不在当前筛选结果中`;
   selectAll.checked = !!visible.length && visible.every(c => selection.has(c.id));
   selectAll.indeterminate = visible.some(c => selection.has(c.id)) && !selectAll.checked;
-  caseListState.set(moduleId ?? "", { search: val("case-search"), replay: val("case-replay"), result: val("case-result"), selection });
+  caseListState.set(moduleId ?? "", { search: val("case-search"), replay: val("case-replay"), result: val("case-result"), bad: val("case-bad"), selection });
  };
  const gesture = rangeSelection(tableWrap, () => visible.map(c => c.id), selection, refreshSelection);
- for (const control of [searchBox,replayFilter,resultFilter]) control.addEventListener(control===searchBox?"input":"change",()=>gesture.reset());
+ for (const control of [searchBox,replayFilter,badFilter,resultFilter]) control.addEventListener(control===searchBox?"input":"change",()=>gesture.reset());
  toolbar.append(h("div", { class: "flex-center gap-2 wrap" },
   ...["全选筛选结果","反选筛选结果","清空选择"].map((label,index)=>h("button",{class:"btn btn-sm",onclick:()=>{if(index===2)selection.clear();else visible.forEach(c=>index===1&&selection.has(c.id)?selection.delete(c.id):selection.add(c.id));renderTable();}},label)),
   h("span",{class:"muted small"},"拖动复选框列或 Shift 连选")));
@@ -1195,7 +1201,7 @@ function caseRow(c: SavedCase, selection: Set<string>, rerender: () => void, s: 
 			h("a", { class: "case-name CaseTable-link", href: `#/case/${c.id}`, onclick: (event: Event) => event.stopPropagation() }, c.definition.id),
 			c.definition.description ? h("div", { class: "muted small" }, c.definition.description) : h("span", {}),
 		),
-		h("td", {}, badge(replayLabel(c.definition.replayMode), c.definition.replayMode === "full-task" ? "Label--done" : "Label--accent")),
+		h("td", {}, ...((c.definition.badCase || (c.definition as {isBadCase?:boolean}).isBadCase) ? [badge("Bad case", "Label--attention")] : []), badge(replayLabel(c.definition.replayMode), c.definition.replayMode === "full-task" ? "Label--done" : "Label--accent")),
 		h("td", {}, ...tagPills(c.definition.tags)),
 		h("td", { class: "num" }, `v${c.revision}`),
 		h("td", {},
@@ -1583,6 +1589,7 @@ if(copy) {
 	// ---- left: input form ----
 	const tagsEditor = tagEditor({ id: "f-tags", initial: definition.tags, candidates: s.cases.filter(c => s.modules.some(m => m.id === c.moduleId)).flatMap(c => c.definition.tags ?? []) });
 	const form = h("div", { class: "Box" });
+	const originEditor = badCaseEditor(definition);
 	const formBody = h("div", { class: "Box-body" });
 	formBody.append(
 		h("div", { class: "section-title" }, h("span", {}, "基本信息")),
@@ -1634,6 +1641,7 @@ if(copy) {
 			else fill();
 		} }, "填入示例"),
 	));
+	formBody.append(originEditor.element);
 	form.append(formBody);
 
 	const caseWorkspace = workspaceEditor("f",defaults.cwd,defaults.workspace); workspaceEditors.set("f",caseWorkspace);
@@ -1757,6 +1765,8 @@ if(copy) {
 		const assertions = readAssertionsFromForm();
 		const result: EvalCase = {
 			id: val("f-id").trim(),
+			badCase: originEditor.read(validateGrading),
+			importSource: definition.importSource,
 			replayMode,
 			functionCall: replayMode === "function-call" ? functionChecks.read() : definition.functionCall,
 			tags: tagsEditor.read(),

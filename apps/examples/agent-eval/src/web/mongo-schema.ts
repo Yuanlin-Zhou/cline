@@ -17,6 +17,8 @@ export const caseValidator = { $jsonSchema: {
 		_id: string, schemaVersion: { enum: [1] }, moduleId: string, revision: integer,
 		archived: { bsonType: "bool" }, createdAt: { bsonType: "date" }, updatedAt: { bsonType: "date" },
 		definition: { bsonType: "object", required: ["id", "replayMode", "prompt", "history"], properties: {
+			badCase: { bsonType: "object", required: ["observedOutput"], additionalProperties: false, properties: { observedOutput: { ...string, maxLength: 1048576 }, outputFormat: { enum: ["text", "json"] }, reason: { ...string, maxLength: 16384 } } },
+			importSource: { bsonType: "object", required: ["platform", "taskId", "turnId"], additionalProperties: false, properties: { platform: { ...string, maxLength: 256 }, taskId: { ...string, maxLength: 256 }, turnId: { ...string, maxLength: 256 }, url: { ...string, maxLength: 2048, pattern: "^[Hh][Tt][Tt][Pp][Ss]?://" } } },
 			id: string, llmJudge:judgeConfigValidator, workspace: workspaceValidator, replayMode: { enum: ["single-turn", "full-task", "function-call"] }, prompt: string,
 			functionCall: { bsonType: "object", required: ["tools"], additionalProperties: false, properties: { tools: { bsonType: "array", minItems: 1, maxItems: 6, uniqueItems: true, items: { enum: ["read_files", "search_codebase", "run_commands", "fetch_web_content", "editor", "skills"] } }, toolChoice: { enum: ["auto", "required", "read_files", "search_codebase", "run_commands", "fetch_web_content", "editor", "skills"] }, history: nativeHistoryValidator, historySource: historySourceValidator } },
 			tags: { bsonType: "array", items: string },

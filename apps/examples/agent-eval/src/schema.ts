@@ -1,3 +1,4 @@
+import { parseBadCase, parseImportSource } from "./case-origin.js";
 import { parseJudgeConfig } from "./judge/config.js";
 import { parseWorkspace } from "./workspace-config.js";
 import { parseFunctionCall } from "./function-call-config.js";
@@ -167,6 +168,8 @@ function parseCase(value: unknown, index: number): EvalCase {
 	return {
 		...parseHeaderConfig(value, path),
 		id,
+		badCase: parseBadCase(value.badCase),
+		importSource: parseImportSource(value.importSource),
 		replayMode: value.replayMode as EvalCase["replayMode"],
 		functionCall: value.replayMode === "function-call" || value.functionCall !== undefined ? parseFunctionCall(value.functionCall) : undefined,
 		tags: parseStringArray(value.tags, `${path}.tags`),

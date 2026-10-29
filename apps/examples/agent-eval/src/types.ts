@@ -34,6 +34,8 @@ export type EvalDefaults = HeaderConfig & {
 };
 
 export type EvalCase = HeaderConfig & {
+	badCase?: import("./case-origin.js").BadCase;
+	importSource?: import("./case-origin.js").ImportSource;
 	llmJudge?: import("./judge/types.js").JudgeConfig;
 	id: string;
 	replayMode?: "single-turn" | "full-task" | "function-call";

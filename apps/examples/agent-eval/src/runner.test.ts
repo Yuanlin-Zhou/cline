@@ -38,6 +38,14 @@ function fixture() {
 }
 
 describe("runEvalSuite", () => {
+	test("bad output is context for reviewers, never model input or an automatic failure", async () => {
+		const runtime = fixture();
+		const suite = parseEvalSuite({cases:[{id:"bad",prompt:"question",history:[{role:"user",content:"context"}],badCase:{observedOutput:"PRIVATE_WRONG_OUTPUT",reason:"review only"}}]});
+		const result = await runEvalSuite({suite,suitePath:path.resolve("suite.json"),overrides:{stream:false}});
+		expect(JSON.stringify(runtime.start.mock.calls)).not.toContain("PRIVATE_WRONG_OUTPUT");
+		expect(JSON.stringify(runtime.start.mock.calls)).not.toContain("review only");
+		expect(result.cases[0].status).toBe("passed");
+	});
 	test("passes resolved headers with execution identities and preserves provider errors", async () => {
 		const runtime = fixture();
 		const previous = process.env.EVAL_HEADER_TEST_AUTH;

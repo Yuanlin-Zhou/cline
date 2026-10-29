@@ -2,6 +2,8 @@
 
 MongoDB stores **single-turn, function-call and full-task cases**, module metadata and uploaded verification scripts. SQLite continues to store settings, evaluation batches, execution snapshots and results. CLI JSON suites still work as before. Nothing migrates automatically.
 
+Agent 日志平台的一键导入参考见 [Python 接入代码与说明](../examples/python-mongodb-import/README.md)。普通入口使用已有单轮案例；Bad case 只在 `definition.badCase` 保存原始错误输出，可选 `definition.importSource` 保存平台/任务/轮次来源，不新增执行模式或集合。错误输出不会自动参与模型输入、断言或 Judge 参考答案。先升级应用，由 DBA 更新 cases 校验规则后再启用写入；Python 运行账号不需要 DDL/索引权限。
+
 The Web service uses the official MongoDB **6.21.0** driver with Bun 1.3.13. Driver 7.7.0/BSON 7 currently invokes an unsupported Bun V8 API, so do not upgrade without testing the Bun runtime.
 
 ## Prepare a replica set

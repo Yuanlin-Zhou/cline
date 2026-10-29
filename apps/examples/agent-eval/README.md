@@ -1,5 +1,7 @@
 # Lightweight Agent Eval
 
+Agent 日志平台一键导入现有单轮案例 / Bad case：见 [Python 接入示例](examples/python-mongodb-import/README.md)。Bad case 原始错误输出在详情中展示，不改变回放模式。
+
 A small JSON-in/JSON-out evaluator that runs the local workspace version of `ClineCore`. It is designed for one common workflow: seed a case with several earlier user/assistant turns, send one final prompt, and capture Cline's result and usage in a machine-readable report.
 
 This uses the SDK instead of spawning and scraping the terminal CLI. `initialMessages` preserves the supplied conversation history exactly, while each case still gets an isolated Cline session.

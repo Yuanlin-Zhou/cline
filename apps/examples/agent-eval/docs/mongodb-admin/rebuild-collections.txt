@@ -66,6 +66,63 @@ db.runCommand({
             "history"
           ],
           "properties": {
+            "badCase": {
+              "bsonType": "object",
+              "required": [
+                "observedOutput"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "observedOutput": {
+                  "bsonType": "string",
+                  "minLength": 1,
+                  "maxLength": 1048576
+                },
+                "outputFormat": {
+                  "enum": [
+                    "text",
+                    "json"
+                  ]
+                },
+                "reason": {
+                  "bsonType": "string",
+                  "minLength": 1,
+                  "maxLength": 16384
+                }
+              }
+            },
+            "importSource": {
+              "bsonType": "object",
+              "required": [
+                "platform",
+                "taskId",
+                "turnId"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "platform": {
+                  "bsonType": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "taskId": {
+                  "bsonType": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "turnId": {
+                  "bsonType": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "url": {
+                  "bsonType": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://"
+                }
+              }
+            },
             "id": {
               "bsonType": "string",
               "minLength": 1

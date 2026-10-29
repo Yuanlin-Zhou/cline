@@ -19,7 +19,7 @@ export type CaseSummary = Pick<
 	definition: Pick<
 		SavedCase["definition"],
 		"id" | "description" | "tags" | "replayMode"
-	>;
+	> & { isBadCase?: boolean };
 	defaults: Pick<SavedCase["defaults"], "providerId" | "modelId">;
 };
 export function caseSummary(c: SavedCase): CaseSummary {
@@ -31,6 +31,7 @@ export function caseSummary(c: SavedCase): CaseSummary {
 		updatedAt: c.updatedAt,
 		archived: c.archived,
 		definition: {
+			isBadCase: Boolean(c.definition.badCase || (c.definition as {isBadCase?: boolean}).isBadCase),
 			id: c.definition.id,
 			description: c.definition.description,
 			tags: c.definition.tags,
