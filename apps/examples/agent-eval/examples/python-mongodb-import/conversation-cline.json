@@ -1,0 +1,84 @@
+{
+  "moduleId": "替换为目标模块的字符串ID",
+  "source": {
+    "platform": "internal-agent-logs",
+    "taskId": "task-123",
+    "turnId": "conversation-cline"
+  },
+  "name": "conversation-cline",
+  "conversation": {
+    "version": 1,
+    "agent": "lead",
+    "sessionId": "original-session",
+    "system_prompt": "你是代码助手。需要修改文件时使用 editor 工具。",
+    "messages": [
+      {
+        "id": "m1",
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "读取 demo.py"
+          }
+        ]
+      },
+      {
+        "id": "m2",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "先查看文件。"
+          },
+          {
+            "type": "tool_use",
+            "id": "internal_1",
+            "call_id": "call_1",
+            "name": "read_files",
+            "input": {
+              "paths": [
+                "demo.py"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "id": "m3",
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "internal_1",
+            "name": "read_files",
+            "content": "print('hello')\n",
+            "is_error": false
+          }
+        ]
+      },
+      {
+        "id": "m4",
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "把 demo.py 中的 hello 改成 world，使用 editor 工具。"
+          }
+        ]
+      }
+    ]
+  },
+  "options": {
+    "tools": [
+      "editor",
+      "run_commands"
+    ],
+    "continuation": "继续"
+  },
+  "defaults": {
+    "providerId": "openai-compatible",
+    "modelId": "替换为实际模型名",
+    "baseUrl": "https://model.example/v1",
+    "apiKeyEnv": "EVAL_API_KEY"
+  }
+}

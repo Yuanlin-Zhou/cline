@@ -1,0 +1,47 @@
+{
+  "moduleId": "替换为目标模块的字符串ID",
+  "source": {
+    "platform": "internal-agent-logs",
+    "taskId": "task-123",
+    "turnId": "turn-7"
+  },
+  "name": "完整对话-第7轮-Bad case",
+  "conversation": {
+    "messages": [
+      {
+        "role": "system",
+        "content": "项目使用 Bun，请用中文回答。"
+      },
+      {
+        "role": "user",
+        "content": "安装依赖应该执行什么命令？"
+      },
+      {
+        "role": "assistant",
+        "content": "请执行 npm install。"
+      },
+      {
+        "role": "user",
+        "content": "这条后续消息不能进入第7轮回放输入"
+      }
+    ]
+  },
+  "badMessageIndex": 2,
+  "badCase": {
+    "observedOutput": "请执行 npm install。",
+    "reason": "忽略了项目使用 Bun 的上下文"
+  },
+  "options": {
+    "tools": [
+      "editor",
+      "run_commands"
+    ],
+    "continuation": "继续"
+  },
+  "defaults": {
+    "providerId": "openai-compatible",
+    "modelId": "替换为实际模型名",
+    "baseUrl": "https://model.example/v1",
+    "apiKeyEnv": "EVAL_API_KEY"
+  }
+}

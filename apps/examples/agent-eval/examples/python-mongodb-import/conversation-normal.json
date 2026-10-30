@@ -1,0 +1,34 @@
+{
+  "moduleId": "替换为目标模块的字符串ID",
+  "source": {
+    "platform": "internal-agent-logs",
+    "taskId": "task-123",
+    "turnId": "turn-7"
+  },
+  "name": "完整对话-普通回放",
+  "conversation": {
+    "messages": [
+      {
+        "role": "system",
+        "content": "项目使用 Bun，请用中文回答。"
+      },
+      {
+        "role": "user",
+        "content": "安装依赖应该执行什么命令？"
+      }
+    ]
+  },
+  "options": {
+    "tools": [
+      "editor",
+      "run_commands"
+    ],
+    "continuation": "继续"
+  },
+  "defaults": {
+    "providerId": "openai-compatible",
+    "modelId": "替换为实际模型名",
+    "baseUrl": "https://model.example/v1",
+    "apiKeyEnv": "EVAL_API_KEY"
+  }
+}

@@ -12,6 +12,8 @@ import uuid
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
+from conversation_history import obj, text, strict_json, native_history, convert_conversation, history_source
+
 from bson import BSON
 from pymongo import MongoClient, ReadPreference
 from pymongo.errors import PyMongoError
@@ -20,52 +22,13 @@ from pymongo.write_concern import WriteConcern
 
 NAMESPACE = uuid.UUID("5542c067-e6a7-52a3-af06-cc65f944e6e4")
 TOOLS = {"read_files", "search_codebase", "run_commands", "fetch_web_content", "editor", "skills"}
+DEFAULT_TOOLS = ["read_files", "search_codebase", "run_commands", "fetch_web_content", "editor", "skills"]
 
 
 class ImportFailure(Exception):
     def __init__(self, status, message, **details):
         super().__init__(message)
         self.result = {"status": status, "message": message, **details}
-
-
-def obj(value, path, allowed=None):
-    if not isinstance(value, dict):
-        raise ValueError(f"{path} 必须为对象")
-    if allowed is not None and set(value) - set(allowed):
-        raise ValueError(f"{path} 包含不支持的字段")
-    return value
-
-
-def text(value, path, limit=None, *, byte_limit=False, empty=False):
-    if not isinstance(value, str) or (not empty and not value.strip()):
-        raise ValueError(f"{path} 必须为{'文本' if empty else '非空文本'}")
-    if limit is not None and (len(value.encode("utf-8")) if byte_limit else len(value)) > limit:
-        raise ValueError(f"{path} 超过长度限制 {limit}")
-    return value
-
-
-def strict_json(value):
-    def pairs(items):
-        result = {}
-        for key, entry in items:
-            if key in result:
-                raise ValueError("JSON 存在重复键")
-            result[key] = entry
-        return result
-    def invalid(_):
-        raise ValueError("JSON 不允许 NaN/Infinity")
-    result = json.loads(value, object_pairs_hook=pairs, parse_constant=invalid)
-    def finite(v, depth=0):
-        if depth > 64 or isinstance(v, float) and not math.isfinite(v):
-            raise ValueError("JSON 嵌套过深或包含非有限数字")
-        if isinstance(v, dict):
-            for x in v.values():
-                finite(x, depth + 1)
-        elif isinstance(v, list):
-            for x in v:
-                finite(x, depth + 1)
-    finite(result)
-    return result
 
 
 def source_config(value):
@@ -129,59 +92,6 @@ def defaults_config(value):
     return result
 
 
-def native_history(messages):
-    if not isinstance(messages, list) or len(messages) > 500:
-        raise ValueError("functionCall.history 必须为不超过 500 条的数组")
-    if len(json.dumps(messages, ensure_ascii=False).encode()) > 1048576:
-        raise ValueError("functionCall.history 超过 1 MiB")
-    pending, used = set(), set()
-    instructions = True
-    for index, raw in enumerate(messages):
-        p = f"functionCall.history[{index}]"
-        m = obj(raw, p, ["role", "content", "name", "tool_calls", "tool_call_id"])
-        role = m.get("role")
-        if role not in ("system", "developer", "user", "assistant", "tool"):
-            raise ValueError(f"{p}.role 不支持")
-        if role in ("system", "developer") and not instructions:
-            raise ValueError(f"{p} 系统消息必须在历史前部")
-        if role not in ("system", "developer"):
-            instructions = False
-        if pending and role != "tool":
-            raise ValueError(f"{p} 缺少工具结果")
-        if "name" in m:
-            text(m["name"], f"{p}.name")
-        if "content" in m and not (role == "assistant" and m["content"] is None):
-            text(m["content"], f"{p}.content", empty=True)
-        if role == "tool":
-            text(m.get("content"), f"{p}.content", empty=True)
-            call_id = text(m.get("tool_call_id"), f"{p}.tool_call_id")
-            if "tool_calls" in m or call_id not in pending:
-                raise ValueError(f"{p} 工具结果无对应调用或重复")
-            pending.remove(call_id)
-            continue
-        if "tool_call_id" in m:
-            raise ValueError(f"{p}.tool_call_id 仅允许工具结果使用")
-        if "tool_calls" in m:
-            calls = m["tool_calls"]
-            if role != "assistant" or not isinstance(calls, list) or not calls:
-                raise ValueError(f"{p}.tool_calls 必须为 assistant 的非空数组")
-            for call in calls:
-                obj(call, "tool_call", ["id", "type", "function"])
-                call_id = text(call.get("id"), "tool_call.id")
-                if call_id in used or call.get("type") != "function":
-                    raise ValueError("工具调用 ID 重复或 type 非 function")
-                used.add(call_id)
-                pending.add(call_id)
-                fn = obj(call.get("function"), "tool_call.function", ["name", "arguments"])
-                text(fn.get("name"), "tool_call.function.name")
-                obj(strict_json(text(fn.get("arguments"), "tool_call.function.arguments", empty=True)), "tool arguments")
-        else:
-            text(m.get("content"), f"{p}.content")
-    if pending:
-        raise ValueError("历史结尾缺少工具结果")
-    return copy.deepcopy(messages)
-
-
 def build_document(payload, *, bad=False):
     """仅构造，不连接数据库。history/prompt 必须由日志平台在选中响应之前截取。"""
     v = obj(payload, "payload", ["moduleId", "source", "name", "replayMode", "history", "prompt", "systemPrompt", "functionCall", "badCase", "defaults", "description", "tags"])
@@ -217,7 +127,7 @@ def build_document(payload, *, bad=False):
     else:
         if v.get("history", []) != []:
             raise ValueError("function-call 使用 functionCall.history，外层 history 必须为空")
-        f = obj(v.get("functionCall"), "functionCall", ["tools", "toolChoice", "history"])
+        f = obj(v.get("functionCall"), "functionCall", ["tools", "toolChoice", "history", "historySource"])
         tools = f.get("tools")
         if not isinstance(tools, list) or not tools or any(not isinstance(t, str) or t not in TOOLS for t in tools) or len(set(tools)) != len(tools):
             raise ValueError("functionCall.tools 必须为现有六种工具的不重复子集")
@@ -225,6 +135,8 @@ def build_document(payload, *, bad=False):
         if choice not in ["auto", "required", *tools]:
             raise ValueError("toolChoice 必须为 auto/required 或所选工具")
         definition["functionCall"] = {"tools": tools[:], "toolChoice": choice, "history": native_history(f.get("history", []))}
+        if "historySource" in f:
+            definition["functionCall"]["historySource"] = history_source(f["historySource"], definition["functionCall"]["history"])
     defaults = defaults_config(v.get("defaults"))
     if mode == "function-call" and defaults["providerId"] != "openai-compatible":
         raise ValueError("function-call 需要 openai-compatible")
@@ -335,15 +247,64 @@ def import_bad_case(client, database, payload, **collections):
     return insert_document(client, database, build_document(payload, bad=True), **collections)
 
 
+def _prepare_conversation_case(payload, *, bad=False):
+    v = obj(payload, "payload", ["moduleId", "source", "name", "conversation", "badMessageIndex", "badCase", "options", "defaults", "description", "tags"])
+    if "conversation" not in v:
+        raise ValueError("缺少 conversation；请传 messages 对象、数组或完整 JSON 字符串")
+    if "badMessageIndex" in v and (not bad or type(v["badMessageIndex"]) is not int):
+        raise ValueError("badMessageIndex 仅用于 Bad case，且须为整数")
+    options = obj(v.get("options", {}), "options")
+    converted = convert_conversation(v["conversation"], options, bad_message_index=v.get("badMessageIndex"))
+    if bad and "badMessageIndex" not in v:
+        converted["source"]["notices"].append("未指定 badMessageIndex，按已截取输入历史处理；请确认 conversation 不包含本次错误回复或后续消息")
+    normalized = {k: copy.deepcopy(v[k]) for k in ("moduleId", "source", "name", "defaults", "description", "tags", "badCase") if k in v}
+    normalized.update(replayMode="function-call", history=[], prompt=converted["prompt"], functionCall={"tools": copy.deepcopy(options.get("tools", DEFAULT_TOOLS)), "toolChoice": options.get("toolChoice", "auto"), "history": converted["history"], "historySource": converted["source"]})
+    return build_document(normalized, bad=bad), converted
+
+
+def build_conversation_document(payload, *, bad=False):
+    """纯本地构造；不需要先手工整理 history/prompt，不连接数据库。"""
+    return _prepare_conversation_case(payload, bad=bad)[0]
+
+
+def preview_conversation_case(payload, *, bad=False):
+    """供日志平台预览输入边界和转换内容；不会连接或写入数据库。"""
+    document, converted = _prepare_conversation_case(payload, bad=bad)
+    return {"caseId": document["_id"], "definition": document["definition"], "defaults": document["defaults"], "boundary": converted["boundary"], "notices": converted["source"]["notices"]}
+
+
+def _import_conversation(client, database, payload, *, bad=False, **collections):
+    document, converted = _prepare_conversation_case(payload, bad=bad)
+    result = insert_document(client, database, document, **collections)
+    return {**result, "boundary": converted["boundary"], "notices": converted["source"]["notices"]}
+
+
+def import_case_from_conversation(client, database, payload, **collections):
+    """完整 messages → 网页同规则的已有单轮函数调用案例。"""
+    return _import_conversation(client, database, payload, **collections)
+
+
+def import_bad_case_from_conversation(client, database, payload, **collections):
+    """完整 messages → 带独立错误示例的案例；支持显式截取错误回复之前的历史。"""
+    return _import_conversation(client, database, payload, bad=True, **collections)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", help="规范化输入 JSON 文件")
     parser.add_argument("--bad-case", action="store_true")
+    parser.add_argument("--conversation", action="store_true", help="按网页规则解析完整 messages，不使用旧 history/prompt 参数")
     parser.add_argument("--validate-only", action="store_true", help="仅本地校验；不代表数据库写入一定成功")
     args = parser.parse_args()
     try:
         with open(args.input, encoding="utf-8-sig") as stream:
-            document = build_document(strict_json(stream.read()), bad=args.bad_case)
+            payload = strict_json(stream.read())
+        metadata = {}
+        if args.conversation:
+            document, converted = _prepare_conversation_case(payload, bad=args.bad_case)
+            metadata = {"boundary": converted["boundary"], "notices": converted["source"]["notices"]}
+        else:
+            document = build_document(payload, bad=args.bad_case)
         if args.validate_only:
             result = {"status": "validated", "caseId": document["_id"]}
         else:
@@ -352,11 +313,12 @@ def main():
                 raise ValueError("请设置 EVAL_MONGODB_URI")
             with MongoClient(uri, serverSelectionTimeoutMS=5000, connectTimeoutMS=5000, socketTimeoutMS=15000) as client:
                 result = insert_document(client, os.environ.get("EVAL_MONGODB_DATABASE", "agent_eval"), document, case_collection=os.environ.get("EVAL_MONGODB_CASE_COLLECTION", "agent_eval_cases"), module_collection=os.environ.get("EVAL_MONGODB_MODULE_COLLECTION", "agent_eval_modules"))
+        result.update(metadata)
     except PyMongoError:
         result = {"status": "database-error", "stage": "connect", "message": "MongoDB 客户端配置或连接失败，请核对环境配置；未报告导入成功"}
     except (ValueError, TypeError, OverflowError, RecursionError, OSError):
         # 不直接回显异常，连接串、原始日志或文件内容可能出现在异常文本中。
-        result = {"status": "invalid-input", "message": "参数、文件或环境配置无效；请调用 build_document 定位字段校验问题，勿记录原始日志/凭据"}
+        result = {"status": "invalid-input", "message": "参数、文件或环境配置无效；请调用相应构造/预览函数定位字段校验问题，勿记录原始日志/凭据"}
     print(json.dumps(result, ensure_ascii=False))
     return 0 if result["status"] in ("created", "unchanged", "confirmed", "validated") else 1
 

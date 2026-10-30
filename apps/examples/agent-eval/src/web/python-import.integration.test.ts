@@ -52,3 +52,39 @@ integration("Python imports pass real validators, preserve tool chains and coord
 		expect(rejectedModule).toMatchObject({status:"validation-failed",collection:config.moduleCollection,stage:"touch-module",code:121});
 	} finally { await repo.db.dropDatabase(); await repo.close(); }
 },60000);
+
+integration("Python complete-conversation entries persist Web-compatible snapshots without leaking selected bad responses", async () => {
+	const config={...mongoConfig({EVAL_MONGODB_URI:uri}),database:`eval_conversation_${randomUUID().replaceAll("-","")}`};
+	const repo=await MongoCatalog.connect(config,false);
+	try {
+		await prepareMongoCollections(repo.db,config.caseCollection,config.moduleCollection,config.verifierCollection);
+		const module=await repo.createModule("Conversation imports");
+		const script=`import os,json,copy\nfrom pathlib import Path\nfrom pymongo import MongoClient\nfrom import_cases import import_case_from_conversation,import_bad_case_from_conversation,preview_conversation_case\nclient=MongoClient(os.environ['EVAL_MONGODB_URI'])\ndatabase=os.environ['TEST_DATABASE']\ndef load(name):\n p=json.loads(Path(name).read_text());p['moduleId']=os.environ['TEST_MODULE'];return p\np=load('conversation-bad-case.json')\na=import_bad_case_from_conversation(client,database,p)\nb=import_bad_case_from_conversation(client,database,p)\np['badCase']['reason']='changed'\nc=import_bad_case_from_conversation(client,database,p)\nnormal=import_case_from_conversation(client,database,load('conversation-normal.json'))\ncline=import_case_from_conversation(client,database,load('conversation-cline.json'))\ntyped=import_case_from_conversation(client,database,load('conversation-type-data.json'))\nclinebad=import_bad_case_from_conversation(client,database,load('conversation-cline-bad-case.json'))\nbefore=client[database]['agent_eval_modules'].find_one({'_id':os.environ['TEST_MODULE']})['writeVersion']\np['badMessageIndex']=999\ntry:\n import_bad_case_from_conversation(client,database,p)\n invalid=False\nexcept ValueError:\n invalid=True\nafter=client[database]['agent_eval_modules'].find_one({'_id':os.environ['TEST_MODULE']})['writeVersion']\nprint(json.dumps({'results':[a,b,c,normal,cline,typed,clinebad],'invalidBeforeWrite':invalid and before==after}))`;
+		const proc=Bun.spawn([python!,"-c",script],{cwd:examples,env:{...process.env,EVAL_MONGODB_URI:uri!,TEST_DATABASE:config.database,TEST_MODULE:module.id},stdout:"pipe",stderr:"pipe"});
+		const [output,errors,exit]=await Promise.all([new Response(proc.stdout).text(),new Response(proc.stderr).text(),proc.exited]);
+		expect(errors).toBe("");expect(exit).toBe(0);const data=JSON.parse(output);
+		expect(data.results.map((r:any)=>r.status)).toEqual(["created","unchanged","conflict","created","created","created","created"]);
+		expect(data.invalidBeforeWrite).toBe(true);
+		expect(data.results[0].boundary).toMatchObject({badMessageIndex:2,selectedCount:2,excludedCount:2});
+		const saved=(await repo.snapshot()).cases;expect(saved).toHaveLength(5);
+		for(const item of saved){
+			expect(parseEvalSuite({defaults:item.defaults,cases:[item.definition]}).cases[0]).toEqual(item.definition);
+			expect(item.definition.replayMode).toBe("function-call");
+			expect(item.definition.functionCall!.history!.length).toBe(item.definition.functionCall!.historySource!.messages.length);
+		}
+		const bad=saved.find(c=>c.id===data.results[0].caseId)!;
+		expect(bad.definition.badCase!.observedOutput).toContain("npm install");
+		expect(JSON.stringify([bad.definition.prompt,bad.definition.functionCall!.history])).not.toContain("npm install");
+		expect(JSON.stringify([bad.definition.prompt,bad.definition.functionCall!.history])).not.toContain("后续消息");
+		const clineBad=saved.find(c=>c.id===data.results[6].caseId)!;
+		expect(JSON.stringify(clineBad.definition.functionCall!.history)).not.toContain("FUTURE_INPUT_NOT_REPLAYED");
+		expect(clineBad.definition.functionCall!.history!.some(m=>m.role==="tool"&&m.tool_call_id==="call_1")).toBe(true);
+		const count=await repo.cases.countDocuments();
+		await repo.db.command({collMod:config.caseCollection,validator:{"definition.id":{$ne:"blocked-conversation"}},validationLevel:"strict",validationAction:"error"});
+		const before=await repo.modules.findOne({_id:module.id});
+		const blocked=Bun.spawn([python!,"-c",`import os,json\nfrom pathlib import Path\nfrom pymongo import MongoClient\nfrom import_cases import import_bad_case_from_conversation\np=json.loads(Path('conversation-bad-case.json').read_text());p['moduleId']=os.environ['TEST_MODULE'];p['source']['turnId']='blocked';p['name']='blocked-conversation'\nprint(json.dumps(import_bad_case_from_conversation(MongoClient(os.environ['EVAL_MONGODB_URI']),os.environ['TEST_DATABASE'],p)))`],{cwd:examples,env:{...process.env,EVAL_MONGODB_URI:uri!,TEST_DATABASE:config.database,TEST_MODULE:module.id},stdout:"pipe",stderr:"pipe"});
+		const blockedOutput=await new Response(blocked.stdout).text();expect(await new Response(blocked.stderr).text()).toBe("");expect(await blocked.exited).toBe(0);
+		expect(JSON.parse(blockedOutput)).toMatchObject({status:"validation-failed",stage:"insert-case",code:121});
+		expect(await repo.cases.countDocuments()).toBe(count);expect(await repo.modules.findOne({_id:module.id})).toEqual(before);
+	} finally {await repo.db.dropDatabase();await repo.close();}
+},60000);
