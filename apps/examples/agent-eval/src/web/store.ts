@@ -166,7 +166,12 @@ export class EvalStore {
 			raw = Array.isArray(parsed) ? { cases: parsed } : parsed;
 		}
 		if (!raw || typeof raw !== "object") throw new Error("请输入案例集 JSON 或案例数组");
-		if (!Array.isArray(raw.cases) || raw.cases.length > 1000) throw new Error("每次导入 1–1000 个案例");
+		if (!Array.isArray(raw.cases)) {
+			if ("source" in raw && "moduleId" in raw) throw new Error("这是 Python 接入参数，请通过 Python 导入入口写入；网页导入需要包含 cases 数组的案例集 JSON。");
+			if ("messages" in raw || "messgaes" in raw) throw new Error("这是历史对话 JSON，请切换到「历史对话 JSON（批量生成案例）」后上传。");
+			throw new Error("案例集 JSON 需要包含 cases 数组，也可直接上传案例数组或 JSONL。");
+		}
+		if (raw.cases.length < 1 || raw.cases.length > 1000) throw new Error("每次导入 1–1000 个案例");
 		const suite = parseEvalSuite({ ...raw, cases: raw.cases.map(c => c && typeof c === "object" ? { ...c, replayMode: c.replayMode ?? replayMode } : c), defaults: { ...this.settings(), ...(raw.defaults as object ?? {}) } });
 		for (const item of suite.cases) item.replayMode ??= replayMode as "single-turn" | "full-task" | "function-call";
 		return suite;

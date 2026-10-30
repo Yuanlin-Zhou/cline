@@ -577,6 +577,24 @@ button, input, select, textarea, a, summary { scroll-margin: 20px; }
 .CaseTable-link { display: inline-block; text-decoration: none; }
 .CaseTable-link:hover { color: var(--color-accent-fg); text-decoration: underline; }
 .CaseTable-link:focus-visible { outline: 2px solid var(--color-accent-fg); outline-offset: 3px; border-radius: 2px; }
+.CaseTable-name { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.CaseTable-name .Label { flex-shrink: 0; }
+.ImportFeedback:empty { display: none; }
+.BadCaseEditor { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--color-border-default); }
+.BadCaseEditor-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
+.BadCaseEditor-toggle input { margin: 0; }
+.BadCaseEditor-body { display: grid; gap: 8px; margin-top: 12px; }
+.BadCaseEditor-heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+.BadCaseEditor-heading .form-label, .BadCaseEditor-body .form-hint { margin: 0; }
+.BadCaseEditor-actions { display: flex; align-items: center; gap: 8px; }
+.BadCaseEditor-actions .form-control { width: auto; padding: 4px 28px 4px 8px; min-height: 30px; font-size: 12px; }
+.BadCaseEditor textarea { field-sizing: content; max-height: 240px; overflow-y: auto; }
+.BadCaseEditor-output { min-height: 76px; }
+.BadCaseEditor-reason { min-height: 40px; }
+.BadCaseEditor-source { margin-top: 12px; font-size: 12px; color: var(--color-fg-muted); overflow-wrap: anywhere; }
+.BadCaseEditor-source summary { width: fit-content; cursor: pointer; list-style: none; }
+.BadCaseEditor-source summary::-webkit-details-marker { display: none; }
+.BadCaseEditor-source p { margin: 6px 0; }
 .CaseTable .CaseTable-actionsCell { width: 1%; white-space: nowrap; }
 .CaseTable-actions { display: flex; align-items: center; gap: 8px; }
 @media (max-width: 760px) {

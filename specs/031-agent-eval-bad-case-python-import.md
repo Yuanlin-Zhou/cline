@@ -1,6 +1,8 @@
 # SPEC-031：Bad case 分类与日志平台 Python 直写接入
 
 状态：Implemented
+
+后续修正（2026-10-29）：用户要求修复现有 UI 并持久记录前端复核约定。沿用已批准的 Bad case 展示与导入流程，不增加案例类型或执行方式：标记移动到名称旁，详情减少标题/说明/固定高度，保留查看/编辑/复制能力；导入错误使用单一区域且禁止重复请求，区分结构错误与数量错误。本次属于已有实现的纠错和布局完善，验证记录补在本文末尾。
 日期：2026-10-29（北京时间）
 
 用户澄清：普通指已经存在的单轮回放案例，不新增普通类型、执行模式或创建流程。本方案只新增可选 Bad case 信息，Python 同时支持写入已有单轮案例合同。
@@ -138,3 +140,24 @@ Python 的核心接口接收日志平台已规范化的明确输入，不猜测�
 - 原生 create/update/rebuild TXT 与源码 validator 一致性测试通过；不增加任何索引命令。已有库更新 cases 即可，不需删除重建。MongoDB maxLength 计字符，应用/Python 额外限制 UTF-8 字节和 JSON 格式；接入说明明确外部写入合同。
 
 交付路径：apps/examples/agent-eval/examples/python-mongodb-import/；包含依赖、代码、测试、普通单轮/Bad case/工具历史样例及可交给内网 Agent 的接入任务说明。部署需先升级应用，DBA 按实际库名（用户为 ma_table）更新 cases 规则。运行账号不需要 DDL 权限。未自动提交推送。
+
+## 11. UI 纠错与实际复核（2026-10-29）
+
+用户指出重复导入错误、Bad case 标签位置和错误输出区域冗余。此次仅修正已批准功能的实现细节，不新增类型、接口、数据字段或数据库规则。
+
+- 错误提示使用单一区域；重复点击/重试替换当前提示，请求期间禁用提交与导入来源切换。修改内容或切换来源会清理旧提示。
+- 原先缺失 cases 数组也提示“每次导入 1–1000 个案例”；现在区分历史对话、Python 接入参数、案例集结构和实际数量错误，避免把格式错误误报为数量错误。合法 JSON/JSONL 导入合同不变。
+- Bad case 标签移到案例名称旁；回放方式列只展示回放方式，窄屏允许名称与标签换行并保留间距。
+- 详情统一使用紧凑字段标题，格式与复制操作并排；短输出约 76px，长输出最大 240px 后滚动，原因字段随内容伸缩；来源默认折叠。实际查看截图后发现并修正了原生 marker 与全局伪元素导致的双折叠箭头。
+- 根 AGENTS.md 与应用 AGENTS.md 持久记录前端浏览器复核要求：必须亲自查看截图、走通受影响交互，不能只以生成截图或 DOM/构建通过为验收。
+
+验证：类型检查和构建通过；replay/case-origin/Web 回归 68 pass、13 skip、0 fail，549 assertions。13 项为未启用 MongoDB/Python 真实数据库环境的集成测试；本次未修改 Mongo 文档结构或数据库写入逻辑，不重新声明内网实际权限验证。
+
+浏览器在隔离 SQLite 测试服务验证：同一无效输入连续三次只保留一处错误；请求中连续点击只发一次请求；修正输入后可预览并成功导入；Python 参数给出正确入口说明；列表标记归属正确；已有普通案例不展开 Bad case 字段；空/短/百行长输出高度正确；保存保留错误输出与来源；历史 JSON 预览正常；1440px 桌面与 390px 手机无页面横向溢出。未调用真实模型、未修改用户案例。
+
+已亲自打开以下截图复核，截图目录 [ui-correction](assets/031/ui-correction/)：
+
+- 桌面导入页、列表、短输出详情和长输出详情：desktop-import.png、desktop-list.png、desktop-detail.png、desktop-long-output.png。
+- 手机导入页、列表、短输出/长输出/空输出详情、历史对话预览：mobile-import.png、mobile-list.png、mobile-detail.png、mobile-long-output.png、mobile-empty-output.png、mobile-history-preview.png。
+
+浏览器复核脚本：/workspace/work/review-bad-case-ui.mjs；回归日志：/workspace/work/ui-correction-tests.log。此次未提交推送。

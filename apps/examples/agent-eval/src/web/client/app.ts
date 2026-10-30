@@ -1198,10 +1198,12 @@ function caseRow(c: SavedCase, selection: Set<string>, rerender: () => void, s: 
 			},
 		})),
 		h("td", { class: "CaseTable-content" },
-			h("a", { class: "case-name CaseTable-link", href: `#/case/${c.id}`, onclick: (event: Event) => event.stopPropagation() }, c.definition.id),
+			h("div", { class: "CaseTable-name" },
+				h("a", { class: "case-name CaseTable-link", href: `#/case/${c.id}`, onclick: (event: Event) => event.stopPropagation() }, c.definition.id),
+				...((c.definition.badCase || (c.definition as {isBadCase?:boolean}).isBadCase) ? [badge("Bad case", "Label--attention")] : [])),
 			c.definition.description ? h("div", { class: "muted small" }, c.definition.description) : h("span", {}),
 		),
-		h("td", {}, ...((c.definition.badCase || (c.definition as {isBadCase?:boolean}).isBadCase) ? [badge("Bad case", "Label--attention")] : []), badge(replayLabel(c.definition.replayMode), c.definition.replayMode === "full-task" ? "Label--done" : "Label--accent")),
+		h("td", {}, badge(replayLabel(c.definition.replayMode), c.definition.replayMode === "full-task" ? "Label--done" : "Label--accent")),
 		h("td", {}, ...tagPills(c.definition.tags)),
 		h("td", { class: "num" }, `v${c.revision}`),
 		h("td", {},
@@ -1316,17 +1318,29 @@ async function renderImport(app: HTMLElement): Promise<void> {
 
 	const stepsEl = h("div", { class: "Steps" });
 	const bodyEl = h("div", {});
+	const importError = h("div", { class: "ImportFeedback", "aria-live": "polite" });
+	let caseImportBusy = false;
+	const showImportError = (error?: unknown) => {
+		importError.replaceChildren();
+		if (error !== undefined) { const message = flash(error instanceof Error ? error.message : String(error)); message.setAttribute("role", "alert"); importError.append(message); }
+	};
+	const setCaseImportBusy = (busy: boolean) => {
+		caseImportBusy = busy;
+		bodyEl.setAttribute("aria-busy", String(busy));
+		for (const control of [...bodyEl.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement | HTMLTextAreaElement>("input,select,button,textarea"), ...sourceBar.querySelectorAll<HTMLButtonElement>("button")]) control.disabled = busy;
+	};
 	const batch = batchConversationImport({modules:s.modules,settings:s.settings,initialModule:moduleId,api,onDone:(target,result)=>{toast(`已新建 ${result.created} 个、更新 ${result.updated} 个、跳过 ${result.skipped} 个案例`,"success");navigate(`#/cases/${target}`);}});
 	const sourceBar=h("div",{class:"ImportSource",role:"group","aria-label":"导入来源"});
 	const chooseSource=(conversation:boolean)=>{
-		if(batch.isBusy()){toast("正在处理文件或导入，请稍候。","error");return;}
+		if(batch.isBusy() || caseImportBusy){return;}
+		showImportError();
 		stepsEl.hidden=conversation;bodyEl.hidden=conversation;batch.element.hidden=!conversation;
 		caseSource.setAttribute("aria-pressed",String(!conversation));historySource.setAttribute("aria-pressed",String(conversation));caseSource.classList.toggle("btn-primary",!conversation);historySource.classList.toggle("btn-primary",conversation);
 	};
 	const caseSource=h("button",{class:"btn btn-primary",type:"button","aria-pressed":"true",onclick:()=>chooseSource(false)},"案例集 JSON / JSONL");
 	const historySource=h("button",{class:"btn",type:"button","aria-pressed":"false",onclick:()=>chooseSource(true)},"历史对话 JSON（批量生成案例）");
 	sourceBar.append(caseSource,historySource);batch.element.hidden=true;
-	app.append(sourceBar,stepsEl,bodyEl,batch.element);
+	app.append(sourceBar,stepsEl,importError,bodyEl,batch.element);
 
 	const renderSteps = (): void => {
 		stepsEl.replaceChildren(
@@ -1340,6 +1354,7 @@ async function renderImport(app: HTMLElement): Promise<void> {
 		h("div", { class: `step ${cls}` }, h("span", { class: "step-num" }, num > 1 && step > num ? "✓" : String(num)), h("span", {}, label));
 
 	const renderStep1 = (): void => {
+		showImportError();
 		bodyEl.replaceChildren();
 		const wrap = h("div", { class: "Box" });
 		const inner = h("div", { class: "Box-body" });
@@ -1355,6 +1370,7 @@ async function renderImport(app: HTMLElement): Promise<void> {
 				type: "file",
 				accept: ".json,.jsonl,.txt",
 				onchange: async (e: Event) => {
+					showImportError();
 					const file = (e.target as HTMLInputElement).files?.[0];
 					if (!file) return;
 					(document.getElementById("imp-content") as HTMLTextAreaElement).value = await file.text();
@@ -1368,17 +1384,21 @@ async function renderImport(app: HTMLElement): Promise<void> {
 		);
 		wrap.append(inner);
 		bodyEl.append(h("div", { class: "ImportLayout" }, wrap, fieldDocs()));
+		bodyEl.querySelector("#imp-content")?.addEventListener("input", () => showImportError());
 		bodyEl.append(h("div", { class: "wizard-actions" },
 			h("button", { class: "btn", onclick: () => navigate(returnTo) }, "取消"),
 			h("button", {
 				class: "btn btn-primary",
 				onclick: async () => {
+					if (caseImportBusy) return;
 					moduleId = val("imp-module");
 					replayMode = val("imp-replay");
 					format = val("imp-format");
 					content = val("imp-content");
 					if (!moduleId) return toast("请选择目标模块", "error");
 					if (!content.trim()) return toast("请粘贴或上传内容", "error");
+					showImportError();
+					setCaseImportBusy(true);
 					try {
 						preview = await api("/api/import/preview", {
 							method: "POST",
@@ -1389,14 +1409,15 @@ async function renderImport(app: HTMLElement): Promise<void> {
 						renderSteps();
 						renderStep2();
 					} catch (error) {
-						bodyEl.prepend(flash(error instanceof Error ? error.message : String(error)));
-					}
+						showImportError(error);
+					} finally { setCaseImportBusy(false); }
 				},
 			}, "下一步：校验"),
 		));
 	};
 
 	const renderStep2 = (): void => {
+		showImportError();
 		bodyEl.replaceChildren();
 		if (!preview) {
 			bodyEl.append(flash("校验失败，请返回上一步重试"));
@@ -1433,6 +1454,7 @@ async function renderImport(app: HTMLElement): Promise<void> {
 	};
 
 	const renderStep3 = (): void => {
+		showImportError();
 		bodyEl.replaceChildren();
 		const wrap = h("div", { class: "Box" });
 		const inner = h("div", { class: "Box-body" });
@@ -1448,7 +1470,10 @@ async function renderImport(app: HTMLElement): Promise<void> {
 			h("button", {
 				class: "btn btn-primary",
 				onclick: async () => {
+					if (caseImportBusy) return;
 					policy = val("imp-policy");
+					showImportError();
+					setCaseImportBusy(true);
 					try {
 						const result = await api<{ created: number; updated: number; skipped: number }>("/api/import", {
 							method: "POST",
@@ -1459,8 +1484,8 @@ async function renderImport(app: HTMLElement): Promise<void> {
 						toast("导入完成");
 						navigate(`#/cases/${moduleId}`);
 					} catch (error) {
-						resultBox.replaceChildren(flash(error instanceof Error ? error.message : String(error)));
-					}
+						showImportError(error);
+					} finally { setCaseImportBusy(false); }
 				},
 			}, "确认导入"),
 		));

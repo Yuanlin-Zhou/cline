@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { caseExample, replayConfig } from "./replay.js";
@@ -26,4 +26,17 @@ test("multi-turn preserves case configuration and missing mode uses single-turn 
 	const defaults = { providerId: "cline", modelId: "test", tools: "full" as const, maxIterations: 20 };
 	expect(replayConfig({ id: "legacy", history: [], prompt: "hello" }, defaults)).toEqual({ tools: "none", maxIterations: 1 });
 	expect(replayConfig(caseExample("full-task"), defaults)).toEqual({ tools: "full", maxIterations: 30 });
+});
+
+test("import validation distinguishes wrong source/structure from actual case count limits", () => {
+	const directory = mkdtempSync(path.join(os.tmpdir(), "eval-import-errors-"));
+	const store = new EvalStore(directory);
+	try {
+		expect(() => store.parseImport('{"moduleId":"m","source":{}}', "json", "single-turn")).toThrow("Python 接入参数");
+		expect(() => store.parseImport('{"messages":[]}', "json", "single-turn")).toThrow("历史对话 JSON");
+		expect(() => store.parseImport('{"id":"case","prompt":"hi"}', "json", "single-turn")).toThrow("需要包含 cases 数组");
+		expect(() => store.parseImport('{"cases":[]}', "json", "single-turn")).toThrow("1–1000");
+		expect(() => store.parseImport(JSON.stringify({cases:Array.from({length:1001},(_,i)=>({id:String(i),prompt:"hi"}))}), "json", "single-turn")).toThrow("1–1000");
+		expect(store.parseImport('{"cases":[{"id":"one","prompt":"hi"}]}', "json", "single-turn").cases).toHaveLength(1);
+	} finally { store.db.close(); rmSync(directory,{recursive:true,force:true}); }
 });
