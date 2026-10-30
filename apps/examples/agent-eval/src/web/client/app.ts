@@ -1,3 +1,4 @@
+import { badCaseExample } from "./bad-case-example.js";
 import { badCaseEditor } from "./bad-case-editor.js";
 import { itemLoader } from "./item-loader.js";
 import type { ItemSummary } from "../projections.js";
@@ -2799,6 +2800,8 @@ function createItemInspector(runId: string, initial: RunItem) {
 			const reason = item.error ?? result?.error ?? (item.status === "failed" ? result?.assertions.filter(a => !a.passed).map(a => a.message).join("；") || "断言未通过" : "");
 			if (reason) content.append(flash(reason, item.status === "error" ? "warning" : "error"));
             if(result?.llmJudge)content.append(judgeResultPanel(result.llmJudge,()=>api(`/api/runs/${runId}/items/${item.id}/judge-scores/official-input`)));
+			const originalExample = badCaseExample(item.snapshot.definition.badCase);
+			if (originalExample) content.append(originalExample);
 			if (result && (result.functionCallResponse || item.snapshot.definition.replayMode === "function-call")) content.append(modelResponse(result));
 			else if (result && !["error", "cancelled"].includes(item.status)) content.append(h("div", { class: "section-title mt-3" }, "最终回复"), h("pre", { class: "output" }, result.text || "（无文本回复）"));
 			if (result) renderAssertions(content, result);

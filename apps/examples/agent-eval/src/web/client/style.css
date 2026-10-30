@@ -595,6 +595,14 @@ button, input, select, textarea, a, summary { scroll-margin: 20px; }
 .BadCaseEditor-source summary { width: fit-content; cursor: pointer; list-style: none; }
 .BadCaseEditor-source summary::-webkit-details-marker { display: none; }
 .BadCaseEditor-source p { margin: 6px 0; }
+.BadCaseExample { margin: 16px 0; padding: 12px; border: 1px solid var(--color-border-default); border-radius: var(--radius); background: var(--color-canvas-subtle); }
+.BadCaseExample-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.BadCaseExample-heading h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.BadCaseExample .form-hint { margin: 6px 0 8px; }
+.BadCaseExample-output { margin: 0; padding: 10px 12px; max-height: 240px; overflow: auto; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-canvas-default); font: 13px/1.55 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.BadCaseExample-output:focus-visible { outline: 2px solid var(--color-accent-emphasis); outline-offset: 2px; }
+.BadCaseExample-reason { margin: 8px 0 0; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.BadCaseExample-reason strong { font-weight: 500; }
 .CaseTable .CaseTable-actionsCell { width: 1%; white-space: nowrap; }
 .CaseTable-actions { display: flex; align-items: center; gap: 8px; }
 @media (max-width: 760px) {
