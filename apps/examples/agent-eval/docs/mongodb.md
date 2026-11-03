@@ -6,6 +6,8 @@ Agent 日志平台的一键导入参考见 [Python 接入代码与说明](../exa
 
 Python 现在提供 `import_case_from_conversation` / `import_bad_case_from_conversation`，可直接解析网页已支持的完整 messages、system 和工具历史；原始记录放入 `conversation`，包含目标错误回复时明确传其零基 `badMessageIndex`。转换结果使用现有 function-call/historySource 合同，无需为此再次修改集合。两份 Python 模块须一起部署，详细参数与样例见上述说明。
 
+Java 日志平台接入参考见 [Function Call Bad Case 导入示例](java-function-call-bad-case-import.md)，包含 MongoTemplate 事务写入、日志格式转换、稳定身份去重和接入验收说明。
+
 The Web service uses the official MongoDB **6.21.0** driver with Bun 1.3.13. Driver 7.7.0/BSON 7 currently invokes an unsupported Bun V8 API, so do not upgrade without testing the Bun runtime.
 
 ## Prepare a replica set
