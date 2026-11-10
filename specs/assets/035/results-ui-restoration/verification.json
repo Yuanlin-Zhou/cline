@@ -1,0 +1,28 @@
+{
+  "baseline": "2e5f54b",
+  "date": "2026-11-10",
+  "browserTests": {
+    "pass": 6,
+    "fail": 0
+  },
+  "viewports": [
+    [
+      1440,
+      900
+    ],
+    [
+      390,
+      844
+    ]
+  ],
+  "screenshots": 11,
+  "consoleErrors": [],
+  "checks": [
+    "Git-only source typecheck and production build",
+    "result modules lint",
+    "default inline result and terminal refresh",
+    "filters, empty state, attempts and retry",
+    "same-data original/restored UI comparison",
+    "desktop and mobile visual inspection"
+  ]
+}

@@ -135,6 +135,12 @@ test("React drafts, native history conversion, JSON errors and real function-cal
 	await expect(page.getByText("已完成", { exact: true })).toBeVisible({
 		timeout: 60000,
 	});
+	await expect(
+		page.getByRole("region", { name: "案例结果列表", exact: true }),
+	).toBeVisible();
+	await expect(
+		page.getByText("原始函数调用响应", { exact: true }),
+	).toBeVisible();
 	await page
 		.getByRole("button", { name: "查看详情", exact: true })
 		.first()
@@ -404,5 +410,65 @@ test("stable selections survive filtering, dragging and module archive/restore",
 	await page.reload();
 	await expect(
 		page.getByRole("heading", { name: module.name, exact: true }),
+	).toBeVisible();
+});
+
+test("evaluation workbench selects results inline and keeps filters and attempt history usable", async ({
+	page,
+	request,
+}) => {
+	const { module, item } = await seed(request, "工作台恢复验收");
+	const failure = await send(request, "/api/cases", {
+		moduleId: module.id,
+		defaults,
+		definition: {
+			...item.definition,
+			id: "回复检查失败",
+			assertions: { contains: ["UNREACHABLE_EXPECTATION"] },
+		},
+	});
+	const run = await send(request, "/api/runs", {
+		caseIds: [item.id, failure.id],
+		concurrency: 2,
+		name: "工作台恢复",
+	});
+	await page.goto(`/#/run/${run.id}`);
+	await expect(page.getByText("已完成", { exact: true })).toBeVisible({
+		timeout: 60000,
+	});
+	const list = page.getByRole("region", { name: "案例结果列表", exact: true });
+	const inspector = page.getByRole("region", {
+		name: "选中案例详情",
+		exact: true,
+	});
+	await expect(list.getByRole("button")).toHaveCount(2);
+	await expect(inspector.getByText("最终回复", { exact: true })).toBeVisible();
+	await expect(
+		inspector.getByText("Use Bun. 已完成验证。", { exact: true }),
+	).toBeVisible();
+	await expect(page.getByRole("dialog")).toHaveCount(0);
+	await page
+		.getByLabel("按执行结果筛选", { exact: true })
+		.selectOption("failed");
+	await expect(list.getByRole("button")).toHaveCount(1);
+	await expect(inspector.getByRole("alert")).toContainText(
+		"UNREACHABLE_EXPECTATION",
+	);
+	await expect(page.getByLabel("执行尝试历史", { exact: true })).toBeVisible();
+	await page.getByLabel("搜索批次案例", { exact: true }).fill("不存在的案例");
+	await expect(list.getByRole("button")).toHaveCount(0);
+	await expect(
+		inspector.getByText("没有匹配的案例", { exact: true }),
+	).toBeVisible();
+	await page.getByLabel("搜索批次案例", { exact: true }).fill("");
+	await page.getByLabel("按执行结果筛选", { exact: true }).selectOption("");
+	await list
+		.getByRole("button", {
+			name: `查看案例：${item.definition.id}`,
+			exact: true,
+		})
+		.click();
+	await expect(
+		inspector.getByText("Use Bun. 已完成验证。", { exact: true }),
 	).toBeVisible();
 });

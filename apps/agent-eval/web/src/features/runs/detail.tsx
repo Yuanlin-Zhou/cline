@@ -1,6 +1,8 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import type { RunOverview } from "../../../../src/contracts/api";
+import { canRetry, type RunItem } from "../../../../src/contracts/catalog";
 import { api, message, send, useApi } from "../../api/client";
 import {
 	Alert,
@@ -8,7 +10,6 @@ import {
 	Button,
 	Check,
 	DataState,
-	Heading,
 	JsonView,
 	Modal,
 	Select,
@@ -18,7 +19,8 @@ import {
 	duration,
 	modeLabel,
 } from "../../components/ui";
-import { ItemInspector } from "../results/inspector";
+import { InlineItemInspector, ItemInspector } from "../results/inspector";
+import { GradingMetrics, RunSummary } from "./summary";
 import { useRun } from "./use-run";
 
 export function RunPage() {
@@ -32,123 +34,157 @@ export function RunPage() {
 		</DataState>
 	);
 }
-function RunDetail({ run, refresh }: { run: any; refresh: () => unknown }) {
+function RunDetail({
+	run,
+	refresh,
+}: {
+	run: RunOverview;
+	refresh: () => unknown;
+}) {
 	const [search, setSearch] = useState("");
 	const [tab, setTab] = useState("items");
 	const [filter, setFilter] = useState("");
+	const [module, setModule] = useState("");
 	const [round, setRound] = useState("");
-	const [selected, setSelected] = useState<string>();
+	const [selectedRoot, setSelectedRoot] = useState<string>();
+	const [attemptChoice, setAttemptChoice] = useState<Record<string, string>>(
+		{},
+	);
+	const [expanded, setExpanded] = useState(false);
 	const [retry, setRetry] = useState(false);
+	const [retryItems, setRetryItems] = useState<string[]>();
 	const [repeat, setRepeat] = useState(false);
-	const [attempts, setAttempts] = useState<Record<string, any[]>>({});
-	const [error, setError] = useState("");
 	const stop = useMutation({
 		mutationFn: () => send(`/api/runs/${run.id}/cancel?view=summary`, {}),
 		onSuccess: refresh,
 	});
 	const running = ["queued", "running"].includes(run.status);
-	const summary = run.summary;
 	const rows = run.items.filter(
-		(item: any) =>
-			(!filter || item.status === filter) &&
+		(item) =>
+			(!filter ||
+				(filter === "issues"
+					? ["failed", "error", "inconclusive"].includes(item.status)
+					: item.status === filter)) &&
+			(!module || item.moduleName === module) &&
 			(!round || String(item.round ?? 1) === round) &&
-			`${item.snapshot.definition.id} ${item.moduleName}`
+			`${item.snapshot.definition.id} ${item.snapshot.definition.description ?? ""} ${item.moduleName}`
 				.toLowerCase()
 				.includes(search.toLowerCase()),
 	);
-	const activeItem =
-		run.items.find((i: any) => i.id === selected) ??
-		Object.values(attempts)
-			.flat()
-			.find((i: any) => i.id === selected);
-	async function loadAttempts(item: any) {
-		try {
-			const values = await api<any[]>(
-				`/api/runs/${run.id}/items/${item.id}/attempts`,
-			);
-			setAttempts((v) => ({ ...v, [item.rootItemId ?? item.id]: values }));
-		} catch (e) {
-			setError(message(e));
-		}
-	}
+	const current =
+		rows.find((item) => (item.rootItemId ?? item.id) === selectedRoot) ??
+		rows[0];
+	const root = current?.rootItemId ?? current?.id;
+	const attempts = useApi<RunItem[]>(
+		`/api/runs/${run.id}/items/${current?.id}/attempts`,
+		!!current && tab === "items",
+	);
+	const history =
+		attempts.data?.map((item) => (item.id === current?.id ? current : item)) ??
+		(current ? [current] : []);
+	const active =
+		history.find(
+			(item) => item.id === (root ? attemptChoice[root] : undefined),
+		) ?? current;
+	const startRetry = (ids?: string[]) => {
+		setRetryItems(ids);
+		setRetry(true);
+	};
 	return (
-		<>
+		<div className="RunDetailPage">
 			<div className="crumbs">
-				<Link to="/runs">评测批次</Link> / {run.name}
+				<Link to="/runs">评测批次</Link>
+				<span>/</span>
+				<span>{run.name}</span>
 			</div>
-			<Heading
-				title={run.name}
-				description={`创建于 ${new Date(run.createdAt).toLocaleString()} · ${run.repeatCount ?? 1} 轮 · 并发 ${run.concurrency}${run.note ? ` · ${run.note}` : ""}`}
-			>
-				<Status value={run.status} />
-				{running ? (
-					<Button disabled={stop.isPending} onClick={() => stop.mutate()}>
-						停止评测
-					</Button>
-				) : (
-					<>
-						<Button onClick={() => setRetry(true)}>重试未通过案例</Button>
-						<Button onClick={() => setRepeat(true)}>重复评测</Button>
-					</>
-				)}
-				{["json", "csv", "markdown"].map((format) => (
-					<a
-						className="btn"
-						key={format}
-						href={`/api/runs/${run.id}/export?format=${format}`}
-					>
-						导出 {format === "markdown" ? "简报" : format.toUpperCase()}
-					</a>
-				))}
-			</Heading>
-			<Alert>{error || (stop.error && message(stop.error))}</Alert>
-			<div className="react-metrics">
-				{[
-					["案例", summary.total],
-					["通过", summary.passed],
-					["失败", summary.failed],
-					["错误", summary.error],
-					["无法判定", summary.inconclusive],
-					["取消", summary.cancelled],
-					["累计 Token", summary.tokens],
-					["费用", summary.cost ?? "未知"],
-				].map(([label, value]) => (
-					<div key={label}>
-						<strong>{value}</strong>
-						<span>{label}</span>
+			<div className="page-head flex-between wrap gap-3">
+				<div className="RunHeading">
+					<div className="flex-center gap-2 wrap">
+						<h1 className="page-title">{run.name}</h1>
+						<Status value={run.status} />
 					</div>
-				))}
+					<p className="page-desc">
+						创建于{" "}
+						{new Date(run.createdAt).toLocaleString("zh-CN", { hour12: false })}{" "}
+						· {run.repeatCount ?? 1} 轮 · 并发 {run.concurrency}
+						{run.note ? ` · ${run.note}` : ""}
+					</p>
+				</div>
+				<div className="page-actions">
+					{running ? (
+						<Button
+							danger
+							disabled={stop.isPending}
+							onClick={() => stop.mutate()}
+						>
+							停止评测
+						</Button>
+					) : (
+						run.items.some(canRetry) && (
+							<Button primary onClick={() => startRetry()}>
+								重试未通过案例
+							</Button>
+						)
+					)}
+					{["json", "csv", "markdown"].map((format) => (
+						<a
+							key={format}
+							className="btn"
+							href={`/api/runs/${run.id}/export?format=${format}`}
+						>
+							导出 {format === "markdown" ? "简报" : format.toUpperCase()}
+						</a>
+					))}
+					{!running && (
+						<Button onClick={() => setRepeat(true)}>重复评测本批次</Button>
+					)}
+				</div>
 			</div>
+			<Alert>{stop.error && message(stop.error)}</Alert>
+			<RunSummary run={run} />
 			<Tabs
 				onChange={setTab}
 				entries={[
 					[
 						"items",
 						"案例结果",
-						<>
-							<div className="react-filters">
+						<section key="items" aria-label="案例结果工作台">
+							<div className="ResultFilters">
 								<Text
+									aria-label="搜索批次案例"
+									placeholder="搜索案例名称或描述…"
 									value={search}
 									onChange={setSearch}
-									placeholder="搜索案例或模块"
 								/>
 								<Select
+									aria-label="按执行结果筛选"
 									value={filter}
 									onChange={setFilter}
 									options={[
 										["", "全部结果"],
-										...[
-											"queued",
-											"running",
-											"passed",
-											"failed",
-											"error",
-											"cancelled",
-											"inconclusive",
-										].map((v) => [v, v] as [string, string]),
+										["issues", "失败与错误"],
+										["running", "运行中"],
+										["queued", "排队中"],
+										["passed", "通过"],
+										["failed", "断言失败"],
+										["error", "执行错误"],
+										["inconclusive", "无法判定"],
+										["cancelled", "已取消"],
 									]}
 								/>
 								<Select
+									aria-label="按模块筛选"
+									value={module}
+									onChange={setModule}
+									options={[
+										["", "全部模块"],
+										...[
+											...new Set(run.items.map((item) => item.moduleName)),
+										].map((name) => [name, name] as [string, string]),
+									]}
+								/>
+								<Select
+									aria-label="按重复轮次筛选"
 									value={round}
 									onChange={setRound}
 									options={[
@@ -160,79 +196,114 @@ function RunDetail({ run, refresh }: { run: any; refresh: () => unknown }) {
 										),
 									]}
 								/>
+								<span className="muted small">
+									{rows.length} / {run.items.length} 项结果
+								</span>
 							</div>
-							<div className="react-table-wrap">
-								<table className="react-table">
-									<thead>
-										<tr>
-											<th>案例</th>
-											<th>模块</th>
-											<th>回放方式</th>
-											<th>结果</th>
-											<th>轮次 / 尝试</th>
-											<th>耗时</th>
-											<th>操作</th>
-										</tr>
-									</thead>
-									<tbody>
-										{rows.map((item: any) => (
-											<tr key={item.id}>
-												<td>
-													{item.snapshot.definition.id}
-													{item.snapshot.definition.isBadCase && (
-														<span className="Label Label--danger">
-															Bad case
+							<div className="RunWorkbench" data-empty={!rows.length}>
+								<div className="RunListColumn" hidden={!rows.length}>
+									<section
+										className="RunItems"
+										aria-label="案例结果列表"
+										hidden={!rows.length}
+									>
+										{rows.map((item) => (
+											<button
+												type="button"
+												key={item.id}
+												className="RunItem"
+												aria-label={`查看案例：${item.snapshot.definition.id}`}
+												aria-pressed={item.id === current?.id}
+												onClick={() => {
+													setSelectedRoot(item.rootItemId ?? item.id);
+													setExpanded(false);
+												}}
+											>
+												<span className="RunItem-head">
+													<span className="case-name">
+														{item.snapshot.definition.id}
+														{(item.snapshot.definition.badCase ||
+															(
+																item.snapshot.definition as {
+																	isBadCase?: boolean;
+																}
+															).isBadCase) && (
+															<span className="Label Label--danger">
+																Bad case
+															</span>
+														)}
+													</span>
+													<Status value={item.status} />
+												</span>
+												<span className="muted small">
+													第 {item.round ?? 1} 轮 · 重试 {item.attempt ?? 0} 次
+													· {item.moduleName} ·{" "}
+													{modeLabel(item.snapshot.definition.replayMode)} ·{" "}
+													{duration(item.result?.durationMs)}
+												</span>
+												{["queued", "running"].includes(item.status) &&
+													item.phase && (
+														<span className="RunItem-phase">
+															{{
+																executing: "执行中",
+																verifying: "验证中",
+																judging: "LLM 评分中",
+															}[item.phase] ?? item.phase}
 														</span>
 													)}
-												</td>
-												<td>{item.moduleName}</td>
-												<td>
-													{modeLabel(item.snapshot.definition.replayMode)}
-												</td>
-												<td>
-													<Status value={item.status} />
-													{["queued", "running"].includes(item.status) &&
-														item.phase && (
-															<small className="react-block muted">
-																{item.phase}
-															</small>
-														)}
-													{item.activity && (
-														<small className="react-block muted">
-															{item.activity.toolName ?? item.activity.type}
-														</small>
-													)}
-												</td>
-												<td>
-													{item.round ?? 1} / {(item.attempt ?? 0) + 1}
-												</td>
-												<td>{duration(item.result?.durationMs)}</td>
-												<td>
-													<Button onClick={() => setSelected(item.id)}>
-														查看详情
-													</Button>
-													<Button onClick={() => loadAttempts(item)}>
-														全部尝试
-													</Button>
-													{attempts[item.rootItemId ?? item.id]?.map(
-														(attempt) => (
-															<Button
-																key={attempt.id}
-																onClick={() => setSelected(attempt.id)}
-															>
-																尝试 {(attempt.attempt ?? 0) + 1} ·{" "}
-																{attempt.status}
-															</Button>
-														),
-													)}
-												</td>
-											</tr>
+											</button>
 										))}
-									</tbody>
-								</table>
-								{!rows.length && <p className="empty">没有匹配的案例</p>}
+									</section>
+								</div>
+								<section className="RunInspector" aria-label="选中案例详情">
+									{active && current ? (
+										<>
+											<div className="Inspector-toolbar">
+												<Select
+													aria-label="执行尝试历史"
+													value={active.id}
+													onChange={(id) => {
+														if (root)
+															setAttemptChoice((v) => ({ ...v, [root]: id }));
+													}}
+													options={history.map((item) => [
+														item.id,
+														`${item.attempt ? `第 ${item.attempt} 次重试` : "首次执行"} · ${{ queued: "排队中", running: "运行中", passed: "通过", failed: "失败", error: "执行错误", cancelled: "已取消", inconclusive: "无法判定" }[item.status]}`,
+													])}
+												/>
+												<Button
+													disabled={running || !canRetry(current)}
+													onClick={() => startRetry([current.id])}
+												>
+													重试此案例
+												</Button>
+												<Button onClick={() => setExpanded(true)}>
+													查看详情
+												</Button>
+											</div>
+											<Alert>{attempts.error && message(attempts.error)}</Alert>
+											<div className="Inspector-title">
+												{active.snapshot.definition.id}
+											</div>
+											{!expanded && tab === "items" && (
+												<InlineItemInspector
+													key={active.id}
+													runId={run.id}
+													item={active}
+												/>
+											)}
+										</>
+									) : (
+										<div className="empty">
+											<div className="empty-title">没有匹配的案例</div>
+											<div className="empty-desc">
+												调整结果、模块或搜索条件后重试。
+											</div>
+										</div>
+									)}
+								</section>
 							</div>
-						</>,
+						</section>,
 					],
 					[
 						"report",
@@ -248,35 +319,48 @@ function RunDetail({ run, refresh }: { run: any; refresh: () => unknown }) {
 					[
 						"modules",
 						"模块统计",
-						<>
-							{Object.entries(run.moduleSummary ?? {}).map(
-								([name, stats]: [string, any]) => (
-									<Box key={name} title={name}>
-										<p>
-											通过 {stats.passed} / {stats.total} · 失败 {stats.failed}{" "}
-											· 错误 {stats.error} · 无法判定 {stats.inconclusive}
-										</p>
-										<p>
-											{duration(stats.durationMs)} · {stats.tokens} Token
-										</p>
-									</Box>
-								),
-							)}
-						</>,
+						<div className="TableWrap" key="modules">
+							<table className="Table">
+								<thead>
+									<tr>
+										<th>模块</th>
+										<th>通过 / 总数</th>
+										<th>失败 / 错误 / 无法判定</th>
+										<th>累计执行耗时</th>
+										<th>Token</th>
+									</tr>
+								</thead>
+								<tbody>
+									{Object.entries(run.moduleSummary).map(([name, stats]) => (
+										<tr key={name}>
+											<td>{name}</td>
+											<td>
+												{stats.passed} / {stats.total}
+											</td>
+											<td>
+												{stats.failed} / {stats.error} / {stats.inconclusive}
+											</td>
+											<td>{duration(stats.durationMs)}</td>
+											<td>{stats.tokens.toLocaleString()}</td>
+										</tr>
+									))}
+								</tbody>
+							</table>
+						</div>,
 					],
 				]}
 			/>
-			{activeItem && (
+			{expanded && active && (
 				<ItemInspector
-					key={activeItem.id}
 					runId={run.id}
-					item={activeItem}
-					close={() => setSelected(undefined)}
+					item={active}
+					close={() => setExpanded(false)}
 				/>
 			)}
 			{retry && (
 				<RetryDialog
 					runId={run.id}
+					itemIds={retryItems}
 					close={() => setRetry(false)}
 					done={() => {
 						setRetry(false);
@@ -285,20 +369,25 @@ function RunDetail({ run, refresh }: { run: any; refresh: () => unknown }) {
 				/>
 			)}
 			{repeat && <RepeatDialog run={run} close={() => setRepeat(false)} />}
-		</>
+		</div>
 	);
 }
+
 function RetryDialog({
 	runId,
+	itemIds,
 	close,
 	done,
 }: {
 	runId: string;
+	itemIds?: string[];
 	close: () => void;
 	done: () => void;
 }) {
 	const preview = useApi<any>(`/api/runs/${runId}/retry-preview`);
-	const [selected, setSelected] = useState<Set<string>>();
+	const [selected, setSelected] = useState<Set<string> | undefined>(() =>
+		itemIds ? new Set(itemIds) : undefined,
+	);
 	const [statuses, setStatuses] = useState([
 		"failed",
 		"error",
@@ -437,39 +526,34 @@ function RepeatReport({
 			<DataState query={query}>
 				{report && (
 					<>
-						<p className="form-hint">{report.method}</p>
+						<h2 className="section-title">重复多轮评测报告</h2>
+						<p>
+							{report.caseCount} 个案例 × {report.repeatCount} 轮 · 完整执行{" "}
+							{report.completedRounds} 轮
+						</p>
 						{report.partial && (
 							<Alert kind="warning">
 								这是阶段性报告，部分执行尚未完成或已取消。
 							</Alert>
 						)}
-						<div className="react-metrics">
-							<div>
-								<strong>
-									{report.completedRounds}/{report.repeatCount}
-								</strong>
-								<span>完整轮次</span>
-							</div>
-							<div>
-								<strong>
-									{report.allRoundsPassedCases}/{report.caseCount}
-								</strong>
-								<span>全轮通过案例</span>
-							</div>
-							<div>
-								<strong>
-									{report.outputChangedCases}/{report.comparableCases}
-								</strong>
-								<span>可比较案例中的输出变化</span>
-							</div>
-							<div>
-								<strong>{report.judgmentChangedCases}</strong>
-								<span>通过/失败波动</span>
-							</div>
+						<div className="ReviewSummary">
+							<strong>
+								全轮通过 {report.allRoundsPassedCases}/{report.caseCount}
+							</strong>
+							<span>通过/失败波动 {report.judgmentChangedCases} 个案例</span>
+							<span>
+								输出变化 {report.outputChangedCases}/{report.comparableCases}{" "}
+								个可比较案例
+							</span>
 						</div>
+						<details className="Verifier-details">
+							<summary>多轮比较口径</summary>
+							<p className="form-hint">{report.method}</p>
+						</details>
+						<GradingMetrics metrics={report.grading} />
 						<Box title="各轮结果">
-							<div className="react-table-wrap">
-								<table className="react-table">
+							<div className="TableWrap">
+								<table className="Table">
 									<thead>
 										<tr>
 											<th>轮次</th>

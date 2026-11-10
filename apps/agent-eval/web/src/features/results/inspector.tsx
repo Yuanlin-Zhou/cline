@@ -27,18 +27,29 @@ export function ItemInspector({
 	item: any;
 	close: () => void;
 }) {
-	const query = useRunItem(runId, item);
 	return (
 		<Modal open title={item.snapshot.definition.id} onClose={close}>
-			<DataState query={query}>
-				{query.data && (
-					<ItemContent
-						runId={runId}
-						item={{ ...query.data, status: item.status, phase: item.phase }}
-					/>
-				)}
-			</DataState>
+			<InlineItemInspector runId={runId} item={item} />
 		</Modal>
+	);
+}
+export function InlineItemInspector({
+	runId,
+	item,
+}: {
+	runId: string;
+	item: any;
+}) {
+	const query = useRunItem(runId, item);
+	return (
+		<DataState query={query}>
+			{query.data && (
+				<ItemContent
+					runId={runId}
+					item={{ ...query.data, status: item.status, phase: item.phase }}
+				/>
+			)}
+		</DataState>
 	);
 }
 export function ItemContent({ runId, item }: { runId: string; item: any }) {
@@ -50,6 +61,62 @@ export function ItemContent({ runId, item }: { runId: string; item: any }) {
 		!!evidenceId,
 	);
 	const finished = !["queued", "running"].includes(item.status);
+	const checks = (
+		<>
+			<Box title="回复断言">
+				{result?.assertions?.map((a: any, i: number) => (
+					<p key={i}>
+						<Status value={a.passed ? "passed" : "failed"} /> {a.message}
+					</p>
+				))}
+				{!result?.assertions?.length && (
+					<p className="muted">没有回复断言记录</p>
+				)}
+			</Box>
+			{result?.grading && (
+				<Box title={`任务验收 · ${result.grading.verdict}`}>
+					<p>验证状态：{result.grading.status}</p>
+					{result.grading.results.map((rule: any) => (
+						<Box
+							key={rule.id}
+							title={`${rule.label ?? rule.id} · ${rule.status}`}
+						>
+							<p>{rule.message}</p>
+							<details>
+								<summary>预期与实际</summary>
+								<JsonView
+									value={{
+										expected: rule.expected,
+										actual: rule.actual,
+									}}
+								/>
+							</details>
+							{rule.evidenceRefs?.map((id: string) => (
+								<Button key={id} onClick={() => setEvidenceId(id)}>
+									查看证据
+								</Button>
+							))}
+						</Box>
+					))}
+					{evidenceId && (
+						<DataState query={evidence}>
+							{evidence.data && <JsonView value={evidence.data.text} />}
+						</DataState>
+					)}
+				</Box>
+			)}
+			{result?.llmJudge && (
+				<Box title={`LLM Judge · ${result.llmJudge.score ?? "无分数"}`}>
+					<p>{result.llmJudge.rationale}</p>
+					<JsonView value={result.llmJudge} />
+					<RemoteJson
+						path={`/api/runs/${runId}/items/${item.id}/judge-scores/official-input`}
+						title="查看正式评分输入"
+					/>
+				</Box>
+			)}
+		</>
+	);
 	return (
 		<>
 			<div className="react-row">
@@ -66,25 +133,41 @@ export function ItemContent({ runId, item }: { runId: string; item: any }) {
 					第 {item.round ?? 1} 轮 · 尝试 {(item.attempt ?? 0) + 1}
 				</span>
 			</div>
-			<p className="muted">
+			<p className="muted small Inspector-context">
 				模型：{item.snapshot.defaults.modelId} · v{item.snapshot.revision}
 			</p>
 			{(result?.sessionId ?? item.sessionId) && (
-				<p>
+				<p className="muted small Inspector-context">
 					<code>session_id: {result?.sessionId ?? item.sessionId}</code>
 				</p>
 			)}
-			<Alert>{item.error ?? result?.error}</Alert>
+			<Alert>
+				{item.error ??
+					result?.error ??
+					(item.status === "failed"
+						? result?.assertions
+								?.filter((a: any) => !a.passed)
+								.map((a: any) => a.message)
+								.join("；") || "断言未通过"
+						: undefined)}
+			</Alert>
 			<Tabs
 				onChange={setTab}
 				entries={[
 					[
 						"result",
-						"执行结果",
+						"结果与断言",
 						<>
-							<Box title="最终回复">
-								<JsonView value={result?.text || item.text || "暂无输出"} />
-							</Box>
+							{!result?.functionCallResponse &&
+								!(
+									["error", "cancelled"].includes(item.status) &&
+									!result?.text &&
+									!item.text
+								) && (
+									<Box title="最终回复">
+										<JsonView value={result?.text || item.text || "暂无输出"} />
+									</Box>
+								)}
 							{result?.functionCallResponse && (
 								<Box title="原始函数调用响应">
 									<p className="form-hint">工具仅公布，没有实际执行。</p>
@@ -120,90 +203,63 @@ export function ItemContent({ runId, item }: { runId: string; item: any }) {
 									)}
 								</Box>
 							)}
-							<Box title="执行信息">
-								<p>
-									结束原因：{result?.finishReason ?? "—"} · 迭代：
-									{result?.iterations ?? "—"}
-								</p>
-								<p>
-									输入 Token：{result?.usage?.inputTokens ?? "—"} · 输出 Token：
-									{result?.usage?.outputTokens ?? "—"} · 费用：
-									{result?.usage?.totalCost ?? "未知"}
-								</p>
-								{item.workspace && (
-									<p className="form-hint">
-										{result?.workspaceInfo?.mode === "direct"
-											? "直接执行"
-											: "复制后执行"}{" "}
-										· 实际目录：{item.workspace}
+							{tab === "result" && checks}
+							<details className="Verifier-details Inspector-execution">
+								<summary>执行详情</summary>
+								<div className="Inspector-execution-body">
+									<p>
+										结束原因：{result?.finishReason ?? "—"} · 迭代：
+										{result?.iterations ?? "—"}
 									</p>
-								)}
-								<details>
-									<summary>任务配置快照</summary>
-									<JsonView value={item.snapshot} />
-								</details>
-							</Box>
-						</>,
-					],
-					[
-						"checks",
-						"验收结果",
-						<>
-							<Box title="回复断言">
-								{result?.assertions?.map((a: any, i: number) => (
-									<p key={i}>
-										<Status value={a.passed ? "passed" : "failed"} />{" "}
-										{a.message}
+									<p>
+										输入 Token：{result?.usage?.inputTokens ?? "—"} · 输出
+										Token：
+										{result?.usage?.outputTokens ?? "—"} · 费用：
+										{result?.usage?.totalCost ?? "未知"}
 									</p>
-								))}
-								{!result?.assertions?.length && (
-									<p className="muted">没有回复断言记录</p>
-								)}
-							</Box>
-							{result?.grading && (
-								<Box title={`任务验收 · ${result.grading.verdict}`}>
-									<p>验证状态：{result.grading.status}</p>
-									{result.grading.results.map((rule: any) => (
-										<Box
-											key={rule.id}
-											title={`${rule.label ?? rule.id} · ${rule.status}`}
-										>
-											<p>{rule.message}</p>
-											<details>
-												<summary>预期与实际</summary>
-												<JsonView
-													value={{
-														expected: rule.expected,
-														actual: rule.actual,
-													}}
-												/>
-											</details>
-											{rule.evidenceRefs?.map((id: string) => (
-												<Button key={id} onClick={() => setEvidenceId(id)}>
-													查看证据
-												</Button>
-											))}
-										</Box>
-									))}
-									{evidenceId && (
-										<DataState query={evidence}>
-											{evidence.data && <JsonView value={evidence.data.text} />}
-										</DataState>
+									{item.workspace && (
+										<p className="form-hint">
+											{result?.workspaceInfo?.mode === "direct"
+												? "直接执行"
+												: "复制后执行"}{" "}
+											· 实际目录：{item.workspace}
+										</p>
 									)}
-								</Box>
-							)}
-							{result?.llmJudge && (
-								<Box title={`LLM Judge · ${result.llmJudge.score ?? "无分数"}`}>
-									<p>{result.llmJudge.rationale}</p>
-									<JsonView value={result.llmJudge} />
-									<RemoteJson
-										path={`/api/runs/${runId}/items/${item.id}/judge-scores/official-input`}
-										title="查看正式评分输入"
-									/>
-								</Box>
+									<details>
+										<summary>任务配置快照</summary>
+										<JsonView value={item.snapshot} />
+									</details>
+								</div>
+							</details>
+							{result && (
+								<div className="metric-row mt-3">
+									<span className="metric">
+										耗时 <b>{duration(result.durationMs)}</b>
+									</span>
+									<span className="metric">
+										迭代 <b>{result.iterations}</b>
+									</span>
+									<span className="metric">
+										输入 Token{" "}
+										<b>{result.usage?.inputTokens?.toLocaleString() ?? "—"}</b>
+									</span>
+									<span className="metric">
+										输出 Token{" "}
+										<b>{result.usage?.outputTokens?.toLocaleString() ?? "—"}</b>
+									</span>
+									<span className="metric">
+										费用{" "}
+										<b>
+											{result.usage?.totalCost == null
+												? "未提供"
+												: `$${result.usage.totalCost.toFixed(4)}`}
+										</b>
+									</span>
+								</div>
 							)}
 						</>,
 					],
+					["checks", "验收结果", <>{tab === "checks" && checks}</>],
 					[
 						"conversation",
 						"会话与工具",

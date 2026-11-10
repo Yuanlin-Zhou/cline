@@ -396,3 +396,173 @@ fieldset.replay-cards {
 	min-inline-size: 0;
 	margin-inline: 0;
 }
+
+/* Keep the original evaluation workbench and visual hierarchy after React migration. */
+.RunDetailPage .RunHeading {
+	min-width: 0;
+}
+.RunDetailPage .RunHeading .page-title {
+	margin: 0;
+}
+.RunDetailPage .RunHeading > div {
+	margin-bottom: 6px;
+}
+.RunDetailPage .RunHeading .page-desc {
+	margin: 0;
+}
+.RunDetailPage .RunSummary .ResultMetrics-primary {
+	margin-top: 0;
+}
+.RunDetailPage .ResultFilters .form-control {
+	min-width: 0;
+}
+.RunDetailPage .RunWorkbench > * {
+	min-width: 0;
+}
+.RunDetailPage .RunItem .case-name {
+	overflow-wrap: anywhere;
+}
+.RunDetailPage .RunItem .Label--danger {
+	margin-left: 6px;
+}
+.RunDetailPage .RunItem .small {
+	display: block;
+	line-height: 1.6;
+}
+.RunItem-phase {
+	display: block;
+	font-size: 12px;
+	color: var(--color-accent-fg);
+	margin-top: 5px;
+}
+.Inspector-toolbar {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-bottom: 16px;
+}
+.Inspector-toolbar .form-control {
+	width: auto;
+	min-width: 0;
+	flex: 1 1 160px;
+}
+.Inspector-toolbar .btn {
+	padding: 4px 10px;
+	font-size: 12px;
+}
+.RunInspector .Inspector-context {
+	margin: 6px 0;
+	overflow-wrap: anywhere;
+}
+.RunInspector .react-row {
+	gap: 10px;
+	font-size: 12px;
+}
+.RunInspector .tab-nav {
+	margin: 16px 0;
+}
+.RunInspector .tab-button {
+	padding: 10px 12px;
+	font-size: 13px;
+}
+.RunInspector .Box {
+	border: 0;
+	border-radius: 0;
+	box-shadow: none;
+}
+.RunInspector .Box-header {
+	padding: 0;
+	background: transparent;
+	border: 0;
+}
+.RunInspector .Box-body {
+	padding: 10px 0 0;
+}
+.RunInspector .Box-body > p {
+	margin: 6px 0;
+}
+.RunInspector .Box-body .Box {
+	border: 1px solid var(--color-border-default);
+	padding: 12px;
+	border-radius: var(--radius);
+}
+.RunInspector .react-code {
+	margin: 0;
+	font-size: 13px;
+	background: var(--color-canvas-subtle);
+}
+.RunInspector .Inspector-execution {
+	margin-top: 16px;
+}
+.Inspector-execution-body {
+	padding: 8px 0;
+}
+.Inspector-execution-body p {
+	margin: 6px 0;
+}
+.RunInspector .Inspector-execution-body {
+	font-size: 12px;
+}
+@media (max-width: 760px) {
+	.RunDetailPage .page-actions {
+		gap: 8px;
+	}
+	.RunDetailPage .page-actions .btn {
+		font-size: 12px;
+		padding: 5px 10px;
+	}
+	.RunDetailPage .ResultFilters {
+		gap: 8px;
+	}
+	.RunDetailPage .ResultFilters input {
+		flex-basis: auto;
+	}
+	.RunDetailPage .RunItems {
+		max-height: 220px;
+	}
+	.RunDetailPage .RunItem-head {
+		flex-direction: row;
+		align-items: flex-start;
+	}
+	.RunDetailPage .RunItem {
+		padding: 12px 16px;
+	}
+	.RunDetailPage .RunInspector {
+		padding: 16px;
+	}
+	.Inspector-toolbar {
+		gap: 6px;
+	}
+}
+.RunDetailPage .status-completed {
+	background: var(--color-canvas-subtle);
+	color: var(--color-fg-muted);
+	border: 1px solid var(--color-border-default);
+}
+@media (max-width: 760px) {
+	.Inspector-toolbar .form-control {
+		flex-basis: 100%;
+		width: 100%;
+	}
+}
+
+.RunDetailPage .RunWorkbench[data-empty="true"] {
+	grid-template-columns: minmax(0, 1fr);
+}
+.RunDetailPage .RunListColumn {
+	min-width: 0;
+	border-right: 1px solid var(--color-border-default);
+}
+.RunDetailPage .RunListColumn .RunItems {
+	border: 0;
+}
+@media (max-width: 760px) {
+	.RunDetailPage .RunListColumn {
+		border-right: 0;
+		border-bottom: 1px solid var(--color-border-default);
+	}
+}
+.RunDetailPage .section-title {
+	margin: 16px 0 8px;
+}

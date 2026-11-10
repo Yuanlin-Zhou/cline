@@ -38,12 +38,8 @@ export function useRunItem(runId: string, item: any) {
 	const path = `/api/runs/${runId}/items/${item.id}`;
 	const running = ["queued", "running"].includes(item.status);
 	const wasRunning = useRef(running);
-	useEffect(() => {
-		if (wasRunning.current && !running)
-			void client.invalidateQueries({ queryKey: [path], exact: true });
-		wasRunning.current = running;
-	}, [running, path, client]);
-	return useQuery<any>({
+
+	const query = useQuery<any>({
 		queryKey: [path],
 		queryFn: async ({ signal }) => {
 			const prior = client.getQueryData<any>([path]);
@@ -60,4 +56,29 @@ export function useRunItem(runId: string, item: any) {
 		},
 		refetchInterval: running ? 1000 : false,
 	});
+	const cachedStatus = query.data?.status;
+	const hasCached = !!query.data;
+	const hasCachedResult = !!query.data?.result;
+	const expectsResult = !!item.result;
+	useEffect(() => {
+		const transitioned = wasRunning.current && !running;
+		wasRunning.current = running;
+		const staleTerminal =
+			!running &&
+			hasCached &&
+			(["queued", "running"].includes(cachedStatus ?? "") ||
+				(expectsResult && !hasCachedResult));
+		if (transitioned || staleTerminal)
+			void client.invalidateQueries({ queryKey: [path], exact: true });
+	}, [
+		running,
+		hasCached,
+		cachedStatus,
+		hasCachedResult,
+		expectsResult,
+		path,
+		client,
+	]);
+
+	return query;
 }
