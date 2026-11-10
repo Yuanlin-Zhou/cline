@@ -162,3 +162,18 @@ DOM 编辑器按功能改成真正的 React 组件/hook；纯解析、格式化�
 保留既有纯函数与样式，不保留旧 DOM 渲染入口；副本的完整 definition/defaults 提供 JSON 草稿编辑与预览指纹校验。功能范围无新增产品概念，未实施认证、服务拆分或数据库升级。
 
 补充手工交互验收：上传 `examples/batch-conversations/01-user-tail.json`，完成批量历史对话预览和导入；桌面/窄屏截图为 `final-batch-import-*`。最终 5 项端到端测试耗时 30.6 秒，截图证据共 26 张。
+
+
+### 2026-11-10 补交被忽略的结果组件
+
+用户在本地定位到启动构建失败：应用 `.gitignore` 中未限定层级的 `results/` 同时忽略了 `web/src/features/results/`。`history-trials.tsx` 和 `inspector.tsx` 存在于开发工作目录，却未进入提交 551371a；此前本机验证因此无法证明拉取后的源码完整。
+
+修复将规则改为 `/results/`，仅忽略应用根目录运行报告，补交两个既有组件并格式化。检查 src、web/src、scripts 所有文件，没有其他被 Git 忽略的源码；根目录运行报告继续被忽略。此次修复属于已批准迁移的交付完整性修复，不增加业务行为。
+
+验证改用 `git archive` 导出暂存树中的应用、workspace 清单、锁文件和父 TypeScript 配置，仅通过符号链接复用已安装依赖，应用源码全部来自 Git 文件：
+
+- 干净副本前后端 TypeScript 检查和 Vite 生产构建通过。
+- 5 项既有 Playwright 端到端测试通过（30.4 秒）。
+- 在干净副本根目录执行 `bun run agent-eval:web`，使用临时 SQLite，HTML、哈希资源和 API 均返回 200。
+- 两个补交文件的 Biome lint 及 `git diff --check` 通过。
+- 在干净副本实际打开执行详情，以及从案例判定规则选择历史执行进行试评分；桌面 1440×900、窄屏 390×844 均已查看截图，无整体溢出、无控制台异常。截图为 `assets/035/missing-components-result-*` 和 `missing-components-history-*`。

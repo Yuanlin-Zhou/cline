@@ -1,6 +1,6 @@
 dist/
 release/
-results/
+/results/
 .eval-data/
 
 __pycache__/
