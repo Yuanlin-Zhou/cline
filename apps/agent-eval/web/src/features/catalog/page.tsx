@@ -169,7 +169,10 @@ export function CasesPage() {
 					modules.data?.modules.find((m) => m.id === moduleId)?.name ??
 					"全部案例"
 				}
-				description="跨模块查看、调试与批量评测案例"
+				description={
+					modules.data?.modules.find((m) => m.id === moduleId)?.description ||
+					"跨模块查看、调试与批量评测案例"
+				}
 			>
 				<Link
 					className="btn"
@@ -185,150 +188,171 @@ export function CasesPage() {
 				</Link>
 				<Button
 					primary
-					onClick={() =>
-						startRun(
-							selected.map((c) => c.id),
-							selected.length
-								? []
-								: moduleId
-									? [moduleId]
-									: (modules.data?.modules.map((m) => m.id) ?? []),
-						)
-					}
+					onClick={() => startRun([], moduleId ? [moduleId] : [])}
 				>
-					新建评测
+					{moduleId ? "评测当前模块" : "新建评测"}
 				</Button>
 			</Heading>
 			<Alert>{error}</Alert>
-			<div className="react-catalog-layout">
-				<aside className="react-module-list">
-					<div className="flex-between">
-						<strong>模块</strong>
-						<Button onClick={() => setModuleEditor("new")}>＋ 新建模块</Button>
+			<div className="Layout CaseCatalog">
+				<aside className="Layout-sidebar">
+					<div className="module-toolbar flex-between">
+						<strong className="section-title">模块</strong>
+						<Button className="btn-sm" onClick={() => setModuleEditor("new")}>
+							＋ 新建模块
+						</Button>
 					</div>
-					<Link
-						className={`module-item ${!moduleId ? "active" : ""}`}
-						to="/cases"
-					>
-						<strong>全部案例</strong>
-						<span>
-							{Object.values(modules.data?.counts ?? {}).reduce(
-								(a, b) => a + b,
-								0,
-							)}
-						</span>
-						<small>跨模块搜索与筛选</small>
-					</Link>
-					<DataState query={modules}>
-						{modules.data?.modules.map((m) => (
-							<div
-								key={m.id}
-								className={`module-item ${m.id === moduleId ? "active" : ""}`}
-							>
-								<Link to={`/cases/${m.id}`}>
-									<strong>{m.name}</strong>
-								</Link>
-								<span>{modules.data.counts[m.id] ?? 0}</span>
-								<small>{m.description}</small>
-								<div className="page-actions">
-									<Button onClick={() => setModuleEditor(m)}>编辑</Button>
-									<Button
-										disabled={busy}
-										onClick={() =>
-											action(() => send(`/api/modules/${m.id}/archive`, {}))
-										}
-									>
-										归档
-									</Button>
-									<Button
-										danger
-										disabled={busy}
-										onClick={() => deleteModule(m)}
-									>
-										删除
-									</Button>
-								</div>
+					<div className="module-list">
+						<Link
+							className={`module-item ${!moduleId ? "active" : ""}`}
+							to="/cases"
+						>
+							<div className="module-item-name">
+								<span>全部案例</span>
+								<span className="module-item-count">
+									{Object.values(modules.data?.counts ?? {}).reduce(
+										(a, b) => a + b,
+										0,
+									)}
+								</span>
 							</div>
-						))}
-					</DataState>
-					<Button onClick={() => setArchived(true)}>已归档模块</Button>
-				</aside>
-				<section className="react-cases">
-					<div className="react-filters">
-						<Text
-							aria-label="搜索案例"
-							placeholder="按名称、描述或标签筛选…"
-							value={view.search}
-							onChange={(search) => setView((v) => ({ ...v, search }))}
-						/>
-						<Select
-							aria-label="回放方式筛选"
-							value={view.mode}
-							onChange={(mode) => setView((v) => ({ ...v, mode }))}
-							options={[
-								["", "全部回放方式"],
-								["single-turn", "单轮回放"],
-								["full-task", "多轮回放（完整任务）"],
-								["function-call", "单轮函数调用"],
-							]}
-						/>
-						<Select
-							value={view.bad}
-							onChange={(bad) => setView((v) => ({ ...v, bad }))}
-							options={[
-								["", "全部案例"],
-								["bad", "Bad case"],
-								["normal", "非 Bad case"],
-							]}
-						/>
-						<Select
-							value={view.status}
-							onChange={(status) => setView((v) => ({ ...v, status }))}
-							options={[
-								["", "全部结果"],
-								["passed", "通过"],
-								["failed", "失败"],
-								["error", "执行错误"],
-								["inconclusive", "无法判定"],
-								["none", "未运行"],
-							]}
-						/>
-						<span className="muted">{rows.length} 个案例</span>
+							<div className="module-item-desc">跨模块搜索与筛选</div>
+						</Link>
+						<DataState query={modules}>
+							{modules.data?.modules.map((m) => (
+								<div key={m.id} className="module-entry">
+									<Link
+										to={`/cases/${m.id}`}
+										className={`module-item ${m.id === moduleId ? "active" : ""}`}
+									>
+										<div className="module-item-name">
+											<span>{m.name}</span>
+											<span className="module-item-count">
+												{modules.data.counts[m.id] ?? 0}
+											</span>
+										</div>
+										{m.description && (
+											<div className="module-item-desc">{m.description}</div>
+										)}
+									</Link>
+									<div className="module-actions">
+										<Button
+											className="btn-sm btn-icon"
+											title="编辑模块"
+											onClick={() => setModuleEditor(m)}
+										>
+											编辑
+										</Button>
+										<Button
+											className="btn-sm btn-icon"
+											title="归档模块"
+											disabled={busy}
+											onClick={() =>
+												window.confirm(
+													`确定归档模块「${m.name}」吗？其中的案例也会被归档。`,
+												) &&
+												action(() => send(`/api/modules/${m.id}/archive`, {}))
+											}
+										>
+											归档
+										</Button>
+										<Button
+											className="btn-sm"
+											title="删除模块及全部案例"
+											danger
+											disabled={busy}
+											onClick={() => deleteModule(m)}
+										>
+											删除
+										</Button>
+									</div>
+								</div>
+							))}
+						</DataState>
 					</div>
-					<div className="page-actions mb-3">
-						<Button
-							onClick={() =>
-								select(
-									rows.map((c) => c.id),
-									true,
-								)
-							}
-						>
-							全选筛选结果
-						</Button>
-						<Button
-							onClick={() =>
-								setView((v) => {
-									const next = new Set(v.selected);
-									rows.forEach((c) => {
-										if (next.has(c.id)) next.delete(c.id);
-										else next.add(c.id);
-									});
-									return { ...v, selected: next };
-								})
-							}
-						>
-							反选筛选结果
-						</Button>
-						<Button
-							onClick={() => setView((v) => ({ ...v, selected: new Set() }))}
-						>
-							清空选择
-						</Button>
-						<span className="muted">拖动复选框列或 Shift 连选</span>
+					<Button className="btn-sm mt-2" onClick={() => setArchived(true)}>
+						已归档模块
+					</Button>
+				</aside>
+				<section className="Layout-main">
+					<div className="CaseCatalog-toolbar flex-between mt-3 mb-2 gap-2 wrap">
+						<div className="case-filters flex-center gap-2 grow wrap">
+							<Text
+								id="case-search"
+								aria-label="搜索案例"
+								placeholder="按名称、ID 或标签筛选…"
+								value={view.search}
+								onChange={(search) => setView((v) => ({ ...v, search }))}
+							/>
+							<Select
+								aria-label="回放方式筛选"
+								value={view.mode}
+								onChange={(mode) => setView((v) => ({ ...v, mode }))}
+								options={[
+									["", "全部回放方式"],
+									["single-turn", "单轮回放"],
+									["full-task", "多轮回放（完整任务）"],
+									["function-call", "单轮函数调用"],
+								]}
+							/>
+							<Select
+								value={view.bad}
+								onChange={(bad) => setView((v) => ({ ...v, bad }))}
+								options={[
+									["", "全部案例"],
+									["bad", "Bad case"],
+									["normal", "非 Bad case"],
+								]}
+							/>
+							<Select
+								value={view.status}
+								onChange={(status) => setView((v) => ({ ...v, status }))}
+								options={[
+									["", "全部结果"],
+									["passed", "通过"],
+									["failed", "失败"],
+									["error", "执行错误"],
+									["inconclusive", "无法判定"],
+									["none", "未运行"],
+								]}
+							/>
+							<span className="muted">{rows.length} 个案例</span>
+						</div>
+						<div className="page-actions CaseCatalog-selection">
+							<Button
+								onClick={() =>
+									select(
+										rows.map((c) => c.id),
+										true,
+									)
+								}
+							>
+								全选筛选结果
+							</Button>
+							<Button
+								onClick={() =>
+									setView((v) => {
+										const next = new Set(v.selected);
+										rows.forEach((c) => {
+											if (next.has(c.id)) next.delete(c.id);
+											else next.add(c.id);
+										});
+										return { ...v, selected: next };
+									})
+								}
+							>
+								反选筛选结果
+							</Button>
+							<Button
+								onClick={() => setView((v) => ({ ...v, selected: new Set() }))}
+							>
+								清空选择
+							</Button>
+							<span className="muted">拖动复选框列或 Shift 连选</span>
+						</div>
 					</div>
 					{(dragToolbar ?? view.selected.size > 0) && (
-						<Box>
+						<div className="BatchBar">
 							<div className="page-actions">
 								<strong>
 									已选 {view.selected.size} 个（隐藏{" "}
@@ -343,10 +367,10 @@ export function CasesPage() {
 									primary
 									onClick={() => startRun(selected.map((c) => c.id))}
 								>
-									运行所选
+									评测所选案例
 								</Button>
-								<Button onClick={() => setTransfer("copy")}>复制到…</Button>
-								<Button onClick={() => setTransfer("move")}>移动到…</Button>
+								<Button onClick={() => setTransfer("copy")}>复制所选</Button>
+								<Button onClick={() => setTransfer("move")}>移动所选</Button>
 								<Button
 									danger
 									disabled={busy}
@@ -368,11 +392,11 @@ export function CasesPage() {
 									删除所选
 								</Button>
 							</div>
-						</Box>
+						</div>
 					)}
 					<DataState query={cases}>
-						<div className="react-table-wrap">
-							<table className="react-table">
+						<div className="TableWrap">
+							<table className="Table CaseTable">
 								<thead>
 									<tr>
 										<th>
@@ -396,14 +420,22 @@ export function CasesPage() {
 										<th>标签</th>
 										<th>版本</th>
 										<th>最近结果</th>
-										<th>操作</th>
+										<th className="CaseTable-actionsCell">操作</th>
 									</tr>
 								</thead>
 								<tbody>
 									{rows.map((c) => (
 										<tr
 											key={c.id}
-											className={view.selected.has(c.id) ? "selected" : ""}
+											className={`clickable ${view.selected.has(c.id) ? "selected" : ""}`}
+											onClick={(e) => {
+												if (
+													!(e.target as HTMLElement).closest(
+														"button,a,input,td:first-child",
+													)
+												)
+													navigate(`/case/${c.id}`);
+											}}
 										>
 											<td
 												onPointerDown={() => {
@@ -456,43 +488,54 @@ export function CasesPage() {
 													onChange={() => {}}
 												/>
 											</td>
-											<td>
-												<Link className="case-name" to={`/case/${c.id}`}>
-													{c.definition.id}
-												</Link>
-												{c.definition.isBadCase && (
-													<span className="Label Label--danger">Bad case</span>
-												)}
+											<td className="CaseTable-content">
+												<div className="CaseTable-name">
+													<Link
+														className="case-name CaseTable-link"
+														to={`/case/${c.id}`}
+													>
+														{c.definition.id}
+													</Link>
+													{c.definition.isBadCase && (
+														<span className="Label Label--attention">
+															Bad case
+														</span>
+													)}
+												</div>
 												<small className="muted react-block">
 													{c.definition.description}
 												</small>
 											</td>
-											<td>{modeLabel(c.definition.replayMode)}</td>
+											<td>
+												<span
+													className={`Label ${c.definition.replayMode === "full-task" ? "Label--done" : "Label--accent"}`}
+												>
+													{modeLabel(c.definition.replayMode)}
+												</span>
+											</td>
 											<td>
 												{(c.definition.tags ?? []).map((t) => (
-													<span key={t} className="Label">
+													<span key={t} className="Label Label--tag">
 														{t}
 													</span>
 												))}
 											</td>
-											<td>v{c.revision}</td>
+											<td className="num">v{c.revision}</td>
 											<td>
-												<Status value={cases.data?.latest[c.id]?.status} />
+												{cases.data?.latest[c.id] ? (
+													<div className="flex-center gap-2 wrap">
+														<Status value={cases.data.latest[c.id].status} />
+														<span className="muted small mono">
+															{cases.data.latest[c.id].modelId}
+														</span>
+													</div>
+												) : (
+													<span className="muted">未运行</span>
+												)}
 											</td>
 											<td>
-												<div className="page-actions">
+												<div className="CaseTable-actions">
 													<Button onClick={() => startRun([c.id])}>运行</Button>
-													<Link className="btn" to={`/case/${c.id}`}>
-														编辑
-													</Link>
-													<Button
-														onClick={() => {
-															select([c.id], true);
-															setTransfer("copy");
-														}}
-													>
-														复制
-													</Button>
 													<Button
 														danger
 														disabled={busy}
@@ -511,13 +554,15 @@ export function CasesPage() {
 											</td>
 										</tr>
 									))}
+									{!rows.length && (
+										<tr>
+											<td colSpan={7} className="empty">
+												没有匹配的案例，试试调整筛选条件或导入案例。
+											</td>
+										</tr>
+									)}
 								</tbody>
 							</table>
-							{!rows.length && (
-								<div className="empty">
-									没有匹配的案例，试试调整筛选条件或导入案例。
-								</div>
-							)}
 						</div>
 					</DataState>
 				</section>
@@ -575,20 +620,21 @@ function ModuleDialog({
 	});
 	return (
 		<Modal open onClose={close} title={module ? "编辑模块" : "新建模块"}>
-			<Field label="模块名称">
+			<Field label="名称">
 				<Text
 					aria-label="模块名称"
 					value={value.name}
 					onChange={(name) => setValue((v) => ({ ...v, name }))}
 				/>
 			</Field>
-			<Field label="描述">
+			<Field label="描述" hint="模块所覆盖的被测能力">
 				<Text
+					multiline
 					value={value.description}
 					onChange={(description) => setValue((v) => ({ ...v, description }))}
 				/>
 			</Field>
-			<Field label="标签">
+			<Field label="标签" hint="新增或选择已有标签，保存后生效。最多 20 个。">
 				<Tags
 					value={value.tags}
 					onChange={(tags) => setValue((v) => ({ ...v, tags }))}
@@ -596,13 +642,16 @@ function ModuleDialog({
 				/>
 			</Field>
 			<Alert>{save.error && message(save.error)}</Alert>
-			<Button
-				primary
-				disabled={save.isPending || !value.name.trim()}
-				onClick={() => save.mutate()}
-			>
-				保存模块
-			</Button>
+			<div className="page-actions CaseModule-actions">
+				<Button onClick={close}>取消</Button>
+				<Button
+					primary
+					disabled={save.isPending || !value.name.trim()}
+					onClick={() => save.mutate()}
+				>
+					保存
+				</Button>
+			</div>
 		</Modal>
 	);
 }

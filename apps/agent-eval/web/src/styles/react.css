@@ -566,3 +566,168 @@ fieldset.replay-cards {
 .RunDetailPage .section-title {
 	margin: 16px 0 8px;
 }
+
+/* Case management keeps the pre-React workbench and table presentation. */
+.CaseEditor > *,
+.CaseEditor-results .Box-body {
+	min-width: 0;
+}
+.CaseEditor .tab-nav {
+	margin-top: 0;
+}
+.CaseEditor .Box {
+	margin-bottom: 16px;
+}
+.CaseEditor .CaseEditor-bad {
+	margin-top: 16px;
+	border-top: 1px solid var(--color-border-muted);
+	padding-top: 12px;
+}
+.CaseEditor .CaseEditor-bad > summary {
+	cursor: pointer;
+	font-weight: 600;
+	margin-bottom: 12px;
+}
+.CaseEditor .CaseConfig .react-grid {
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.CaseEditor .CaseConfig .react-grid > .form-group:nth-child(3) {
+	grid-column: 1 / -1;
+}
+.CaseEditor .CaseConfig .ConfigGroup {
+	margin-bottom: 20px;
+}
+.CaseEditor .CaseConfig > .Box-body > section:has(> .react-row) {
+	padding: 16px 0;
+	border-top: 1px solid var(--color-border-muted);
+}
+.CaseEditor .CaseEditor-historyItem {
+	padding: 12px 0;
+	border-bottom: 1px solid var(--color-border-muted);
+	overflow-wrap: anywhere;
+}
+.CaseEditor-results code {
+	overflow-wrap: anywhere;
+}
+.CaseCatalog-toolbar {
+	align-items: flex-start;
+}
+.CaseCatalog-selection {
+	gap: 6px;
+}
+.CaseCatalog-selection .btn,
+.CaseCatalog .CaseTable-actions .btn {
+	font-size: 12px;
+	padding: 3px 10px;
+}
+.CaseCatalog .CaseTable td:last-child {
+	width: 1%;
+	white-space: nowrap;
+}
+.CaseCatalog .BatchBar {
+	margin-bottom: 12px;
+}
+.CaseCatalog .CaseTable .Label {
+	margin-right: 4px;
+}
+@media (max-width: 600px) {
+	.CaseEditor .CaseConfig .react-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.CaseEditor .CaseConfig .react-grid > .form-group:nth-child(3) {
+		grid-column: auto;
+	}
+	.CaseCatalog-toolbar,
+	.CaseCatalog-selection {
+		width: 100%;
+	}
+}
+.CaseEditor .tab-nav {
+	gap: 2px;
+	margin: 0 0 16px;
+}
+.CaseEditor .tab-button {
+	padding: 8px 14px;
+	border-bottom-width: 2px;
+	font: inherit;
+}
+.CaseEditor .Box-header > strong {
+	display: block;
+	width: 100%;
+}
+.CaseEditor .CaseConfig .react-grid > .form-group:nth-child(4) {
+	grid-column: 1 / -1;
+}
+.CaseEditor .HeaderEditor {
+	margin-top: 20px;
+	padding-top: 20px;
+	border-top: 1px solid var(--color-border-muted);
+}
+.CaseEditor .CaseConfig .ConfigGroup {
+	margin-bottom: 20px;
+}
+.CaseEditor .CaseConfig .ConfigGroup:has(.HeaderEditor) {
+	border: 0;
+	margin-bottom: 0;
+}
+.CaseModule-actions {
+	justify-content: flex-end;
+	margin-top: 20px;
+}
+.CaseReplay .replay-card {
+	display: block;
+	font-weight: 400;
+	padding: 16px;
+}
+.CaseEditor .HeaderEditor .react-header-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 44px;
+	gap: 12px;
+	background: var(--color-canvas-subtle);
+	border: 1px solid var(--color-border-default);
+	border-radius: var(--radius);
+	padding: 14px;
+}
+.CaseEditor .HeaderEditor .react-header-row > input:first-child {
+	grid-column: 1;
+	grid-row: 1;
+}
+.CaseEditor .HeaderEditor .react-header-row > select {
+	grid-column: 1 / -1;
+	grid-row: 2;
+}
+.CaseEditor .HeaderEditor .react-header-row > input:nth-child(3) {
+	grid-column: 1 / -1;
+	grid-row: 3;
+}
+.CaseEditor .HeaderEditor .react-header-row > button {
+	grid-column: 2;
+	grid-row: 1;
+	padding: 0;
+}
+
+.CaseEditor .CaseConfig .react-grid {
+	row-gap: 0;
+}
+.react-modal:has(.CaseModule-actions) {
+	width: min(560px, calc(100vw - 32px));
+	padding: 0;
+}
+.react-modal:has(.CaseModule-actions) > h2 {
+	padding: 14px 16px;
+	border-bottom: 1px solid var(--color-border-default);
+	font-size: 16px;
+	margin: 0;
+}
+.react-modal:has(.CaseModule-actions) > .form-group,
+.react-modal:has(.CaseModule-actions) > .flash {
+	margin: 16px;
+}
+.react-modal:has(.CaseModule-actions) > .CaseModule-actions {
+	margin: 0;
+	padding: 12px 16px;
+	border-top: 1px solid var(--color-border-default);
+}
+.react-header-field {
+	display: contents;
+}

@@ -84,8 +84,8 @@ test("React drafts, native history conversion, JSON errors and real function-cal
 	await expect(page.getByLabel("本轮输入", { exact: true })).toHaveValue(
 		"CURRENT_INPUT",
 	);
-	await page.getByRole("tab", { name: "执行配置", exact: true }).click();
-	await page.getByRole("tab", { name: "输入与历史", exact: true }).click();
+	await page.getByRole("tab", { name: "配置", exact: true }).click();
+	await page.getByRole("tab", { name: "输入", exact: true }).click();
 	await expect(page.getByLabel("本轮输入", { exact: true })).toHaveValue(
 		"CURRENT_INPUT",
 	);
@@ -102,7 +102,7 @@ test("React drafts, native history conversion, JSON errors and real function-cal
 	await page
 		.getByLabel("原生 Function Call 历史", { exact: true })
 		.fill("{invalid");
-	await page.getByRole("tab", { name: "执行配置", exact: true }).click();
+	await page.getByRole("tab", { name: "配置", exact: true }).click();
 	await page.getByRole("button", { name: "保存", exact: true }).click();
 	await expect(
 		page.getByRole("alert").filter({ hasText: "请先修正表单错误" }),
@@ -110,7 +110,7 @@ test("React drafts, native history conversion, JSON errors and real function-cal
 	expect(
 		(await (await request.get(`/api/cases/${item.id}`)).json()).revision,
 	).toBe(saved.revision);
-	await page.getByRole("tab", { name: "输入与历史", exact: true }).click();
+	await page.getByRole("tab", { name: "输入", exact: true }).click();
 	await page
 		.getByLabel("原生 Function Call 历史", { exact: true })
 		.fill(JSON.stringify(saved.definition.functionCall.history));
@@ -129,9 +129,7 @@ test("React drafts, native history conversion, JSON errors and real function-cal
 	await page
 		.getByRole("button", { name: "运行单轮函数调用", exact: true })
 		.click();
-	await page
-		.getByRole("link", { name: "查看执行进度和结果", exact: true })
-		.click();
+	await page.getByRole("link", { name: "查看评测", exact: true }).click();
 	await expect(page.getByText("已完成", { exact: true })).toBeVisible({
 		timeout: 60000,
 	});
@@ -163,7 +161,10 @@ test("import preview, copy configuration, conflict handling and uploaded verifie
 	const { module, item } = await seed(request, "资源交互验收");
 	const target = await send(request, "/api/modules", { name: "复制目标模块" });
 	await page.goto(`/#/cases/${module.id}`);
-	await page.getByRole("button", { name: "复制", exact: true }).first().click();
+	await page
+		.getByRole("checkbox", { name: `选择 ${item.definition.id}`, exact: true })
+		.check();
+	await page.getByRole("button", { name: "复制所选", exact: true }).click();
 	const dialog = page.getByRole("dialog");
 	await expect(dialog).toBeVisible();
 	await dialog.getByLabel("目标模块", { exact: true }).selectOption(target.id);
@@ -259,7 +260,7 @@ test("run wizard, in-run retry and historical verifier/Judge trials retain their
 	await page
 		.getByRole("checkbox", { name: `选择 ${item.definition.id}`, exact: true })
 		.check();
-	await page.getByRole("button", { name: "运行所选", exact: true }).click();
+	await page.getByRole("button", { name: "评测所选案例", exact: true }).click();
 	await page.getByRole("button", { name: "下一步", exact: true }).click();
 	await page.getByRole("button", { name: "下一步", exact: true }).click();
 	await page.getByRole("button", { name: "开始评测", exact: true }).click();
@@ -395,8 +396,9 @@ test("stable selections survive filtering, dragging and module archive/restore",
 	await expect(boxes().nth(1)).toBeChecked();
 	await expect(boxes().nth(2)).toBeChecked();
 	await page.getByRole("button", { name: "清空选择", exact: true }).click();
-	const card = page.locator(".react-module-list .module-item").filter({
-		has: page.getByRole("link", { name: module.name, exact: true }),
+	page.on("dialog", (d) => d.accept());
+	const card = page.locator(".CaseCatalog .module-entry").filter({
+		has: page.locator(`a[href="#/cases/${module.id}"]`),
 	});
 	await card.getByRole("button", { name: "归档", exact: true }).click();
 	await expect(card).toHaveCount(0);
@@ -471,4 +473,64 @@ test("evaluation workbench selects results inline and keeps filters and attempt 
 	await expect(
 		inspector.getByText("Use Bun. 已完成验证。", { exact: true }),
 	).toBeVisible();
+});
+
+test("case workbench keeps legacy tabs, permanent result/history and scoped configuration", async ({
+	page,
+	request,
+}, testInfo) => {
+	const { module, item } = await seed(request, "原版案例工作台");
+	await page.goto(`/#/case/${item.id}`);
+	await expect(page.locator(".CaseEditor-form").getByRole("tab")).toHaveText([
+		"输入",
+		"判定规则",
+		"配置",
+	]);
+	await expect(page.locator(".CaseEditor-results")).toContainText("执行结果");
+	await expect(page.locator(".CaseEditor-results")).toContainText("历史记录");
+	await page.getByRole("tab", { name: "配置", exact: true }).click();
+	await expect(page.locator(".CaseConfig .HeaderEditor")).toHaveCount(2);
+	await expect(page.getByLabel("Base URL", { exact: true })).toHaveCount(1);
+	await expect(page.locator(".CaseConfig-environment")).toHaveCount(0);
+	await page
+		.getByRole("button", { name: "多轮回放（完整任务）", exact: false })
+		.first()
+		.click();
+	await expect(page.locator(".CaseConfig-environment")).toBeVisible();
+	await page.getByRole("tab", { name: "判定规则", exact: true }).click();
+	await expect(page.locator(".Grading-goals").getByRole("button")).toHaveCount(
+		4,
+	);
+	await page
+		.getByRole("button", { name: "最终回复", exact: false })
+		.first()
+		.click();
+	await expect(
+		page.getByLabel("必须包含（每行一项）", { exact: true }),
+	).toBeVisible();
+	page.on("dialog", (d) => d.accept());
+	await page.goto(`/#/case/new?module=${module.id}`);
+	await expect(page.locator(".CaseEditor-results")).toContainText("尚未运行");
+	await page.getByLabel("案例名称", { exact: true }).fill("UI-新增案例");
+	await page.getByLabel("本轮输入", { exact: true }).fill("Use Bun");
+	await page.getByRole("button", { name: "保存", exact: true }).click();
+	await expect(page).toHaveURL(/#\/case\/(?!new)/);
+	await page.getByRole("button", { name: "运行单轮回放", exact: true }).click();
+	await expect(
+		page
+			.locator(".CaseEditor-results")
+			.getByText("Use Bun. 已完成验证。", { exact: true }),
+	).toBeVisible({ timeout: 60000 });
+	for (const width of [1440, 390]) {
+		await page.setViewportSize({ width, height: 900 });
+		expect(
+			await page.evaluate(
+				() => document.documentElement.scrollWidth <= innerWidth,
+			),
+		).toBe(true);
+		await page.screenshot({
+			path: testInfo.outputPath(`case-workbench-${width}.png`),
+			fullPage: true,
+		});
+	}
 });

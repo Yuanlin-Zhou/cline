@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import {
 	Link,
@@ -16,7 +16,7 @@ import {
 	FUNCTION_CALL_TOOLS,
 	parseFunctionCall,
 } from "../../../../src/contracts/function-call-config";
-import { REPLAY_MODES } from "../../../../src/contracts/replay";
+import { caseExample, REPLAY_MODES } from "../../../../src/contracts/replay";
 import { parseEvalSuite } from "../../../../src/contracts/schema";
 import { message, send, useApi } from "../../api/client";
 import { assertValidEditors } from "../../components/editor-validity";
@@ -41,6 +41,8 @@ import {
 import { useDraft } from "../../hooks/draft";
 import { TransferDialog } from "../catalog/page";
 import { JudgeEditor } from "../judging/editor";
+import { InlineItemInspector } from "../results/inspector";
+import { useRun } from "../runs/use-run";
 import { HistoryTrials } from "../results/history-trials";
 import { ConfigEditor } from "../settings/config-editor";
 import { HistoryEditor } from "./history";
@@ -211,9 +213,20 @@ function CaseForm({
 					</>
 				}
 				description={
-					record
-						? `版本 v${record.revision} · ${draft.dirty ? "有未保存修改" : "已保存"}`
-						: "创建可复用的评测案例"
+					record ? (
+						<>
+							{`模块：${modules.find((m) => m.id === target)?.name} · 版本 v${record.revision} · ${draft.dirty ? "有未保存修改" : "已保存"}`}
+							<br />
+							<code className="small">
+								session_id:{" "}
+								{history.data
+									?.flatMap((entry) => entry.items ?? [])
+									.find((item: any) => item.sessionId)?.sessionId ?? "—"}
+							</code>
+						</>
+					) : (
+						`归属模块：${modules.find((m) => m.id === target)?.name}`
+					)
 				}
 			>
 				<Link className="btn" to={`/cases/${target}`}>
@@ -252,7 +265,7 @@ function CaseForm({
 					(save.error && message(save.error)) ||
 					(run.error && message(run.error))}
 			</Alert>
-			<fieldset className="replay-cards" aria-label="回放方式">
+			<fieldset className="replay-cards CaseReplay" aria-label="回放方式">
 				{REPLAY_MODES.map((m) => (
 					<Button
 						key={m.value}
@@ -265,160 +278,303 @@ function CaseForm({
 					</Button>
 				))}
 			</fieldset>
-			<Tabs
-				initial={initialTab === "grading" ? "grading" : "input"}
-				entries={[
-					[
-						"input",
-						"输入与历史",
-						<>
-							<Box title="基本信息">
-								{!record && (
-									<Field label="归属模块">
-										<Select
-											value={target}
-											onChange={setTarget}
-											options={modules.map((m) => [m.id, m.name])}
-										/>
-									</Field>
-								)}
-								<Field label="案例名称 / 业务 ID">
-									<Text
-										aria-label="案例名称"
-										value={definition.id}
-										onChange={(id) => setDefinition({ ...definition, id })}
-									/>
-								</Field>
-								<Field label="描述">
-									<Text
-										value={definition.description}
-										onChange={(description) =>
-											setDefinition({ ...definition, description })
-										}
-									/>
-								</Field>
-								<Field label="标签">
-									<Tags
-										value={definition.tags ?? []}
-										onChange={(tags) => setDefinition({ ...definition, tags })}
-									/>
-								</Field>
-								<Field
-									label={mode === "full-task" ? "任务初始指令" : "本轮输入"}
-								>
-									<Text
-										multiline
-										aria-label="本轮输入"
-										value={definition.prompt}
-										onChange={(prompt) =>
-											setDefinition({ ...definition, prompt })
-										}
-									/>
-								</Field>
-							</Box>
-							<HistoryEditor value={definition} onChange={setDefinition} />
-							<Box title="Bad case 原始错误输出">
-								<Check
-									checked={!!definition.badCase}
-									onChange={(v) =>
-										setDefinition({
-											...definition,
-											badCase: v
-												? { observedOutput: "", outputFormat: "text" }
-												: undefined,
-										})
-									}
-								>
-									保存原始 Bad case 输出
-								</Check>
-								{definition.badCase && (
-									<>
-										<Field label="错误输出格式">
-											<Select
-												value={definition.badCase.outputFormat ?? "text"}
+			<div className="CaseLayout CaseEditor">
+				<section className="CaseEditor-form">
+					<Tabs
+						initial={initialTab === "grading" ? "grading" : "input"}
+						entries={[
+							[
+								"input",
+								"输入",
+								<>
+									<Box>
+										<h3 className="section-title">基本信息</h3>
+										{!record && (
+											<Field label="归属模块">
+												<Select
+													value={target}
+													onChange={setTarget}
+													options={modules.map((m) => [m.id, m.name])}
+												/>
+											</Field>
+										)}
+										<Field
+											label="案例 ID *"
+											hint="模块内唯一，例如 history-bun-install"
+										>
+											<Text
+												aria-label="案例名称"
+												value={definition.id}
+												onChange={(id) => setDefinition({ ...definition, id })}
+											/>
+										</Field>
+										<Field
+											label="描述"
+											hint="可选，例如：验证模型遵循历史上下文"
+										>
+											<Text
+												value={definition.description}
+												onChange={(description) =>
+													setDefinition({ ...definition, description })
+												}
+											/>
+										</Field>
+										<Field label="标签" hint="新增或选择已有标签，保存后生效。">
+											<Tags
+												value={definition.tags ?? []}
+												onChange={(tags) =>
+													setDefinition({ ...definition, tags })
+												}
+											/>
+										</Field>
+
+										<section className="BadCaseEditor">
+											<Check
+												checked={!!definition.badCase}
 												onChange={(v) =>
 													setDefinition({
 														...definition,
-														badCase: {
-															...definition.badCase!,
-															outputFormat: v as "text" | "json",
-														},
+														badCase: v
+															? { observedOutput: "", outputFormat: "text" }
+															: undefined,
 													})
 												}
-												options={[
-													["text", "文本"],
-													["json", "JSON"],
-												]}
-											/>
-										</Field>
-										<Field label="原始错误输出">
-											<Text
-												multiline
-												value={definition.badCase.observedOutput}
-												onChange={(observedOutput) =>
-													setDefinition({
-														...definition,
-														badCase: { ...definition.badCase!, observedOutput },
-													})
-												}
-											/>
-										</Field>
-										<Field label="错误原因">
-											<Text
-												multiline
-												value={definition.badCase.reason}
-												onChange={(reason) =>
-													setDefinition({
-														...definition,
-														badCase: {
-															...definition.badCase!,
-															reason: reason || undefined,
-														},
-													})
-												}
-											/>
-										</Field>
+											>
+												标记为 Bad case
+											</Check>
+											{definition.badCase && (
+												<>
+													<Field label="错误输出格式">
+														<Select
+															value={definition.badCase.outputFormat ?? "text"}
+															onChange={(v) =>
+																setDefinition({
+																	...definition,
+																	badCase: {
+																		...definition.badCase!,
+																		outputFormat: v as "text" | "json",
+																	},
+																})
+															}
+															options={[
+																["text", "文本"],
+																["json", "JSON"],
+															]}
+														/>
+													</Field>
+													<Field label="原始错误输出">
+														<Text
+															multiline
+															rows={2}
+															className="BadCaseEditor-output"
+															value={definition.badCase.observedOutput}
+															onChange={(observedOutput) =>
+																setDefinition({
+																	...definition,
+																	badCase: {
+																		...definition.badCase!,
+																		observedOutput,
+																	},
+																})
+															}
+														/>
+													</Field>
+													<Field label="错误原因">
+														<Text
+															multiline
+															rows={1}
+															className="BadCaseEditor-reason"
+															value={definition.badCase.reason}
+															onChange={(reason) =>
+																setDefinition({
+																	...definition,
+																	badCase: {
+																		...definition.badCase!,
+																		reason: reason || undefined,
+																	},
+																})
+															}
+														/>
+													</Field>
+													<p className="form-hint">
+														仅保存为案例属性，不自动加入模型输入或判分答案。
+													</p>
+												</>
+											)}
+											{definition.importSource && (
+												<details>
+													<summary>来源信息</summary>
+													<JsonView value={definition.importSource} />
+												</details>
+											)}
+										</section>
+									</Box>
+
+									<HistoryEditor value={definition} onChange={setDefinition} />
+									<Box
+										title={mode === "full-task" ? "任务指令 *" : "本轮问题 *"}
+									>
+										<Text
+											multiline
+											rows={4}
+											aria-label="本轮输入"
+											value={definition.prompt}
+											onChange={(prompt) =>
+												setDefinition({ ...definition, prompt })
+											}
+										/>
 										<p className="form-hint">
-											仅保存为案例属性，不自动加入模型输入或判分答案。
+											示例：{caseExample(mode).prompt}
 										</p>
-									</>
-								)}
-								{definition.importSource && (
-									<details>
-										<summary>来源信息</summary>
-										<JsonView value={definition.importSource} />
-									</details>
-								)}
-							</Box>
-						</>,
-					],
-					[
-						"execution",
-						"执行配置",
-						<>
-							<Box title="模型与执行">
-								<ConfigEditor
-									workspace={mode === "full-task"}
-									value={{
-										...defaults,
-										...Object.fromEntries(
-											[
-												"cwd",
-												"workspace",
-												"systemPrompt",
-												"tools",
-												"maxIterations",
-												"timeoutMs",
-											]
-												.filter((k) => (definition as any)[k] !== undefined)
-												.map((k) => [k, (definition as any)[k]]),
-										),
-									}}
-									onChange={(next) =>
-										draft.setValue((v) => ({
-											defaults: next,
-											definition: {
-												...v.definition,
+										<Button
+											className="btn-sm mt-2"
+											onClick={() => {
+												if (
+													(definition.prompt.trim() ||
+														definition.history.length ||
+														definition.assertions?.contains?.length) &&
+													!window.confirm(
+														"将替换当前输入、历史消息和包含文本规则，并填入示例执行配置。",
+													)
+												)
+													return;
+												const sample = caseExample(mode);
+												setDefinition({
+													...definition,
+													...sample,
+													id: definition.id || sample.id,
+												});
+											}}
+										>
+											填入示例
+										</Button>
+									</Box>
+									{mode === "function-call" && (
+										<Box title="本轮公布哪些工具？">
+											<p className="form-hint">
+												只生成模型调用，不实际执行工具；响应可包含多次调用。
+											</p>
+											{FUNCTION_CALL_TOOLS.map((tool) => (
+												<Check
+													key={tool}
+													checked={definition.functionCall?.tools.includes(
+														tool,
+													)}
+													onChange={(v) => {
+														const tools = v
+															? [
+																	...(definition.functionCall?.tools ?? []),
+																	tool,
+																]
+															: (definition.functionCall?.tools ?? []).filter(
+																	(t) => t !== tool,
+																);
+														setDefinition({
+															...definition,
+															functionCall: {
+																...definition.functionCall!,
+																tools,
+																toolChoice: [
+																	"auto",
+																	"required",
+																	...tools,
+																].includes(
+																	definition.functionCall?.toolChoice ?? "auto",
+																)
+																	? definition.functionCall?.toolChoice
+																	: "auto",
+															},
+														});
+													}}
+												>
+													{tool}
+												</Check>
+											))}
+											<Field label="调用选择方式">
+												<Select
+													value={definition.functionCall?.toolChoice ?? "auto"}
+													onChange={(toolChoice) =>
+														setDefinition({
+															...definition,
+															functionCall: {
+																...definition.functionCall!,
+																toolChoice: toolChoice as any,
+															},
+														})
+													}
+													options={[
+														["auto", "自动选择"],
+														["required", "必须调用所选工具"],
+														...(definition.functionCall?.tools ?? []).map(
+															(t) => [t, `强制调用 ${t}`] as [string, string],
+														),
+													]}
+												/>
+											</Field>
+										</Box>
+									)}
+								</>,
+							],
+							[
+								"grading",
+								"判定规则",
+								<>
+									<RulesEditor
+										value={definition}
+										onChange={setDefinition}
+										caseId={record?.id}
+										judge={
+											<>
+												<JudgeEditor
+													value={definition.llmJudge}
+													onChange={(llmJudge) =>
+														setDefinition({ ...definition, llmJudge })
+													}
+													mode={mode}
+												/>
+												{definition.llmJudge?.enabled && (
+													<Button onClick={() => setJudgeTrial(true)}>
+														试评分
+													</Button>
+												)}{" "}
+											</>
+										}
+									/>
+								</>,
+							],
+							[
+								"execution",
+								"配置",
+								<>
+									<>
+										<ConfigEditor
+											caseLayout
+											origin={
+												record
+													? "已载入案例保存的配置。"
+													: "已填入当前全局运行配置，可按需修改；保存后作为案例配置。"
+											}
+											caseHeaders={
+												<section className="ConfigGroup">
+													<p className="form-hint">
+														同名请求头覆盖上方默认值；留空继承。
+													</p>
+													<HeadersEditor
+														title="案例请求头覆盖"
+														value={definition}
+														onChange={(headers) =>
+															setDefinition({
+																...definition,
+																headers: headers.headers,
+																headersEnv: headers.headersEnv,
+															})
+														}
+													/>
+												</section>
+											}
+											workspace={mode === "full-task"}
+											value={{
+												...defaults,
 												...Object.fromEntries(
 													[
 														"cwd",
@@ -428,145 +584,99 @@ function CaseForm({
 														"maxIterations",
 														"timeoutMs",
 													]
-														.filter(
-															(k) => (v.definition as any)[k] !== undefined,
-														)
-														.map((k) => [k, (next as any)[k]]),
+														.filter((k) => (definition as any)[k] !== undefined)
+														.map((k) => [k, (definition as any)[k]]),
 												),
-											},
-										}))
-									}
-								/>
-							</Box>
-							{mode === "function-call" && (
-								<Box title="本轮公布哪些工具？">
-									<p className="form-hint">
-										只生成模型调用，不实际执行工具；响应可包含多次调用。
-									</p>
-									{FUNCTION_CALL_TOOLS.map((tool) => (
-										<Check
-											key={tool}
-											checked={definition.functionCall?.tools.includes(tool)}
-											onChange={(v) => {
-												const tools = v
-													? [...(definition.functionCall?.tools ?? []), tool]
-													: (definition.functionCall?.tools ?? []).filter(
-															(t) => t !== tool,
-														);
-												setDefinition({
-													...definition,
-													functionCall: {
-														...definition.functionCall!,
-														tools,
-														toolChoice: ["auto", "required", ...tools].includes(
-															definition.functionCall?.toolChoice ?? "auto",
-														)
-															? definition.functionCall?.toolChoice
-															: "auto",
-													},
-												});
 											}}
-										>
-											{tool}
-										</Check>
-									))}
-									<Field label="调用选择方式">
-										<Select
-											value={definition.functionCall?.toolChoice ?? "auto"}
-											onChange={(toolChoice) =>
-												setDefinition({
-													...definition,
-													functionCall: {
-														...definition.functionCall!,
-														toolChoice: toolChoice as any,
+											onChange={(next) =>
+												draft.setValue((v) => ({
+													defaults: next,
+													definition: {
+														...v.definition,
+														...Object.fromEntries(
+															[
+																"cwd",
+																"workspace",
+																"systemPrompt",
+																"tools",
+																"maxIterations",
+																"timeoutMs",
+															]
+																.filter(
+																	(k) => (v.definition as any)[k] !== undefined,
+																)
+																.map((k) => [k, (next as any)[k]]),
+														),
 													},
-												})
+												}))
 											}
-											options={[
-												["auto", "自动选择"],
-												["required", "必须调用所选工具"],
-												...(definition.functionCall?.tools ?? []).map(
-													(t) => [t, `强制调用 ${t}`] as [string, string],
-												),
-											]}
 										/>
-									</Field>
-								</Box>
-							)}
-							<Box title="案例级请求头覆盖">
-								<HeadersEditor
-									value={definition}
-									onChange={(headers) =>
-										setDefinition({
-											...definition,
-											headers: headers.headers,
-											headersEnv: headers.headersEnv,
-										})
-									}
-								/>
-							</Box>
-						</>,
-					],
-					[
-						"grading",
-						"判定规则",
-						<>
-							<RulesEditor
-								value={definition}
-								onChange={setDefinition}
-								caseId={record?.id}
-							/>
-							<JudgeEditor
-								value={definition.llmJudge}
-								onChange={(llmJudge) =>
-									setDefinition({ ...definition, llmJudge })
-								}
-								mode={mode}
-							/>
-							{definition.llmJudge?.enabled && (
-								<Button onClick={() => setJudgeTrial(true)}>试评分</Button>
-							)}
-						</>,
-					],
-					[
-						"history",
-						"历史评测",
-						<DataState key="history" query={history}>
-							{history.data?.map((entry) => (
-								<Box
-									key={entry.id}
-									title={<Link to={`/run/${entry.id}`}>{entry.name}</Link>}
-								>
-									{entry.items?.map((item: any) => (
-										<div key={item.id} className="react-row">
-											<Status value={item.status} />
-											<span>
-												v{item.revision} · {item.modelId}
-											</span>
-											{item.sessionId && (
-												<code>session_id: {item.sessionId}</code>
-											)}
-										</div>
-									))}
-								</Box>
-							))}
-							{!record && <p>保存后可查看历史。</p>}
-						</DataState>,
-					],
-				]}
-			/>
-			{inlineRun && (
-				<Box title="调试已提交">
-					<Link to={`/run/${inlineRun}`}>查看执行进度和结果</Link>
-					<Button
-						onClick={() =>
-							send(`/api/runs/${inlineRun}/cancel?view=summary`, {})
+									</>
+								</>,
+							],
+						]}
+					/>
+				</section>
+				<aside className="CaseEditor-results">
+					<Box
+						title={
+							<div className="flex-between">
+								<span>执行结果</span>
+								<span className="muted small">
+									{inlineRun ? (
+										"调试执行"
+									) : (
+										<>
+											尚未运行{" "}
+											<Button className="btn-sm" danger disabled>
+												停止
+											</Button>
+										</>
+									)}
+								</span>
+							</div>
 						}
 					>
-						停止调试
-					</Button>
-				</Box>
-			)}
+						{inlineRun ? (
+							<DraftResult runId={inlineRun} />
+						) : (
+							<>
+								<p className="muted">
+									点击「运行{modeLabel(mode)}」开始调试，结果将在此显示。
+								</p>
+							</>
+						)}
+					</Box>
+					<Box title="历史记录">
+						{!record ? (
+							<p className="muted small">保存后可查看历史。</p>
+						) : (
+							<DataState query={history}>
+								{!history.data?.length && (
+									<p className="muted small">暂无历史记录</p>
+								)}
+								{history.data?.map((entry) => (
+									<div key={entry.id} className="CaseEditor-historyItem">
+										<Link to={`/run/${entry.id}`}>{entry.name}</Link>
+										{entry.items?.map((item: any) => (
+											<div key={item.id} className="react-row">
+												<Status value={item.status} />
+												<span>
+													v{item.revision} · {item.modelId}
+												</span>
+												{item.sessionId && (
+													<code>session_id: {item.sessionId}</code>
+												)}
+											</div>
+										))}
+									</div>
+								))}
+							</DataState>
+						)}
+					</Box>
+				</aside>
+			</div>
+
 			{judgeTrial && (
 				<HistoryTrials
 					caseId={record?.id}
@@ -586,6 +696,51 @@ function CaseForm({
 					}}
 				/>
 			)}
+		</>
+	);
+}
+
+function DraftResult({ runId }: { runId: string }) {
+	const query = useRun(runId);
+	const status = query.data?.status;
+	const client = useQueryClient();
+	useEffect(() => {
+		if (status && !["queued", "running"].includes(status))
+			void client.invalidateQueries({
+				predicate: (q) =>
+					String(q.queryKey[0]).startsWith("/api/cases/") &&
+					String(q.queryKey[0]).endsWith("/runs"),
+			});
+	}, [status, client]);
+	const run = query.data;
+	const active = !run || ["queued", "running"].includes(run.status);
+	return (
+		<>
+			<div className="flex-between mb-3">
+				<Status value={run?.status ?? "queued"} />
+				<div className="page-actions">
+					<Link to={`/run/${runId}`}>查看评测</Link>
+					<Button
+						className="btn-sm"
+						danger
+						disabled={!active}
+						onClick={() =>
+							send(`/api/runs/${runId}/cancel?view=summary`, {}).then(() =>
+								query.refetch(),
+							)
+						}
+					>
+						停止
+					</Button>
+				</div>
+			</div>
+			<DataState query={query}>
+				{run?.items[0] ? (
+					<InlineItemInspector runId={runId} item={run.items[0]} />
+				) : (
+					<p className="muted">等待执行…</p>
+				)}
+			</DataState>
 		</>
 	);
 }
