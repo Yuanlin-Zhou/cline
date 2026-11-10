@@ -284,8 +284,8 @@ AgentEval-Windows/
 
 ## 实现依据
 
-- [Runner 与当前审批策略](../apps/examples/agent-eval/src/runner.ts)
-- [案例结构](../apps/examples/agent-eval/src/types.ts)、[现有断言](../apps/examples/agent-eval/src/assertions.ts)
-- [Web worker](../apps/examples/agent-eval/src/web/worker.ts)、[执行队列](../apps/examples/agent-eval/src/web/queue.ts)、[工作区复制](../apps/examples/agent-eval/src/web/workspace.ts)
-- [Web 服务入口](../apps/examples/agent-eval/src/web/server.ts)、[当前打包脚本](../apps/examples/agent-eval/scripts/package.ts)、[发布说明](../apps/examples/agent-eval/README.release.md)
+- [Runner 与当前审批策略](../apps/agent-eval/src/modules/execution/runner.ts)
+- [案例结构](../apps/agent-eval/src/contracts/evaluation.ts)、[现有断言](../apps/agent-eval/src/modules/grading/assertions.ts)
+- [Web worker](../apps/agent-eval/src/worker/entry.ts)、[执行队列](../apps/agent-eval/src/modules/runs/queue.ts)、[工作区复制](../apps/agent-eval/src/modules/execution/workspace.ts)
+- [Web 服务入口](../apps/agent-eval/src/api/server.ts)、[当前打包脚本](../apps/agent-eval/scripts/package.ts)、[发布说明](../apps/agent-eval/README.release.md)
 - [内网迁移与 SDK 加载排查记录](agent-eval-offline-troubleshooting.md)

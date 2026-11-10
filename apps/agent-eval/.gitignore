@@ -1,0 +1,9 @@
+dist/
+release/
+results/
+.eval-data/
+
+__pycache__/
+web/.vite/
+playwright-report/
+test-results/

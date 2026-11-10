@@ -1,0 +1,59 @@
+{
+  "date": "2026-11-10",
+  "backend": {
+    "baseline": {
+      "pass": 144,
+      "skip": 15,
+      "fail": 2
+    },
+    "final": {
+      "pass": 145,
+      "skip": 15,
+      "fail": 2
+    },
+    "knownFailures": [
+      "portable example suites import with the current Web model settings",
+      "portable example suites contain every user-facing case exactly once"
+    ],
+    "resourceAndProjectionTests": {
+      "pass": 15,
+      "fail": 0
+    },
+    "reportAndRetryTests": {
+      "pass": 9,
+      "fail": 0
+    }
+  },
+  "browser": {
+    "pass": 5,
+    "fail": 0,
+    "viewports": [
+      [
+        1440,
+        900
+      ],
+      [
+        390,
+        844
+      ]
+    ],
+    "consoleErrors": []
+  },
+  "checks": [
+    "typecheck",
+    "build",
+    "targeted lint (48 files)",
+    "Web smoke",
+    "release SDK smoke",
+    "legacy + release static/API smoke",
+    "frozen lockfile install",
+    "generated schemas and 12 verifiers",
+    "legacy Python BSON document construction",
+    "Vite same-origin 201 and cross-origin 403",
+    "git diff --check"
+  ],
+  "unverified": [
+    "real MongoDB replica set",
+    "Windows process tree"
+  ]
+}

@@ -1,0 +1,398 @@
+.react-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+	gap: 16px;
+}
+summary {
+	list-style: none;
+}
+summary::-webkit-details-marker {
+	display: none;
+}
+.crumbs {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.case-heading-name {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	overflow: hidden;
+	overflow-wrap: anywhere;
+}
+.react-tab-panel[data-state="inactive"] {
+	display: none;
+}
+.react-module-list {
+	align-content: start;
+}
+.react-module-list .module-item {
+	align-self: start;
+}
+.react-module-list .module-item .page-actions {
+	gap: 4px;
+	justify-content: flex-start;
+	margin-top: 6px;
+}
+.react-module-list .module-item .btn {
+	font-size: 11px;
+	padding: 1px 5px;
+}
+.react-module-list .module-item a {
+	color: inherit;
+}
+.react-module-list > .btn:last-child {
+	align-self: start;
+	justify-self: start;
+	margin-top: 8px;
+}
+.react-cases .empty {
+	padding: 16px;
+	min-height: unset;
+}
+.react-catalog-layout {
+	display: grid;
+	grid-template-columns: 232px minmax(0, 1fr);
+	gap: 16px;
+}
+.react-module-list {
+	border-right: 1px solid var(--borderColor-default, #d0d7de);
+	padding-right: 16px;
+	min-width: 0;
+}
+.react-module-list .module-item {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	column-gap: 8px;
+	padding: 12px;
+	border-radius: 8px;
+	margin: 8px 0;
+	overflow-wrap: anywhere;
+}
+.react-module-list .module-item.active {
+	background: #ddf4ff;
+	border: 1px solid #80ccff;
+}
+.react-module-list .module-item > span {
+	color: #57606a;
+}
+.react-module-list .module-item > small,
+.react-module-list .module-item > .page-actions {
+	grid-column: 1 / -1;
+}
+.react-module-list small {
+	display: block;
+	color: #57606a;
+	margin: 4px 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.react-cases {
+	min-width: 0;
+}
+.react-filters {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	margin: 12px 0;
+}
+.react-filters > .form-control {
+	width: auto;
+	min-width: 150px;
+}
+.react-filters > input {
+	flex: 1;
+}
+.react-table-wrap {
+	overflow: auto;
+	border: 1px solid #d0d7de;
+	border-radius: 8px;
+	background: white;
+}
+.react-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 14px;
+}
+.react-table td,
+.react-table th {
+	padding: 10px 12px;
+	text-align: left;
+	border-bottom: 1px solid #d8dee4;
+	vertical-align: top;
+}
+.react-table th {
+	background: #f6f8fa;
+	font-size: 12px;
+	color: #57606a;
+	white-space: nowrap;
+}
+.react-table td {
+	overflow-wrap: anywhere;
+	max-width: 420px;
+}
+.react-table tr.selected {
+	background: #ddf4ff;
+}
+.react-table .page-actions {
+	flex-wrap: wrap;
+	gap: 4px;
+}
+.react-cases .react-table {
+	table-layout: fixed;
+	min-width: 1000px;
+}
+.react-cases th:first-child {
+	width: 48px;
+}
+.react-cases th:nth-child(3) {
+	width: 145px;
+}
+.react-cases th:nth-child(4) {
+	width: 140px;
+}
+.react-cases th:nth-child(5) {
+	width: 60px;
+}
+.react-cases th:nth-child(6) {
+	width: 90px;
+}
+.react-cases th:nth-child(7) {
+	width: 210px;
+}
+.react-table .btn {
+	font-size: 12px;
+	padding: 3px 7px;
+}
+.react-modal-overlay {
+	position: fixed;
+	inset: 0;
+	background: rgb(0 0 0 / 0.4);
+	z-index: 1000;
+}
+.react-modal {
+	position: fixed;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	width: min(1000px, calc(100vw - 32px));
+	max-height: calc(100dvh - 32px);
+	overflow: auto;
+	background: white;
+	border-radius: 12px;
+	padding: 24px;
+	z-index: 1001;
+	box-shadow: 0 16px 48px #0004;
+}
+.react-modal-close {
+	position: absolute;
+	right: 16px;
+	top: 16px;
+}
+.react-modal h2 {
+	margin: 0 40px 20px 0;
+}
+.react-code {
+	font-family: ui-monospace, monospace;
+	font-size: 12px;
+	line-height: 1.6;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	max-height: 440px;
+	overflow: auto;
+	background: #f6f8fa;
+	border: 1px solid #d0d7de;
+	border-radius: 6px;
+	padding: 12px;
+	margin: 8px 0;
+}
+.react-block {
+	display: block;
+}
+.react-history-row {
+	display: grid;
+	grid-template-columns: 130px minmax(0, 1fr) auto;
+	gap: 8px;
+	margin: 10px 0;
+}
+.react-history-row select {
+	align-self: start;
+}
+.tab-nav {
+	display: flex;
+	gap: 8px;
+	border-bottom: 1px solid #d0d7de;
+	margin: 16px 0;
+	overflow: auto;
+}
+.tab-button {
+	background: none;
+	border: 0;
+	border-bottom: 3px solid transparent;
+	white-space: nowrap;
+	padding: 12px;
+	cursor: pointer;
+	color: #57606a;
+}
+.tab-button[data-state="active"] {
+	border-bottom-color: #0969da;
+	color: #24292f;
+	font-weight: 600;
+}
+.status-passed,
+.status-completed {
+	color: #116329;
+	background: #dafbe1;
+}
+.status-failed,
+.status-error {
+	color: #cf222e;
+	background: #ffebe9;
+}
+.status-running {
+	color: #0550ae;
+	background: #ddf4ff;
+}
+.status-inconclusive {
+	color: #9a6700;
+	background: #fff8c5;
+}
+.react-diff {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 12px;
+}
+.react-editor {
+	font-family: ui-monospace, monospace;
+	min-height: 240px;
+}
+.react-row {
+	display: flex;
+	gap: 10px;
+	align-items: center;
+	flex-wrap: wrap;
+}
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+}
+.react-metrics {
+	display: flex;
+	gap: 20px;
+	flex-wrap: wrap;
+	padding: 12px 0;
+}
+.react-metrics strong {
+	font-size: 20px;
+	display: block;
+}
+.react-metrics span {
+	font-size: 12px;
+	color: #57606a;
+}
+@media (max-width: 700px) {
+	.react-catalog-layout {
+		grid-template-columns: 1fr;
+	}
+	.react-module-list {
+		border-right: 0;
+		border-bottom: 1px solid #d0d7de;
+		padding: 0 0 16px;
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 8px;
+	}
+	.react-module-list > div:first-child {
+		grid-column: 1 / -1;
+	}
+	.react-module-list .module-item {
+		margin: 0;
+	}
+	.react-filters {
+		flex-direction: column;
+		align-items: stretch;
+	}
+	.react-filters > .form-control {
+		width: 100%;
+	}
+	.react-history-row {
+		grid-template-columns: 1fr;
+	}
+	.react-diff {
+		grid-template-columns: 1fr;
+	}
+	.react-modal {
+		padding: 18px;
+	}
+	.react-table {
+		min-width: 1000px;
+	}
+	.page-actions {
+		flex-wrap: wrap;
+	}
+}
+
+.react-header-row {
+	display: grid;
+	grid-template-columns: 1fr 130px 2fr auto;
+	gap: 8px;
+	margin: 8px 0;
+}
+@media (max-width: 700px) {
+	.react-header-row {
+		grid-template-columns: 1fr;
+	}
+}
+.replay-cards .replay-card {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	justify-content: flex-start;
+	gap: 6px;
+	white-space: normal;
+	min-width: 0;
+	height: auto;
+	text-align: left;
+	overflow-wrap: anywhere;
+}
+.replay-cards .replay-card strong,
+.replay-cards .replay-card span {
+	display: block;
+	max-width: 100%;
+	white-space: normal;
+}
+.page-title,
+.crumbs {
+	overflow-wrap: anywhere;
+}
+.react-grid > * {
+	min-width: 0;
+}
+.react-tab-panel {
+	min-width: 0;
+}
+.AppMain {
+	min-width: 0;
+}
+.react-table .case-name {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	overflow: hidden;
+	overflow-wrap: anywhere;
+}
+
+output.empty {
+	display: block;
+}
+fieldset.replay-cards {
+	border: 0;
+	padding: 0;
+	min-inline-size: 0;
+	margin-inline: 0;
+}

@@ -1,0 +1,54 @@
+{
+  "moduleId": "替换为目标模块的字符串ID",
+  "source": {
+    "platform": "internal-agent-logs",
+    "taskId": "task-123",
+    "turnId": "turn-8"
+  },
+  "name": "任务123-第7轮-工具Bad case",
+  "history": [],
+  "prompt": "将 hello 改为 world",
+  "defaults": {
+    "providerId": "openai-compatible",
+    "modelId": "替换为实际模型名",
+    "baseUrl": "https://model.example/v1",
+    "apiKeyEnv": "EVAL_API_KEY"
+  },
+  "badCase": {
+    "observedOutput": "{\"role\":\"assistant\",\"content\":\"已修改，但没有请求 editor\"}",
+    "outputFormat": "json",
+    "reason": "应生成 editor 调用"
+  },
+  "replayMode": "function-call",
+  "functionCall": {
+    "tools": [
+      "editor"
+    ],
+    "toolChoice": "auto",
+    "history": [
+      {
+        "role": "user",
+        "content": "读取 demo.py"
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "call_1",
+            "type": "function",
+            "function": {
+              "name": "read_files",
+              "arguments": "{\"paths\":[\"demo.py\"]}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "call_1",
+        "content": "print('hello')"
+      }
+    ]
+  }
+}

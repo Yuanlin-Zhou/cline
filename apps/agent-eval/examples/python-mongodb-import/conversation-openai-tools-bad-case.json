@@ -1,0 +1,70 @@
+{
+  "moduleId": "替换为目标模块的字符串ID",
+  "source": {
+    "platform": "internal-agent-logs",
+    "taskId": "task-123",
+    "turnId": "turn-with-tools"
+  },
+  "name": "完整工具对话 Bad case",
+  "conversation": {
+    "messages": [
+      {
+        "role": "system",
+        "content": "你是代码助手，修改文件时使用 editor。"
+      },
+      {
+        "role": "user",
+        "content": "读取 demo.py"
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "call_1",
+            "type": "function",
+            "function": {
+              "name": "read_files",
+              "arguments": "{\"paths\":[\"demo.py\"]}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "call_1",
+        "content": "print('hello')"
+      },
+      {
+        "role": "user",
+        "content": "把 hello 改成 world，请调用 editor。"
+      },
+      {
+        "role": "assistant",
+        "content": "已修改，但没有生成 editor 调用。"
+      },
+      {
+        "role": "user",
+        "content": "FUTURE_INPUT_NOT_REPLAYED"
+      }
+    ]
+  },
+  "badMessageIndex": 5,
+  "badCase": {
+    "observedOutput": "已修改，但没有生成 editor 调用。",
+    "reason": "没有生成要求的 editor 工具调用"
+  },
+  "options": {
+    "tools": [
+      "editor",
+      "run_commands"
+    ],
+    "continuation": "继续"
+  },
+  "defaults": {
+    "providerId": "openai-compatible",
+    "modelId": "替换为实际模型名",
+    "baseUrl": "https://model.example/v1",
+    "apiKeyEnv": "EVAL_API_KEY"
+  }
+}

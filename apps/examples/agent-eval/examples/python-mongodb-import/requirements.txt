@@ -1,1 +1,1 @@
-pymongo>=4.11,<5
+-r ../../../../agent-eval/examples/python-mongodb-import/requirements.txt
