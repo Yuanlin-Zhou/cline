@@ -1,3 +1,4 @@
+import { resolveFullTaskRuntime } from "../execution/full-task-runtime.js";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
@@ -59,6 +60,8 @@ async function executeIsolated(input: {
 	onUpdate?: (update: ExecutionUpdate) => void;
 }): Promise<EvalCaseResult> {
 	const { definition, defaults, directory, signal } = input;
+	if (definition.replayMode === "full-task")
+		definition.fullTaskRuntime = resolveFullTaskRuntime(definition, defaults);
 	const started = Date.now();
 	await mkdir(directory, { recursive: true });
 	const snapshots =
@@ -225,6 +228,7 @@ async function executeIsolated(input: {
 	let stderr = "";
 	let text = "";
 	let timedOut = false;
+	let runtimeRecord: EvalCaseResult["runtime"];
 	let diagnostics = "";
 	let diagnosticComplete = true;
 	let diagnosticSeq = 0;
@@ -252,7 +256,7 @@ async function executeIsolated(input: {
 				while ((index = buffer.indexOf("\n")) >= 0) {
 					const line = buffer.slice(0, index);
 					buffer = buffer.slice(index + 1);
-					let event;
+					let event: any;
 					try {
 						event = redactValue(JSON.parse(line), secrets);
 					} catch {
@@ -276,6 +280,9 @@ async function executeIsolated(input: {
 					if (event.type === "result") result = event.result;
 					if (event.type === "error") failure = event.error;
 					if (event.type === "diagnostic") {
+						event.event = redactValue(event.event, secrets);
+						if (event.event?.type === "execution_config")
+							runtimeRecord = event.event.config;
 						const entry =
 							JSON.stringify({
 								seq: ++diagnosticSeq,
@@ -328,6 +335,7 @@ async function executeIsolated(input: {
 		};
 	if (!result.text && text) result.text = redact(text, secrets);
 	if (definition.grading) result.assertions = [];
+	result.runtime ??= runtimeRecord;
 	result.workspaceInfo = workspaceInfo;
 	result.execution = {
 		status: signal?.aborted
@@ -353,6 +361,13 @@ async function executeIsolated(input: {
 		"事件轨迹",
 		evidence.refs,
 	);
+	if (result.runtime)
+		await saveEvidence(
+			directory,
+			JSON.stringify(result.runtime),
+			"生效执行配置 v1",
+			evidence.refs,
+		);
 	if (diagnostics)
 		await saveEvidence(
 			directory,

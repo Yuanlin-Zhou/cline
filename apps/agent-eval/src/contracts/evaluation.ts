@@ -24,7 +24,33 @@ export type EvalAssertions = {
 		| "error";
 };
 
+export type FullTaskRuntime = {
+	promptPreset?: "plugin-act" | "legacy-eval";
+	compaction?: { enabled?: boolean; strategy?: "basic" | "agentic" };
+};
+export type ExecutionRuntimeRecord = {
+	version: 1;
+	profile: string;
+	mode: "act" | "yolo";
+	cwd: string;
+	providerId: string;
+	modelId: string;
+	toolMode: ToolMode;
+	approval: "automatic";
+	systemPrompt: string;
+	promptSource: string;
+	promptHash: string;
+	compaction: { enabled: boolean; strategy: "basic" | "agentic" };
+	maxIterations: number;
+	timeoutMs: number;
+	actualTools?: string[];
+	modelRequests: number;
+	compactionEvents: unknown[];
+	host: { node: string; platform: string; application: string; sdk: string };
+};
+
 export type EvalDefaults = HeaderConfig & {
+	fullTaskRuntime?: FullTaskRuntime;
 	providerId: string;
 	modelId: string;
 	apiKeyEnv?: string;
@@ -38,6 +64,7 @@ export type EvalDefaults = HeaderConfig & {
 };
 
 export type EvalCase = HeaderConfig & {
+	fullTaskRuntime?: FullTaskRuntime;
 	badCase?: import("./case-origin.js").BadCase;
 	importSource?: import("./case-origin.js").ImportSource;
 	llmJudge?: import("../modules/judging/types.js").JudgeConfig;
@@ -79,6 +106,7 @@ export type AssertionResult = {
 };
 
 export type EvalCaseResult = {
+	runtime?: ExecutionRuntimeRecord;
 	llmJudge?: import("../modules/judging/types.js").JudgeResult;
 	workspaceInfo?: import("./workspace.js").WorkspaceInfo;
 	functionCallResponse?: import("./function-call-response.js").FunctionCallResponse;

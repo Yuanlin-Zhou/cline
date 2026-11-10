@@ -2,6 +2,7 @@ import { parseGrading } from "../modules/grading/schema.js";
 import { parseJudgeConfig } from "../modules/judging/config.js";
 import { parseBadCase, parseImportSource } from "./case-origin.js";
 import type {
+	FullTaskRuntime,
 	EvalAssertions,
 	EvalCase,
 	EvalDefaults,
@@ -48,6 +49,36 @@ export function parseToolMode(value: unknown, path: string): ToolMode {
 		return value;
 	}
 	throw new Error(`${path} must be one of: none, read-only, full`);
+}
+
+export function parseFullTaskRuntime(
+	value: unknown,
+	path: string,
+): FullTaskRuntime | undefined {
+	if (value === undefined) return undefined;
+	if (!isRecord(value)) throw Error(`${path} must be an object`);
+	if (
+		value.promptPreset !== undefined &&
+		!["plugin-act", "legacy-eval"].includes(String(value.promptPreset))
+	)
+		throw Error(`${path}.promptPreset is invalid`);
+	const c = value.compaction;
+	if (
+		c !== undefined &&
+		(!isRecord(c) ||
+			(c.enabled !== undefined && typeof c.enabled !== "boolean") ||
+			(c.strategy !== undefined &&
+				!["basic", "agentic"].includes(String(c.strategy))))
+	)
+		throw Error(`${path}.compaction is invalid`);
+	return {
+		...(value.promptPreset !== undefined
+			? { promptPreset: value.promptPreset as FullTaskRuntime["promptPreset"] }
+			: {}),
+		...(c !== undefined
+			? { compaction: { ...(c as FullTaskRuntime["compaction"]) } }
+			: {}),
+	};
 }
 
 function parseStringArray(value: unknown, path: string): string[] | undefined {
@@ -130,6 +161,10 @@ function parseDefaults(value: unknown): EvalDefaults {
 		baseUrl: readOptionalString(defaults.baseUrl, "defaults.baseUrl"),
 		cwd: readOptionalString(defaults.cwd, "defaults.cwd"),
 		workspace: parseWorkspace(defaults.workspace, "defaults.workspace"),
+		fullTaskRuntime: parseFullTaskRuntime(
+			defaults.fullTaskRuntime,
+			"defaults.fullTaskRuntime",
+		),
 		systemPrompt: readOptionalString(
 			defaults.systemPrompt,
 			"defaults.systemPrompt",
@@ -190,6 +225,10 @@ function parseCase(value: unknown, index: number): EvalCase {
 		prompt,
 		cwd: readOptionalString(value.cwd, `${path}.cwd`),
 		workspace: parseWorkspace(value.workspace, `${path}.workspace`),
+		fullTaskRuntime: parseFullTaskRuntime(
+			value.fullTaskRuntime,
+			`${path}.fullTaskRuntime`,
+		),
 		systemPrompt: readOptionalString(
 			value.systemPrompt,
 			`${path}.systemPrompt`,

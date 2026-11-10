@@ -534,3 +534,63 @@ test("case workbench keeps legacy tabs, permanent result/history and scoped conf
 		});
 	}
 });
+
+test("full-task Act configuration persists and actual runtime record is inspectable", async ({
+	page,
+	request,
+}, testInfo) => {
+	const { module, item } = await seed(request, "Act 配置对齐");
+	await page.goto(`/#/case/${item.id}`);
+	await page
+		.getByRole("button", { name: "多轮回放（完整任务）", exact: false })
+		.first()
+		.click();
+	await page.getByRole("tab", { name: "配置", exact: true }).click();
+	await page.getByLabel("工具权限", { exact: true }).selectOption("full");
+	await page.getByLabel("压缩策略", { exact: true }).selectOption("basic");
+	await page.getByLabel("自动压缩上下文", { exact: true }).uncheck();
+	await page.getByRole("button", { name: "保存", exact: true }).click();
+	await expect
+		.poll(
+			async () =>
+				(await (await request.get(`/api/cases/${item.id}`)).json()).revision,
+		)
+		.toBe(2);
+	await page.reload();
+	await page.getByRole("tab", { name: "配置", exact: true }).click();
+	await expect(
+		page.getByLabel("自动压缩上下文", { exact: true }),
+	).not.toBeChecked();
+	await expect(page.getByLabel("压缩策略", { exact: true })).toHaveValue(
+		"basic",
+	);
+	for (const width of [1440, 390]) {
+		await page.setViewportSize({ width, height: 900 });
+		expect(
+			await page.evaluate(
+				() => document.documentElement.scrollWidth <= innerWidth,
+			),
+		).toBe(true);
+		await page.screenshot({
+			path: testInfo.outputPath(`act-config-${width}.png`),
+			fullPage: true,
+		});
+	}
+	await page
+		.getByRole("button", { name: "运行多轮回放（完整任务）", exact: true })
+		.click();
+	const pane = page.locator(".CaseEditor-results");
+	await expect(
+		pane.getByText("Use Bun. 已完成验证。", { exact: true }),
+	).toBeVisible({ timeout: 60000 });
+	await pane.getByText("执行详情", { exact: true }).click();
+	await pane.getByText("任务配置快照", { exact: true }).click();
+	await pane.getByText("生效执行配置", { exact: true }).click();
+	await expect(
+		pane.getByText('"plugin-act-v1"', { exact: false }),
+	).toBeVisible();
+	await page.screenshot({
+		path: testInfo.outputPath("act-runtime-record.png"),
+		fullPage: true,
+	});
+});

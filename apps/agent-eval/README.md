@@ -239,3 +239,26 @@ Each case records the final text, finish reason, duration, iteration count, toke
 ## 大案例集性能
 
 案例列表与批次进度使用轻量摘要和增量同步，完整输入、输出和尝试历史按需读取。旧数据首次启动会自动备份并构建索引；升级前停止旧实例。迁移、回退、MongoDB 兼容和基准命令见 [性能说明](docs/performance.md)。
+
+
+### 完整任务与插件 Act 配置对齐
+
+新提交的完整任务默认使用共享 Act 系统提示词、SDK Act 工具预设和自动上下文压缩。需要读写文件、运行命令时选择 `tools: "full"`；`read-only` 和 `none` 仍限制工具，不会因自动批准而扩权。已有案例工具范围保留，新建案例切换完整任务默认全部工具。
+
+```json
+{
+  "id": "act-task",
+  "replayMode": "full-task",
+  "prompt": "完成任务并验证结果",
+  "history": [],
+  "tools": "full",
+  "fullTaskRuntime": {
+    "promptPreset": "plugin-act",
+    "compaction": { "enabled": true, "strategy": "agentic" }
+  }
+}
+```
+
+`fullTaskRuntime` 也可配置在 defaults。案例逐项覆盖 defaults，显式 false 生效；未指定压缩策略时，在提交/隔离执行前读取并固定 SDK 全局策略。自定义 systemPrompt 会完整覆盖预设。历史批次按原快照运行；无新字段的旧批次按 legacy-eval 基线处理。单轮文字和函数调用行为不变。
+
+结果详情的“执行详情 → 任务配置快照 → 生效执行配置”展示实际提示词、哈希、模型可见工具清单、模式、压缩设置/事件和运行版本，也作为证据保存。模型未发起请求时工具清单可能尚未产生；是否执行成功以工具结果和文件验收为准。工具实现仍为 SDK 通用实现，不包含 VS Code 专用工具与 MCP 注入。无人审批不等于自动回答模型追问。

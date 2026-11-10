@@ -8,8 +8,11 @@ export function createEvaluationRuntime() {
 		backendMode: "local",
 		capabilities: {
 			requestToolApproval: async (request) => ({
-				approved: false,
-				reason: `evaluation policy denied ${request.toolName}`,
+				approved: request.policy.enabled !== false,
+				reason:
+					request.policy.enabled === false
+						? `evaluation policy denied ${request.toolName}`
+						: "evaluation automatically approved enabled tool",
 			}),
 		},
 	});

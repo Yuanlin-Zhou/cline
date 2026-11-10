@@ -1,3 +1,6 @@
+import { CORE_BUILD_VERSION } from "@cline/core";
+import { resolveFullTaskPrompt } from "./full-task-runtime.js";
+import { createHash } from "node:crypto";
 import type { ToolPolicy } from "@cline/sdk";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -74,6 +77,7 @@ async function runCase(input: {
 	signal?: AbortSignal;
 	onSession?: (sessionId: string) => void;
 	onText?: (text: string) => void;
+	onDiagnostic?: (event: unknown) => void;
 }): Promise<EvalCaseResult> {
 	const { cline, caseDefinition, suite, overrides, suiteDirectory } = input;
 	if (caseDefinition.replayMode === "function-call")
@@ -109,6 +113,7 @@ async function runCase(input: {
 		void cline.stop(sessionId).catch(() => undefined);
 	}, timeoutMs);
 
+	let runtimeRecord: EvalCaseResult["runtime"];
 	let request: ReturnType<typeof prepareRequestHeaders> | undefined;
 	try {
 		request = prepareRequestHeaders(defaults, caseDefinition, {
@@ -120,80 +125,175 @@ async function runCase(input: {
 		const cwd = overrides.cwd
 			? path.resolve(overrides.cwd)
 			: resolveWorkspace(caseDefinition.cwd ?? defaults.cwd, suiteDirectory);
-		const result = await cline.start({
-			prompt: caseDefinition.prompt,
-			initialMessages: caseDefinition.history,
-			interactive: false,
-			source: "cli",
-			sessionMetadata: {
-				evaluationCaseId: caseDefinition.id,
-			},
-			config: {
-				sessionId,
+		const fullTask = caseDefinition.replayMode === "full-task";
+		const resolved = fullTask
+			? await resolveFullTaskPrompt(
+					caseDefinition,
+					defaults,
+					cwd,
+					overrides.providerId ?? defaults.providerId,
+				)
+			: undefined;
+		const runtimeMode =
+			resolved?.profile.promptPreset === "plugin-act"
+				? "act"
+				: toolMode === "full"
+					? "yolo"
+					: "act";
+		const record = () =>
+			input.onDiagnostic?.({ type: "execution_config", config: runtimeRecord });
+		if (resolved) {
+			runtimeRecord = {
+				version: 1,
+				profile: resolved.profile.promptPreset + "-v1",
+				mode: runtimeMode,
+				cwd,
 				providerId: overrides.providerId ?? defaults.providerId,
 				modelId: overrides.modelId ?? defaults.modelId,
-				apiKey: resolveApiKey(overrides.apiKeyEnv ?? defaults.apiKeyEnv),
-				baseUrl: defaults.baseUrl,
-				...(headers ? { headers } : {}),
-				...(request.dynamic
-					? {
-							providerConfig: {
-								providerId: overrides.providerId ?? defaults.providerId,
-								modelId: overrides.modelId ?? defaults.modelId,
-								fetch: request.fetch,
-							},
-						}
-					: {}),
-				cwd,
-				workspaceRoot: cwd,
-				mode: toolMode === "full" ? "yolo" : "act",
-				systemPrompt:
-					caseDefinition.systemPrompt ??
-					defaults.systemPrompt ??
-					DEFAULT_SYSTEM_PROMPT,
+				toolMode,
+				approval: "automatic",
+				systemPrompt: resolved.prompt,
+				promptSource: resolved.source,
+				promptHash: resolved.hash,
+				compaction: {
+					enabled: resolved.profile.compaction.enabled ?? true,
+					strategy: resolved.profile.compaction.strategy ?? "agentic",
+				},
 				maxIterations: execution.maxIterations,
-				enableTools: toolMode !== "none",
-				enableSpawnAgent: false,
-				enableAgentTeams: false,
-				disableMcpSettingsTools: true,
-			},
-			toolPolicies: buildToolPolicies(toolMode),
-		});
+				timeoutMs,
+				modelRequests: 0,
+				compactionEvents: [],
+				host: {
+					node: process.versions.node,
+					platform: process.platform,
+					application: "agent-eval/0.0.0",
+					sdk: CORE_BUILD_VERSION,
+				},
+			};
+			record();
+		}
+		const unsubscribeRuntime = runtimeRecord
+			? cline.subscribe((event) => {
+					const e = event as unknown as {
+						type: string;
+						payload?: { event?: { type?: string; reason?: string } };
+					};
+					if (
+						e.type.includes("compact") ||
+						e.payload?.event?.type?.includes("compact") ||
+						e.payload?.event?.reason?.includes("compaction")
+					) {
+						runtimeRecord!.compactionEvents.push(event);
+						record();
+					}
+				})
+			: undefined;
+		try {
+			const result = await cline.start({
+				prompt: caseDefinition.prompt,
+				initialMessages: caseDefinition.history,
+				interactive: false,
+				source: "cli",
+				sessionMetadata: {
+					evaluationCaseId: caseDefinition.id,
+				},
+				config: {
+					sessionId,
+					providerId: overrides.providerId ?? defaults.providerId,
+					modelId: overrides.modelId ?? defaults.modelId,
+					apiKey: resolveApiKey(overrides.apiKeyEnv ?? defaults.apiKeyEnv),
+					baseUrl: defaults.baseUrl,
+					...(headers ? { headers } : {}),
+					...(request.dynamic
+						? {
+								providerConfig: {
+									providerId: overrides.providerId ?? defaults.providerId,
+									modelId: overrides.modelId ?? defaults.modelId,
+									fetch: request.fetch,
+								},
+							}
+						: {}),
+					cwd,
+					workspaceRoot: cwd,
+					mode: runtimeMode,
+					...(resolved
+						? {
+								compaction: runtimeRecord!.compaction,
+								hooks: {
+									beforeModel: ({
+										request,
+									}: {
+										request: {
+											systemPrompt: string;
+											tools?: { name: string }[];
+										};
+									}) => {
+										runtimeRecord!.systemPrompt = request.systemPrompt;
+										runtimeRecord!.promptHash = createHash("sha256")
+											.update(request.systemPrompt)
+											.digest("hex");
+										runtimeRecord!.actualTools = (request.tools ?? []).map(
+											(t) => t.name,
+										);
+										runtimeRecord!.modelRequests++;
+										record();
+									},
+								},
+							}
+						: {}),
+					systemPrompt:
+						resolved?.prompt ??
+						caseDefinition.systemPrompt ??
+						defaults.systemPrompt ??
+						DEFAULT_SYSTEM_PROMPT,
+					maxIterations: execution.maxIterations,
+					enableTools: toolMode !== "none",
+					enableSpawnAgent: false,
+					enableAgentTeams: false,
+					disableMcpSettingsTools: true,
+				},
+				toolPolicies: buildToolPolicies(toolMode),
+			});
 
-		if (timedOut) {
-			throw new Error(`evaluation timed out after ${timeoutMs}ms`);
+			if (timedOut) {
+				throw new Error(`evaluation timed out after ${timeoutMs}ms`);
+			}
+			if (!result.result) {
+				throw new Error("Cline session ended without an AgentResult");
+			}
+			const agentResult = result.result;
+			const assertions = evaluateAssertions(
+				agentResult.text,
+				agentResult.finishReason,
+				caseDefinition.assertions,
+			);
+			const passed = assertions.every((assertion) => assertion.passed);
+			return {
+				runtime: runtimeRecord,
+				id: caseDefinition.id,
+				description: caseDefinition.description,
+				status: passed ? "passed" : "failed",
+				sessionId,
+				text: agentResult.text,
+				finishReason: agentResult.finishReason,
+				durationMs: agentResult.durationMs,
+				iterations: agentResult.iterations,
+				usage: agentResult.usage,
+				toolCalls: agentResult.toolCalls.map((call) => ({
+					name: call.name,
+					input: call.input,
+					output: call.output,
+					error: call.error,
+					durationMs: call.durationMs,
+				})),
+				assertions,
+			};
+		} finally {
+			unsubscribeRuntime?.();
 		}
-		if (!result.result) {
-			throw new Error("Cline session ended without an AgentResult");
-		}
-		const agentResult = result.result;
-		const assertions = evaluateAssertions(
-			agentResult.text,
-			agentResult.finishReason,
-			caseDefinition.assertions,
-		);
-		const passed = assertions.every((assertion) => assertion.passed);
-		return {
-			id: caseDefinition.id,
-			description: caseDefinition.description,
-			status: passed ? "passed" : "failed",
-			sessionId,
-			text: agentResult.text,
-			finishReason: agentResult.finishReason,
-			durationMs: agentResult.durationMs,
-			iterations: agentResult.iterations,
-			usage: agentResult.usage,
-			toolCalls: agentResult.toolCalls.map((call) => ({
-				name: call.name,
-				input: call.input,
-				output: call.output,
-				error: call.error,
-				durationMs: call.durationMs,
-			})),
-			assertions,
-		};
 	} catch (error) {
 		return {
+			runtime: runtimeRecord,
 			id: caseDefinition.id,
 			description: caseDefinition.description,
 			status: "error",
@@ -352,6 +452,7 @@ export async function runEvalSuite(input: {
 						suiteDirectory,
 						signal: input.signal,
 						onSession: input.onSession,
+						onDiagnostic: input.onDiagnostic,
 						onText: input.onText,
 					});
 			results.push(result);

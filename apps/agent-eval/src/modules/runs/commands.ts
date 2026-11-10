@@ -1,3 +1,4 @@
+import { resolveFullTaskRuntime } from "../execution/full-task-runtime.js";
 import { type ItemSummary } from "../../contracts/projections.js";
 import { preflightJudge } from "../../modules/judging/engine.js";
 
@@ -128,6 +129,7 @@ export class RunCommands {
 						"item",
 						previous.rootItemId ?? previous.id,
 					);
+
 					const item: RunItem = {
 						id: randomUUID(),
 						runId: id,
@@ -282,6 +284,12 @@ export class RunCommands {
 							| "single-turn"
 							| "full-task"
 							| "function-call";
+					if (snapshot.definition.replayMode === "full-task")
+						snapshot.definition.fullTaskRuntime = resolveFullTaskRuntime(
+							snapshot.definition,
+							snapshot.defaults,
+							!!input.parentRunId,
+						);
 					const item: RunItem = {
 						id: randomUUID(),
 						runId: run.id,

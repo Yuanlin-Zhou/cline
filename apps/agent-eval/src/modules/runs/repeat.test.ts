@@ -380,3 +380,35 @@ describe("repeated batches", () => {
 		}
 	});
 });
+
+test("new full-task runs freeze runtime settings and historical reruns keep legacy", () => {
+	const c = seed();
+	c.definition.replayMode = "full-task";
+	c.defaults.fullTaskRuntime = {
+		compaction: { enabled: false, strategy: "basic" },
+	};
+	store.put("case", c.id, c);
+	const first = store.createRun({ caseIds: [c.id] });
+	const item = store.items(first.id)[0];
+	expect(item.snapshot.definition.fullTaskRuntime).toEqual({
+		promptPreset: "plugin-act",
+		compaction: { enabled: false, strategy: "basic" },
+	});
+	c.defaults.fullTaskRuntime = {
+		compaction: { enabled: true, strategy: "agentic" },
+	};
+	store.put("case", c.id, c);
+	expect(
+		store.items(first.id)[0].snapshot.definition.fullTaskRuntime?.compaction
+			?.enabled,
+	).toBe(false);
+	const old = store.items(first.id)[0];
+	delete old.snapshot.definition.fullTaskRuntime;
+	delete old.snapshot.defaults.fullTaskRuntime;
+	old.status = "passed";
+	store.put("item", old.id, old);
+	const rerun = store.createRun({ parentRunId: first.id, rerunScope: "all" });
+	expect(
+		store.items(rerun.id)[0].snapshot.definition.fullTaskRuntime?.promptPreset,
+	).toBe("legacy-eval");
+});

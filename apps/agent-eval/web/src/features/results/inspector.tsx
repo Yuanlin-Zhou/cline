@@ -228,6 +228,12 @@ export function ItemContent({ runId, item }: { runId: string; item: any }) {
 									<details>
 										<summary>任务配置快照</summary>
 										<JsonView value={item.snapshot} />
+										{result?.runtime && (
+											<details>
+												<summary>生效执行配置</summary>
+												<JsonView value={result.runtime} />
+											</details>
+										)}
 									</details>
 								</div>
 							</details>

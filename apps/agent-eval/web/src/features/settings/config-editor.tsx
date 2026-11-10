@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { EvalDefaults } from "../../../../src/contracts/evaluation";
 import { HeadersEditor } from "../../components/headers";
-import { Field, Select, Text } from "../../components/ui";
+import { Check, Field, Select, Text } from "../../components/ui";
 
 export function ConfigEditor({
 	value,
@@ -20,6 +20,67 @@ export function ConfigEditor({
 }) {
 	const field = <K extends keyof EvalDefaults>(key: K, next: EvalDefaults[K]) =>
 		onChange({ ...value, [key]: next });
+	const behavior = workspace && (
+		<section className="ConfigGroup">
+			<h3 className="ConfigGroup-title">完整任务运行行为</h3>
+			<p className="form-hint">
+				Act 模式；开放工具自动批准，仍保留参数校验和执行限制。
+			</p>
+			<Field label="系统提示词预设">
+				<Select
+					value={value.fullTaskRuntime?.promptPreset ?? "plugin-act"}
+					onChange={(promptPreset) =>
+						field("fullTaskRuntime", {
+							...value.fullTaskRuntime,
+							promptPreset: promptPreset as "plugin-act" | "legacy-eval",
+						})
+					}
+					options={[
+						["plugin-act", "插件 Act 共享提示词"],
+						["legacy-eval", "旧评测提示词（基线对照）"],
+					]}
+				/>
+			</Field>
+			<Check
+				checked={
+					value.fullTaskRuntime?.compaction?.enabled ??
+					value.fullTaskRuntime?.promptPreset !== "legacy-eval"
+				}
+				onChange={(enabled) =>
+					field("fullTaskRuntime", {
+						...value.fullTaskRuntime,
+						compaction: { ...value.fullTaskRuntime?.compaction, enabled },
+					})
+				}
+			>
+				自动压缩上下文
+			</Check>
+			<Field label="压缩策略">
+				<Select
+					value={value.fullTaskRuntime?.compaction?.strategy ?? ""}
+					onChange={(strategy) =>
+						field("fullTaskRuntime", {
+							...value.fullTaskRuntime,
+							compaction: {
+								...value.fullTaskRuntime?.compaction,
+								strategy: strategy
+									? (strategy as "basic" | "agentic")
+									: undefined,
+							},
+						})
+					}
+					options={[
+						["", "使用 SDK 全局策略（提交时冻结）"],
+						["basic", "Basic"],
+						["agentic", "Agentic"],
+					]}
+				/>
+			</Field>
+			<p className="form-hint">
+				填写系统提示词时会完整覆盖预设。历史批次使用其提交时的配置。
+			</p>
+		</section>
+	);
 	const connection = (
 		<div className="react-grid">
 			<Field
@@ -168,6 +229,7 @@ export function ConfigEditor({
 						<div className="Box-body">
 							<h3 className="section-title">环境与执行配置</h3>
 							{environment}
+							{behavior}
 						</div>
 					</section>
 				)}
@@ -222,6 +284,7 @@ export function ConfigEditor({
 					/>
 				</Field>
 			</div>
+			{behavior}
 			<Field label="系统提示词">
 				<Text
 					multiline

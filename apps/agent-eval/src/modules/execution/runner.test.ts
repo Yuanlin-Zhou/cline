@@ -196,7 +196,7 @@ describe("runEvalSuite", () => {
 		});
 		expect(result.cases[0].text).toBe("Use Bun");
 		expect(runtime.dispose).toHaveBeenCalledTimes(1);
-		expect(runtime.unsubscribe).toHaveBeenCalledTimes(1);
+		expect(runtime.unsubscribe).toHaveBeenCalledTimes(2);
 	});
 
 	test("continues after case failure and resolves CLI cwd from the terminal", async () => {

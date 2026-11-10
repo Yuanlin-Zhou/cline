@@ -14,7 +14,17 @@ export type Executor = (
 export function makeExecutor(store: QueueRepository): Executor {
 	return async (item, onText, signal, onUpdate) =>
 		runIsolated({
-			definition: item.snapshot.definition,
+			definition:
+				item.snapshot.definition.replayMode === "full-task" &&
+				!item.snapshot.definition.fullTaskRuntime
+					? {
+							...item.snapshot.definition,
+							fullTaskRuntime: {
+								promptPreset: "legacy-eval",
+								compaction: { enabled: false },
+							},
+						}
+					: item.snapshot.definition,
 			defaults: item.snapshot.defaults,
 			verifierSnapshots: item.verifierSnapshots ?? [],
 			directory: path.join(store.directory, "runs", item.runId, item.id),

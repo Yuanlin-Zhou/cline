@@ -171,6 +171,7 @@ function CaseForm({
 					},
 				],
 				replayMode: definition.replayMode,
+
 				concurrency: 1,
 			});
 		},
@@ -181,6 +182,11 @@ function CaseForm({
 		setDefinition({
 			...definition,
 			replayMode,
+			...(!record &&
+			replayMode === "full-task" &&
+			definition.tools === undefined
+				? { tools: "full" as const }
+				: {}),
 			...(replayMode === "function-call" && !definition.functionCall
 				? { functionCall: parseFunctionCall(undefined) }
 				: {}),
@@ -581,6 +587,7 @@ function CaseForm({
 														"workspace",
 														"systemPrompt",
 														"tools",
+														"fullTaskRuntime",
 														"maxIterations",
 														"timeoutMs",
 													]
@@ -599,6 +606,7 @@ function CaseForm({
 																"workspace",
 																"systemPrompt",
 																"tools",
+																"fullTaskRuntime",
 																"maxIterations",
 																"timeoutMs",
 															]
