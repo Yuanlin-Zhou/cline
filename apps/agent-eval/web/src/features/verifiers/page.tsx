@@ -1,4 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
+import { Empty } from "antd";
 import { useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import {
@@ -8,6 +9,12 @@ import {
 	pythonReplyTemplate,
 } from "../../../../src/modules/grading/python-guide";
 import { message, send, useApi } from "../../api/client";
+import {
+	Disclosure,
+	DisclosureTitle,
+	FilePicker,
+} from "../../components/antd-compat";
+import { confirmAction } from "../../components/confirm";
 import {
 	Alert,
 	Box,
@@ -31,8 +38,9 @@ export function VerifiersPage() {
 	const [guide, setGuide] = useState(false);
 	const [dirty, setDirty] = useState(false);
 	const [search, setSearch] = useState("");
-	const choose = (id: string) => {
-		if (dirty && !confirm("有未保存的修改，确定切换脚本？")) return;
+	const choose = async (id: string) => {
+		if (dirty && !(await confirmAction("有未保存的修改，确定切换脚本？")))
+			return;
 		setDirty(false);
 		setSelected(id);
 	};
@@ -53,10 +61,10 @@ export function VerifiersPage() {
 						{runtime.data.ready
 							? "Python 运行环境已就绪"
 							: "Python 尚未就绪，脚本可上传，执行前需配置运行环境"}
-						<details>
-							<summary>环境详情</summary>
+						<Disclosure>
+							<DisclosureTitle>环境详情</DisclosureTitle>
 							<JsonView value={runtime.data} />
-						</details>
+						</Disclosure>
 					</Alert>
 				)}
 			</DataState>
@@ -87,7 +95,10 @@ export function VerifiersPage() {
 								</div>
 							))}
 						{!list.data?.verifiers.length && (
-							<p className="empty">还没有验证脚本，上传一个 .py 文件开始。</p>
+							<Empty
+								image={Empty.PRESENTED_IMAGE_SIMPLE}
+								description="还没有验证脚本，上传一个 .py 文件开始。"
+							/>
 						)}
 					</DataState>
 				</Box>
@@ -153,7 +164,7 @@ function VerifierEditor({
 		content: initial.content,
 	});
 	const [token, setToken] = useState(initial.token);
-	const [error, setError] = useState("");
+	const [error, _setError] = useState("");
 	const notice = useNotice();
 	useEffect(() => {
 		onDirty(draft.dirty);
@@ -221,13 +232,17 @@ function VerifierEditor({
 					disabled={
 						save.isPending || remove.isPending || !!initial.references?.length
 					}
-					onClick={() => confirm("永久删除此脚本？") && remove.mutate()}
+					onClick={async () =>
+						(await confirmAction("永久删除此脚本？")) && remove.mutate()
+					}
 				>
 					删除脚本
 				</Button>
 			</div>
-			<details>
-				<summary>引用案例（{initial.references?.length ?? 0}）</summary>
+			<Disclosure>
+				<DisclosureTitle>
+					引用案例（{initial.references?.length ?? 0}）
+				</DisclosureTitle>
 				{initial.references?.map((r: any) => (
 					<p key={r.id}>
 						<a href={`#/case/${r.id}`}>
@@ -236,7 +251,7 @@ function VerifierEditor({
 						{r.archived && "（已归档）"}
 					</p>
 				))}
-			</details>
+			</Disclosure>
 		</Box>
 	);
 }
@@ -260,8 +275,7 @@ export function UploadDialog({
 	});
 	return (
 		<Modal open onClose={close} title="上传 Python 验证脚本">
-			<input
-				type="file"
+			<FilePicker
 				accept=".py"
 				onChange={async (e) => {
 					const file = e.target.files?.[0];

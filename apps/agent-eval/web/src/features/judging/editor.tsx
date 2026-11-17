@@ -4,6 +4,7 @@ import type {
 	JudgeModel,
 } from "../../../../src/modules/judging/types";
 import { api } from "../../api/client";
+import { Disclosure, DisclosureTitle } from "../../components/antd-compat";
 import {
 	Box,
 	Button,
@@ -43,8 +44,8 @@ export function JudgeModelEditor({
 					),
 				)}
 			</div>
-			<details>
-				<summary>Judge 自定义请求头</summary>
+			<Disclosure>
+				<DisclosureTitle>Judge 自定义请求头</DisclosureTitle>
 				<JsonInput
 					label="Judge headers"
 					value={value.headers ?? {}}
@@ -55,7 +56,7 @@ export function JudgeModelEditor({
 					value={value.headersEnv ?? {}}
 					onChange={(v) => set("headersEnv", v)}
 				/>
-			</details>
+			</Disclosure>
 		</>
 	);
 }
@@ -174,8 +175,8 @@ export function JudgeEditor({
 							/>
 						</Field>
 					)}
-					<details>
-						<summary>评分高级设置</summary>
+					<Disclosure>
+						<DisclosureTitle>评分高级设置</DisclosureTitle>
 						<Field label="评分超时（毫秒）">
 							<Text
 								type="number"
@@ -201,7 +202,7 @@ export function JudgeEditor({
 								/>
 							</Field>
 						)}
-					</details>
+					</Disclosure>
 				</>
 			)}
 		</Box>

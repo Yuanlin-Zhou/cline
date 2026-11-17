@@ -6,10 +6,17 @@ import type { EvalDefaults } from "../../../../src/contracts/evaluation";
 import { FUNCTION_CALL_TOOLS } from "../../../../src/contracts/function-call-config";
 import { caseExample, IMPORT_FIELDS } from "../../../../src/contracts/replay";
 import {
-	conversationCaseIds,
 	type ConversationFile,
+	conversationCaseIds,
 } from "../../../../src/modules/catalog/batch-conversations";
 import { message, send, useApi } from "../../api/client";
+import {
+	Badge,
+	DataTable,
+	Disclosure,
+	DisclosureTitle,
+	FilePicker,
+} from "../../components/antd-compat";
 import {
 	Alert,
 	Box,
@@ -179,9 +186,8 @@ function ImportForm({
 								/>
 							</Field>
 							<Field label="或上传文件">
-								<input
+								<FilePicker
 									className="form-control"
-									type="file"
 									accept=".json,.jsonl,.txt"
 									onChange={async (e) => {
 										const file = e.target.files?.[0];
@@ -222,9 +228,8 @@ function ImportForm({
 						"批量历史对话",
 						<Box key="conversations">
 							<Field label="上传对话 JSON（可多选）">
-								<input
+								<FilePicker
 									className="form-control"
-									type="file"
 									accept=".json"
 									multiple
 									onChange={async (e) => {
@@ -407,7 +412,7 @@ function ImportForm({
 						(row: any, index: number) => (
 							<div key={index}>
 								<strong>{row.id ?? row.caseId}</strong>
-								{row.duplicate && <span className="Label">同名</span>}
+								{row.duplicate && <Badge className="Label">同名</Badge>}
 								<Alert>{row.error}</Alert>
 								{row.appended && (
 									<p className="form-hint">将追加明确填写的续接输入。</p>
@@ -420,16 +425,16 @@ function ImportForm({
 							{w}
 						</Alert>
 					))}
-					<details>
-						<summary>查看规范化案例</summary>
+					<Disclosure>
+						<DisclosureTitle>查看规范化案例</DisclosureTitle>
 						<JsonView value={preview.suite} />
-					</details>
+					</Disclosure>
 				</Box>
 			)}
-			<details>
-				<summary>案例导入字段说明</summary>
+			<Disclosure>
+				<DisclosureTitle>案例导入字段说明</DisclosureTitle>
 				<div className="react-table-wrap">
-					<table className="react-table">
+					<DataTable className="react-table">
 						<tbody>
 							{IMPORT_FIELDS.map(([key, type, description, example]) => (
 								<tr key={key}>
@@ -444,9 +449,9 @@ function ImportForm({
 								</tr>
 							))}
 						</tbody>
-					</table>
+					</DataTable>
 				</div>
-			</details>
+			</Disclosure>
 		</>
 	);
 }

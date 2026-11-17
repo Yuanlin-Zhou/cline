@@ -3,11 +3,6 @@
 .Grading .Grading-intro {
 	margin: 0 0 16px;
 }
-.Grading .form-check input {
-	width: 15px;
-	height: 15px;
-	accent-color: var(--color-accent-emphasis);
-}
 .Grading-field {
 	display: block;
 	min-width: 0;
@@ -49,9 +44,6 @@
 	margin: 6px 0;
 	line-height: 1.5;
 }
-.Grading-example .btn {
-	margin-top: 8px;
-}
 .Grading-preview {
 	padding: 10px 12px;
 	border-left: 3px solid var(--color-accent-emphasis);
@@ -69,15 +61,11 @@
 .Grading-rule-body > .form-hint {
 	margin-bottom: 12px;
 }
-.Grading-rule-body .form-control {
-	min-width: 0;
-	max-width: 100%;
-}
 .Grading-rule-body textarea {
 	resize: vertical;
 }
 .Grading [hidden] {
-	display: none !important;
+	display: none;
 }
 .Grading-toolbar {
 	display: flex;
@@ -88,9 +76,6 @@
 .Grading-toolbar select {
 	flex: 1;
 	min-width: 0;
-}
-.Grading-toolbar .btn {
-	min-height: 36px;
 }
 .Grading-group + .Grading-group {
 	margin-top: 24px;
@@ -122,19 +107,8 @@
 	flex: 1;
 	font-size: 13px;
 }
-.Grading-rule-head .form-check {
-	font-size: 12px;
-}
 .Grading-rule-body {
 	padding: 14px;
-}
-.Grading-advanced > summary {
-	list-style: none;
-	font-size: 12px;
-	color: var(--color-fg-muted);
-}
-.Grading-advanced > summary::-webkit-details-marker {
-	display: none;
 }
 .Grading-json {
 	margin-top: 24px;
@@ -149,16 +123,6 @@
 	background: #ffebe9;
 	overflow-wrap: anywhere;
 	font-size: 12px;
-}
-.Grading-result > summary {
-	display: flex;
-	align-items: center;
-	flex-wrap: wrap;
-	gap: 8px;
-	list-style: none;
-}
-.Grading-result > summary::-webkit-details-marker {
-	display: none;
 }
 .Grading-result .code {
 	margin: 6px 0 12px;
@@ -412,115 +376,8 @@ a:hover {
 }
 
 /* ---------- Buttons ---------- */
-.btn {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 6px;
-	padding: 7px 14px;
-	font-size: 14px;
-	font-weight: 500;
-	line-height: 20px;
-	white-space: nowrap;
-	cursor: pointer;
-	border: 1px solid var(--color-border-default);
-	border-radius: var(--radius);
-	background: var(--color-canvas-default);
-	color: var(--color-fg-default);
-	transition:
-		background 0.12s,
-		border-color 0.12s;
-}
-.btn:hover {
-	background: #f3f4f6;
-	text-decoration: none;
-	border-color: var(--color-fg-subtle);
-}
-.btn:disabled {
-	cursor: not-allowed;
-	opacity: 0.55;
-}
-.btn-primary {
-	background: var(--color-accent-emphasis);
-	border-color: rgba(31, 35, 40, 0.15);
-	color: #ffffff;
-}
-.btn-primary:hover {
-	background: #075bbe;
-	border-color: rgba(31, 35, 40, 0.15);
-	color: #ffffff;
-}
-.btn-danger {
-	background: var(--color-canvas-subtle);
-	color: var(--color-danger-fg);
-	border-color: var(--color-border-default);
-}
-.btn-danger:hover {
-	background: var(--color-danger-emphasis);
-	border-color: var(--color-danger-emphasis);
-	color: #fff;
-}
-.btn-outline {
-	background: transparent;
-}
-.btn-sm {
-	padding: 3px 10px;
-	font-size: 12px;
-	line-height: 18px;
-}
-.btn-icon {
-	padding: 4px 8px;
-}
 
 /* ---------- Labels / badges ---------- */
-.Label {
-	display: inline-flex;
-	align-items: center;
-	gap: 4px;
-	padding: 1px 8px;
-	font-size: 12px;
-	font-weight: 600;
-	line-height: 18px;
-	border-radius: 2em;
-	border: 1px solid transparent;
-	white-space: nowrap;
-}
-.Label--success {
-	background: #dafbe1;
-	border-color: #aceebb;
-	color: var(--color-success-fg);
-}
-.Label--danger {
-	background: #ffebe9;
-	border-color: #ff818266;
-	color: var(--color-danger-fg);
-}
-.Label--attention {
-	background: #fff8c5;
-	border-color: #d4a72c66;
-	color: var(--color-attention-fg);
-}
-.Label--done {
-	background: #fbefff;
-	border-color: #d8b9ff66;
-	color: var(--color-done-fg);
-}
-.Label--accent {
-	background: #ddf4ff;
-	border-color: #54aeff66;
-	color: var(--color-accent-fg);
-}
-.Label--neutral {
-	background: #f6f8fa;
-	border-color: #d0d7de;
-	color: var(--color-fg-muted);
-}
-.Label--tag {
-	background: #eaeef2;
-	border-color: transparent;
-	color: var(--color-fg-muted);
-	font-weight: 500;
-}
 
 /* ---------- Box / Cards ---------- */
 .Box {
@@ -580,39 +437,6 @@ a:hover {
 	border: 1px solid var(--color-border-default);
 	border-radius: var(--radius);
 	background: var(--color-canvas-default);
-}
-.Table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: 14px;
-}
-.Table th {
-	text-align: left;
-	padding: 8px 12px;
-	font-weight: 600;
-	font-size: 12px;
-	color: var(--color-fg-muted);
-	background: var(--color-canvas-subtle);
-	border-bottom: 1px solid var(--color-border-default);
-	white-space: nowrap;
-}
-.Table td {
-	padding: 13px 14px;
-	border-bottom: 1px solid var(--color-border-muted);
-	vertical-align: middle;
-}
-.Table tbody tr:last-child td {
-	border-bottom: 0;
-}
-.Table tbody tr:hover {
-	background: var(--color-canvas-subtle);
-}
-.Table .num {
-	text-align: right;
-	font-variant-numeric: tabular-nums;
-}
-.Table tr.clickable {
-	cursor: pointer;
 }
 .case-name {
 	font-weight: 600;
@@ -677,15 +501,6 @@ a:hover {
 .module-entry:focus-within .module-actions {
 	opacity: 1;
 }
-.module-actions .btn {
-	background: var(--color-canvas-default);
-	padding: 1px 5px;
-	font-size: 11px;
-}
-.case-filters .form-control {
-	width: auto;
-	min-width: 150px;
-}
 .case-filters #case-search {
 	min-width: 260px;
 }
@@ -710,44 +525,10 @@ a:hover {
 	font-size: 12px;
 	margin-top: 4px;
 }
-.form-control {
-	width: 100%;
-	padding: 7px 12px;
-	font-size: 14px;
-	line-height: 20px;
-	color: var(--color-fg-default);
-	background: var(--color-canvas-default);
-	border: 1px solid var(--color-border-default);
-	border-radius: var(--radius);
-	outline: none;
-	font-family: inherit;
-}
-.form-control:focus {
-	border-color: var(--color-accent-emphasis);
-	box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.2);
-}
-textarea.form-control {
-	resize: vertical;
-	font-family: var(--font-mono);
-	font-size: 13px;
-	line-height: 1.55;
-}
-textarea.form-control.normal {
-	font-family: inherit;
-}
 .form-row {
 	display: grid;
 	grid-template-columns: 1fr 1fr;
 	gap: 12px;
-}
-.form-check {
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	font-size: 14px;
-}
-.form-check input {
-	margin: 0;
 }
 
 /* ---------- Code / pre ---------- */
@@ -864,9 +645,6 @@ textarea.form-control.normal {
 .assertion-row select {
 	flex: 0 0 130px;
 }
-.assertion-row .form-control {
-	flex: 1 1 auto;
-}
 
 /* ---------- Result panel ---------- */
 .result-status {
@@ -973,33 +751,6 @@ textarea.form-control.normal {
 }
 
 /* ---------- Flash ---------- */
-.flash {
-	padding: 10px 16px;
-	border-radius: var(--radius);
-	border: 1px solid;
-	margin-bottom: 16px;
-	font-size: 14px;
-}
-.flash-error {
-	background: #ffebe9;
-	border-color: #ff818266;
-	color: var(--color-danger-fg);
-}
-.flash-warning {
-	background: #fff8c5;
-	border-color: #d4a72c66;
-	color: var(--color-attention-fg);
-}
-.flash-success {
-	background: #dafbe1;
-	border-color: #aceebb;
-	color: var(--color-success-fg);
-}
-.flash-info {
-	background: #ddf4ff;
-	border-color: #54aeff66;
-	color: var(--color-accent-fg);
-}
 
 /* ---------- Empty state ---------- */
 .empty {
@@ -1017,15 +768,6 @@ textarea.form-control.normal {
 }
 
 /* ---------- Toasts ---------- */
-.ToastRoot {
-	position: fixed;
-	bottom: 20px;
-	right: 20px;
-	display: flex;
-	flex-direction: column;
-	gap: 8px;
-	z-index: 1000;
-}
 .toast {
 	min-width: 240px;
 	max-width: 420px;
@@ -1112,7 +854,7 @@ textarea.form-control.normal {
 
 /* ---------- Misc ---------- */
 [hidden] {
-	display: none !important;
+	display: none;
 }
 .replay-cards {
 	display: grid;
@@ -1159,17 +901,6 @@ textarea.form-control.normal {
 	max-height: 65vh;
 	overflow: auto;
 }
-.field-docs .Table td {
-	white-space: normal;
-	overflow-wrap: anywhere;
-	vertical-align: top;
-}
-.field-docs .Table {
-	table-layout: fixed;
-}
-.field-docs .Table th:first-child {
-	width: 33%;
-}
 .field-error {
 	color: var(--color-danger-fg);
 	font-size: 12px;
@@ -1177,15 +908,6 @@ textarea.form-control.normal {
 }
 [aria-invalid="true"] {
 	border-color: var(--color-danger-fg);
-}
-details > summary {
-	cursor: pointer;
-}
-details > summary::before {
-	content: "▸ ";
-}
-details[open] > summary::before {
-	content: "▾ ";
 }
 @media (max-width: 1000px) {
 	.ImportLayout {
@@ -1318,10 +1040,6 @@ details[open] > summary::before {
 	flex-wrap: wrap;
 	margin-bottom: 16px;
 }
-.ResultFilters .form-control {
-	width: auto;
-	max-width: 100%;
-}
 .ResultFilters input {
 	flex: 1 1 200px;
 }
@@ -1436,21 +1154,10 @@ details[open] > summary::before {
 	grid-template-columns: minmax(0, 1fr);
 	gap: 0 16px;
 }
-.ModelConnection .form-control {
-	min-width: 0;
-}
 .ConfigGroup-title {
 	font-size: 14px;
 	font-weight: 600;
 	margin: 0 0 16px;
-}
-.CaseConfig > summary.Box-header {
-	justify-content: flex-start;
-	gap: 8px;
-	list-style: none;
-}
-.CaseConfig > summary::-webkit-details-marker {
-	display: none;
 }
 .CaseConfig > .Box-body {
 	padding: 20px;
@@ -1549,10 +1256,6 @@ details[open] > summary::before {
 	line-height: 18px;
 	margin-bottom: 6px;
 }
-.HeaderRow .form-control {
-	min-width: 0;
-	padding: 7px 10px;
-}
 .HeaderRow-mono {
 	font-family: var(--font-mono);
 	font-size: 13px;
@@ -1635,9 +1338,6 @@ details[open] > summary::before {
 	max-width: 1040px;
 	margin: 0 auto;
 }
-.WizardPage .form-check {
-	padding: 8px 0;
-}
 .WizardPage .wizard-actions {
 	position: sticky;
 	bottom: 0;
@@ -1664,8 +1364,7 @@ button,
 input,
 select,
 textarea,
-a,
-summary {
+a {
 	scroll-margin: 20px;
 }
 :focus-visible {
@@ -1726,9 +1425,6 @@ summary {
 	.Inspector-content {
 		max-height: none;
 	}
-	.ResultFilters .form-control {
-		width: 100%;
-	}
 	.AppHeader-inner {
 		height: auto;
 		min-height: 64px;
@@ -1752,9 +1448,7 @@ summary {
 	}
 }
 @media (pointer: coarse) {
-	.btn,
 	.tab-bar button,
-	.form-control,
 	.module-item {
 		min-height: 44px;
 	}
@@ -1763,8 +1457,8 @@ summary {
 	*,
 	*::before,
 	*::after {
-		animation: none !important;
-		transition: none !important;
+		animation: none;
+		transition: none;
 	}
 }
 
@@ -1803,7 +1497,6 @@ summary {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
-	.case-filters .form-control,
 	.case-filters #case-search {
 		width: 100%;
 		min-width: 0;
@@ -1822,10 +1515,6 @@ summary {
 .RepeatOutputs > .Box {
 	min-width: 0;
 	margin: 0;
-}
-.RepeatCase > summary {
-	justify-content: flex-start;
-	gap: 8px;
 }
 .RepeatOutput {
 	white-space: pre-wrap;
@@ -1846,20 +1535,12 @@ summary {
 .TransferPreview {
 	margin-top: 16px;
 }
-.TransferPreview .Table td {
-	overflow-wrap: anywhere;
-	min-width: 100px;
-}
 .Modal:has(.CaseTransfer) .Modal-footer {
 	flex-wrap: wrap;
 }
 @media (max-width: 480px) {
 	.Modal-overlay:has(.CaseTransfer) {
 		padding: 20px 8px;
-	}
-	.Modal:has(.CaseTransfer) .Modal-footer .btn {
-		flex: 1;
-		min-height: 44px;
 	}
 }
 
@@ -1887,9 +1568,6 @@ summary {
 	align-items: center;
 	flex-wrap: wrap;
 	gap: 6px 10px;
-}
-.CaseTable-name .Label {
-	flex-shrink: 0;
 }
 .ImportFeedback:empty {
 	display: none;
@@ -1930,12 +1608,6 @@ summary {
 	align-items: center;
 	gap: 8px;
 }
-.BadCaseEditor-actions .form-control {
-	width: auto;
-	padding: 4px 28px 4px 8px;
-	min-height: 30px;
-	font-size: 12px;
-}
 .BadCaseEditor textarea {
 	field-sizing: content;
 	max-height: 240px;
@@ -1952,14 +1624,6 @@ summary {
 	font-size: 12px;
 	color: var(--color-fg-muted);
 	overflow-wrap: anywhere;
-}
-.BadCaseEditor-source summary {
-	width: fit-content;
-	cursor: pointer;
-	list-style: none;
-}
-.BadCaseEditor-source summary::-webkit-details-marker {
-	display: none;
 }
 .BadCaseEditor-source p {
 	margin: 6px 0;
@@ -2020,9 +1684,6 @@ summary {
 	gap: 8px;
 }
 @media (max-width: 760px) {
-	.CaseTable-actions .btn {
-		min-height: 44px;
-	}
 }
 
 /* Tags are edited as selected chips with explicit add and choose actions. */
@@ -2078,10 +1739,6 @@ summary {
 	border-radius: var(--radius);
 	background: var(--color-canvas-subtle);
 }
-.TagEditor-panel > .form-control {
-	min-width: 0;
-	flex: 1 1 180px;
-}
 .TagEditor-choices {
 	flex-basis: 100%;
 	max-height: 220px;
@@ -2111,7 +1768,6 @@ summary {
 	outline-offset: 2px;
 }
 @media (max-width: 760px) {
-	.TagEditor .btn,
 	.TagEditor-remove,
 	.TagEditor-option {
 		min-height: 44px;
@@ -2159,9 +1815,6 @@ summary {
 .ExecutionStatus > div {
 	margin-top: 6px;
 }
-.ExecutionStatus details {
-	margin-top: 8px;
-}
 .SyncStatus {
 	margin-bottom: 12px;
 }
@@ -2177,9 +1830,6 @@ summary {
 .ConversationMessage > strong {
 	display: block;
 	margin-bottom: 8px;
-}
-.ConversationMessage details {
-	margin: 8px 0;
 }
 
 /* Python verifier: compact rule controls and focused dialogs. */
@@ -2206,40 +1856,9 @@ summary {
 	min-width: 160px;
 	max-width: 100%;
 }
-.Verifier-actions > .btn {
-	flex-shrink: 0;
-}
-.Verifier-summary {
-	display: flex;
-	flex-wrap: wrap;
-	justify-content: space-between;
-	gap: 8px;
-}
-.Verifier-summary .form-hint {
-	margin: 0;
-}
-.Verifier-details {
-	margin: 12px 0;
-	min-width: 0;
-}
-.Verifier-details > summary {
-	cursor: pointer;
-	color: var(--color-fg-muted);
-	font-size: 13px;
-	padding: 8px 0;
-	overflow-wrap: anywhere;
-}
-.Verifier-details[open] > summary {
-	margin-bottom: 8px;
-	color: var(--color-fg-default);
-}
-.Verifier-details .form-hint,
 .VerifierTrial .form-hint {
 	line-height: 1.6;
 	overflow-wrap: anywhere;
-}
-.Verifier-details .Verifier-actions {
-	justify-content: space-between;
 }
 .Verifier-warning {
 	color: var(--color-danger-fg);
@@ -2267,11 +1886,6 @@ summary {
 	padding: 0 0 12px;
 	margin: 18px 0;
 }
-.Verifier-tabbar .btn[aria-selected="true"] {
-	color: var(--color-accent-fg);
-	border-color: var(--color-accent-emphasis);
-	background: var(--color-accent-subtle);
-}
 .Verifier-tabs > [role="tabpanel"] {
 	min-width: 0;
 }
@@ -2286,7 +1900,7 @@ summary {
 }
 .Verifier-dialog [hidden],
 .VerifierTrial [hidden] {
-	display: none !important;
+	display: none;
 }
 .Verifier-dialog {
 	padding: 32px 16px;
@@ -2315,11 +1929,6 @@ summary {
 .Verifier-dialog .Modal-footer .Verifier-actions {
 	margin: 0;
 }
-.Verifier-dialog .form-control {
-	width: 100%;
-	min-width: 0;
-	max-width: 100%;
-}
 .Verifier-dialog .Verifier-actions > select {
 	width: auto;
 }
@@ -2344,15 +1953,11 @@ summary {
 	.Verifier-actions > select {
 		flex-basis: 100%;
 	}
-	.Verifier-dialog .btn,
-	.ScriptEditor .btn {
-		min-height: 40px;
-	}
 }
 
 /* Goal-first grading workspace. */
 .GradingWorkspace [hidden] {
-	display: none !important;
+	display: none;
 }
 .GradingWorkspace {
 	min-width: 0;
@@ -2374,16 +1979,6 @@ summary {
 	gap: 12px;
 	margin-bottom: 18px;
 }
-.Grading-goal.btn {
-	flex-direction: column;
-	align-items: flex-start;
-	justify-content: flex-start;
-	text-align: left;
-	white-space: normal;
-	padding: 14px;
-	font-weight: 600;
-	line-height: 1.5;
-}
 .Grading-goal .form-hint {
 	display: block;
 	margin-top: 8px;
@@ -2395,23 +1990,8 @@ summary {
 .GradingWorkspace .Box {
 	margin-top: 16px;
 }
-.GradingWorkspace > .Verifier-details {
-	padding-top: 12px;
-	border-top: 1px solid var(--color-border-muted);
-	margin-top: 20px;
-}
 .Grading-settings .Grading-advanced {
 	padding: 10px 0;
-}
-.Grading-settings .Grading-advanced > summary,
-.Grading .Grading-advanced > summary {
-	list-style: disclosure-closed;
-	padding: 6px 0;
-	cursor: pointer;
-}
-.Grading-settings .Grading-advanced[open] > summary,
-.Grading .Grading-advanced[open] > summary {
-	list-style: disclosure-open;
 }
 .ReplyEditor .Grading-rule-head {
 	padding: 0 0 12px;
@@ -2443,7 +2023,7 @@ summary {
 	min-width: 0;
 }
 .Grading-results [hidden] {
-	display: none !important;
+	display: none;
 }
 .Grading-results pre {
 	max-height: 320px;
@@ -2469,17 +2049,6 @@ summary {
 	.Grading-goal .form-hint {
 		margin-top: 4px;
 	}
-}
-
-.GradingWorkspace summary,
-.Verifier-dialog summary,
-.Grading-results summary {
-	list-style: none !important;
-}
-.GradingWorkspace summary::-webkit-details-marker,
-.Verifier-dialog summary::-webkit-details-marker,
-.Grading-results summary::-webkit-details-marker {
-	display: none;
 }
 
 /* Keep model evidence visible before the validator's verdict and comparison values. */
@@ -2511,32 +2080,13 @@ summary {
 }
 
 .WorkspaceEditor [hidden] {
-	display: none !important;
+	display: none;
 }
 .WorkspaceEditor {
 	min-width: 0;
 }
 
 /* Imported histories read like a conversation; JSON is a secondary action. */
-.HistoryPanel > summary {
-	list-style: none;
-}
-.HistoryPanel > summary::-webkit-details-marker {
-	display: none;
-}
-.HistoryPanel > summary::before,
-.HistoryPanel[open] > summary::before {
-	content: none;
-}
-.HistoryPanel > summary::after {
-	content: "展开";
-	font-size: 12px;
-	font-weight: 400;
-	color: var(--color-accent-fg);
-}
-.HistoryPanel[open] > summary::after {
-	content: "收起";
-}
 .HistoryImport,
 .HistoryImport-panel {
 	min-width: 0;
@@ -2561,10 +2111,6 @@ summary {
 }
 .BatchHistory-grid .form-group {
 	margin: 0;
-	min-width: 0;
-}
-.BatchHistory .form-control {
-	width: 100%;
 	min-width: 0;
 }
 .BatchHistory-files {
@@ -2640,9 +2186,6 @@ summary {
 .HistoryMessage-heading {
 	margin-bottom: 8px;
 }
-.HistoryMessage-heading > .btn {
-	margin-left: auto;
-}
 .HistoryMessage-number {
 	color: var(--color-fg-muted);
 	font-size: 12px;
@@ -2659,9 +2202,6 @@ summary {
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
 	line-height: 1.6;
-}
-.HistoryMessage-text > .btn {
-	margin-top: 8px;
 }
 .HistoryMessage-call {
 	margin-top: 8px;
@@ -2691,9 +2231,6 @@ summary {
 	margin: 10px 0 0;
 	max-height: 320px;
 	overflow: auto;
-}
-.HistoryMessage .btn {
-	font-size: 12px;
 }
 @media (max-width: 480px) {
 	.HistoryMessage {
@@ -2781,14 +2318,6 @@ summary {
 	min-width: 0;
 	font-size: 12px;
 }
-.VerifierCard-info > summary {
-	color: var(--color-fg-muted);
-	cursor: pointer;
-	list-style: none;
-}
-.VerifierCard-info > summary::-webkit-details-marker {
-	display: none;
-}
 .VerifierCard-metadata {
 	display: grid;
 	grid-template-columns: auto minmax(0, 1fr);
@@ -2812,14 +2341,6 @@ summary {
 @media (max-width: 480px) {
 	.VerifierManager .Resource-cards {
 		grid-template-columns: minmax(0, 1fr);
-	}
-	.VerifierCard-footer .btn,
-	.VerifierCard-info > summary {
-		min-height: 44px;
-	}
-	.VerifierCard-info > summary {
-		display: flex;
-		align-items: center;
 	}
 }
 
@@ -2861,12 +2382,6 @@ input[data-selection-id] {
 		font-size: 12px;
 	}
 }
-.ResultMetrics summary {
-	list-style: none;
-}
-.ResultMetrics summary::-webkit-details-marker {
-	display: none;
-}
 .RetryReasons {
 	display: flex;
 	flex-wrap: wrap;
@@ -2882,12 +2397,6 @@ input[data-selection-id] {
 }
 .RunSummary > .ResultMetrics {
 	flex: 1 1 280px;
-}
-.RunSummary .ResultMetrics > .Verifier-details {
-	margin: 4px 0;
-}
-.RunSummary .ResultMetrics > .Verifier-details > summary {
-	padding: 4px 0;
 }
 .RunSummary-counts {
 	align-self: flex-start;
@@ -2935,10 +2444,4 @@ input[data-selection-id] {
 	.JudgeEditor .flex-between {
 		align-items: flex-start;
 	}
-}
-.Verifier-details > summary {
-	list-style: none;
-}
-.Verifier-details > summary::-webkit-details-marker {
-	display: none;
 }

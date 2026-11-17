@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { type APIRequestContext, expect, test } from "@playwright/test";
 
 const port = Number(process.env.EVAL_BROWSER_PORT ?? 3310);
 const defaults = {
@@ -30,7 +30,7 @@ async function seed(request: APIRequestContext, name: string) {
 		moduleId: module.id,
 		defaults,
 		definition: {
-			id: name + "-案例",
+			id: `${name}-案例`,
 			prompt: "Use Bun",
 			history: [],
 			replayMode: "single-turn",
@@ -122,6 +122,7 @@ test("React drafts, native history conversion, JSON errors and real function-cal
 		),
 	).toBe(true);
 	await page.screenshot({
+		animations: "disabled",
 		path: testInfo.outputPath("case-mobile.png"),
 		fullPage: true,
 	});
@@ -147,6 +148,7 @@ test("React drafts, native history conversion, JSON errors and real function-cal
 		page.getByText("原始函数调用响应", { exact: true }),
 	).toBeVisible();
 	await page.screenshot({
+		animations: "disabled",
 		path: testInfo.outputPath("result-desktop.png"),
 		fullPage: true,
 	});
@@ -167,7 +169,8 @@ test("import preview, copy configuration, conflict handling and uploaded verifie
 	await page.getByRole("button", { name: "复制所选", exact: true }).click();
 	const dialog = page.getByRole("dialog");
 	await expect(dialog).toBeVisible();
-	await dialog.getByLabel("目标模块", { exact: true }).selectOption(target.id);
+	await dialog.getByLabel("目标模块", { exact: true }).click();
+	await page.getByRole("option", { name: "复制目标模块", exact: true }).click();
 	await dialog.getByRole("button", { name: "预览", exact: true }).click();
 	await dialog.getByRole("button", { name: "确认复制", exact: true }).click();
 	await expect(dialog).toBeHidden();
@@ -206,12 +209,18 @@ test("import preview, copy configuration, conflict handling and uploaded verifie
 		"PUT",
 	);
 	await page.getByRole("button", { name: "保存", exact: true }).click();
-	await expect(page.getByRole("alert")).toContainText("案例已被其他页面修改");
+	await expect(
+		page.getByRole("alert").filter({ hasText: "案例已被其他页面修改" }),
+	).toHaveCount(1);
 	await expect(page.getByLabel("本轮输入", { exact: true })).toHaveValue(
 		"local unsaved input",
 	);
 	page.on("dialog", (d) => d.accept());
 	await page.getByRole("link", { name: "验证脚本", exact: true }).click();
+	await page
+		.getByRole("dialog")
+		.getByRole("button", { name: "确定", exact: true })
+		.click();
 	await page.getByRole("button", { name: "上传 .py", exact: true }).click();
 	await page
 		.getByRole("dialog")
@@ -267,8 +276,8 @@ test("run wizard, in-run retry and historical verifier/Judge trials retain their
 	await expect(page.getByText("已完成", { exact: true })).toBeVisible({
 		timeout: 60000,
 	});
-	const runId = page.url().split("/run/")[1];
-	const script = await send(request, "/api/verifiers", {
+	const _runId = page.url().split("/run/")[1];
+	const _script = await send(request, "/api/verifiers", {
 		filename: "browser_trial.py",
 		label: "历史验收脚本",
 		content:
@@ -282,9 +291,8 @@ test("run wizard, in-run retry and historical verifier/Judge trials retain their
 	const before = (
 		await (await request.get(`http://127.0.0.1:${port + 1}/requests`)).json()
 	).length;
-	await page
-		.getByLabel("Python 验证脚本", { exact: true })
-		.selectOption(script.id);
+	await page.getByLabel("Python 验证脚本", { exact: true }).click();
+	await page.getByRole("option", { name: "历史验收脚本", exact: true }).click();
 	await page.getByRole("button", { name: "开始试验证", exact: true }).click();
 	await expect(
 		page.getByText("状态：completed", { exact: true }),
@@ -294,7 +302,7 @@ test("run wizard, in-run retry and historical verifier/Judge trials retain their
 		(await (await request.get(`http://127.0.0.1:${port + 1}/requests`)).json())
 			.length,
 	).toBe(before);
-	await page.getByRole("button", { name: "关闭", exact: true }).click();
+	await page.getByRole("button", { name: /关闭|Close/, exact: true }).click();
 	await page
 		.getByRole("button", { name: "查看详情", exact: true })
 		.first()
@@ -320,7 +328,7 @@ test("run wizard, in-run retry and historical verifier/Judge trials retain their
 		page.getByText("试评分状态：completed", { exact: true }),
 	).toBeVisible({ timeout: 30000 });
 	await expect(page.getByText(/符合参考答案/).first()).toBeVisible();
-	await page.getByRole("button", { name: "关闭", exact: true }).click();
+	await page.getByRole("button", { name: /关闭|Close/, exact: true }).click();
 	const failed = await send(request, "/api/cases", {
 		moduleId: module.id,
 		defaults,
@@ -365,7 +373,7 @@ test("stable selections survive filtering, dragging and module archive/restore",
 			}),
 		);
 	await page.goto(`/#/cases/${module.id}`);
-	const boxes = () => page.locator("tbody input[type=checkbox]");
+	const boxes = () => page.getByRole("checkbox", { name: /^选择 / });
 	await expect(boxes()).toHaveCount(3);
 	await boxes().nth(0).click();
 	await boxes()
@@ -401,13 +409,17 @@ test("stable selections survive filtering, dragging and module archive/restore",
 		has: page.locator(`a[href="#/cases/${module.id}"]`),
 	});
 	await card.getByRole("button", { name: "归档", exact: true }).click();
+	await page
+		.getByRole("dialog")
+		.getByRole("button", { name: "确认", exact: true })
+		.click();
 	await expect(card).toHaveCount(0);
 	await page.getByRole("button", { name: "已归档模块", exact: true }).click();
 	await page
 		.getByRole("dialog")
 		.getByRole("button", { name: "恢复模块", exact: true })
 		.click();
-	await page.getByRole("button", { name: "关闭", exact: true }).click();
+	await page.getByRole("button", { name: /关闭|Close/, exact: true }).click();
 	await expect(card).toHaveCount(1);
 	await page.reload();
 	await expect(
@@ -449,9 +461,8 @@ test("evaluation workbench selects results inline and keeps filters and attempt 
 		inspector.getByText("Use Bun. 已完成验证。", { exact: true }),
 	).toBeVisible();
 	await expect(page.getByRole("dialog")).toHaveCount(0);
-	await page
-		.getByLabel("按执行结果筛选", { exact: true })
-		.selectOption("failed");
+	await page.getByLabel("按执行结果筛选", { exact: true }).click();
+	await page.getByRole("option", { name: "断言失败", exact: true }).click();
 	await expect(list.getByRole("button")).toHaveCount(1);
 	await expect(inspector.getByRole("alert")).toContainText(
 		"UNREACHABLE_EXPECTATION",
@@ -463,7 +474,8 @@ test("evaluation workbench selects results inline and keeps filters and attempt 
 		inspector.getByText("没有匹配的案例", { exact: true }),
 	).toBeVisible();
 	await page.getByLabel("搜索批次案例", { exact: true }).fill("");
-	await page.getByLabel("按执行结果筛选", { exact: true }).selectOption("");
+	await page.getByLabel("按执行结果筛选", { exact: true }).click();
+	await page.getByRole("option", { name: "全部结果", exact: true }).click();
 	await list
 		.getByRole("button", {
 			name: `查看案例：${item.definition.id}`,
@@ -523,12 +535,13 @@ test("case workbench keeps legacy tabs, permanent result/history and scoped conf
 	).toBeVisible({ timeout: 60000 });
 	for (const width of [1440, 390]) {
 		await page.setViewportSize({ width, height: 900 });
-		expect(
-			await page.evaluate(
-				() => document.documentElement.scrollWidth <= innerWidth,
-			),
-		).toBe(true);
+		await expect
+			.poll(() =>
+				page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+			)
+			.toBe(true);
 		await page.screenshot({
+			animations: "disabled",
 			path: testInfo.outputPath(`case-workbench-${width}.png`),
 			fullPage: true,
 		});
@@ -546,8 +559,12 @@ test("full-task Act configuration persists and actual runtime record is inspecta
 		.first()
 		.click();
 	await page.getByRole("tab", { name: "配置", exact: true }).click();
-	await page.getByLabel("工具权限", { exact: true }).selectOption("full");
-	await page.getByLabel("压缩策略", { exact: true }).selectOption("basic");
+	await page.getByLabel("工具权限", { exact: true }).click();
+	await page
+		.getByRole("option", { name: "全部工具（自动批准）", exact: true })
+		.click();
+	await page.getByLabel("压缩策略", { exact: true }).click();
+	await page.getByRole("option", { name: "Basic", exact: true }).click();
 	await page.getByLabel("自动压缩上下文", { exact: true }).uncheck();
 	await page.getByRole("button", { name: "保存", exact: true }).click();
 	await expect
@@ -561,17 +578,16 @@ test("full-task Act configuration persists and actual runtime record is inspecta
 	await expect(
 		page.getByLabel("自动压缩上下文", { exact: true }),
 	).not.toBeChecked();
-	await expect(page.getByLabel("压缩策略", { exact: true })).toHaveValue(
-		"basic",
-	);
+	await expect(page.getByText("Basic", { exact: true })).toBeVisible();
 	for (const width of [1440, 390]) {
 		await page.setViewportSize({ width, height: 900 });
-		expect(
-			await page.evaluate(
-				() => document.documentElement.scrollWidth <= innerWidth,
-			),
-		).toBe(true);
+		await expect
+			.poll(() =>
+				page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+			)
+			.toBe(true);
 		await page.screenshot({
+			animations: "disabled",
 			path: testInfo.outputPath(`act-config-${width}.png`),
 			fullPage: true,
 		});
@@ -590,7 +606,186 @@ test("full-task Act configuration persists and actual runtime record is inspecta
 		pane.getByText('"plugin-act-v1"', { exact: false }),
 	).toBeVisible();
 	await page.screenshot({
+		animations: "disabled",
 		path: testInfo.outputPath("act-runtime-record.png"),
 		fullPage: true,
 	});
+});
+
+test("Ant Design rule removal, Judge activation and saved configuration roundtrip", async ({
+	page,
+	request,
+}, testInfo) => {
+	const { item } = await seed(request, "规则增删回归");
+	const errors: string[] = [];
+	page.on("pageerror", (e) => errors.push(e.message));
+	await page.goto(`/#/case/${item.id}`);
+	await page.getByRole("tab", { name: "判定规则", exact: true }).click();
+	await page.getByRole("button", { name: "移除包含检查", exact: true }).click();
+	await page.getByRole("button", { name: "取消", exact: true }).click();
+	await expect(
+		page.getByRole("button", { name: "移除", exact: true }),
+	).toBeHidden();
+	await expect(
+		page.getByLabel("必须包含（每行一项）", { exact: true }),
+	).toHaveValue("Bun");
+	await page
+		.getByRole("button", { name: "移除最终回复检查", exact: true })
+		.click();
+	await page.getByRole("button", { name: "移除", exact: true }).click();
+	await expect(
+		page.getByRole("button", { name: "移除", exact: true }),
+	).toBeHidden();
+	await expect(
+		page.getByLabel("必须包含（每行一项）", { exact: true }),
+	).toBeHidden();
+	await page.getByRole("button", { name: /^最终回复/ }).click();
+	await page.getByRole("button", { name: /^最终回复/ }).click();
+	await expect(
+		page.getByLabel("必须包含（每行一项）", { exact: true }),
+	).toHaveCount(1);
+	await page.getByRole("button", { name: "移除包含检查", exact: true }).click();
+	await page.getByRole("button", { name: /^文件产物/ }).click();
+	await page.getByRole("button", { name: "添加检查", exact: true }).click();
+	await page.getByLabel("文件相对路径", { exact: true }).fill("result.txt");
+	await page.getByRole("button", { name: /^Python 脚本/ }).click();
+	await page.getByRole("button", { name: "添加检查", exact: true }).click();
+	await expect(
+		page.getByRole("button", { name: "移除检查", exact: true }),
+	).toHaveCount(2);
+	await page
+		.getByRole("button", { name: "移除全部验收检查", exact: true })
+		.click();
+	await expect(
+		page.getByText("将移除文件、Python 及其他全部验收规则。", { exact: true }),
+	).toBeVisible();
+	await page.getByRole("button", { name: "移除", exact: true }).click();
+	await expect(
+		page.getByRole("button", { name: "移除", exact: true }),
+	).toBeHidden();
+	await expect(
+		page.getByRole("button", { name: "添加检查", exact: true }),
+	).toBeHidden();
+	// Removing an empty editor must also discard invalid JSON validation state.
+	await page.getByRole("button", { name: /^文件产物/ }).click();
+	await page
+		.getByText("编辑全部规则（支持完整规则合同）", { exact: true })
+		.click();
+	await page.getByLabel("验收规则数组", { exact: true }).fill("{invalid");
+	await page
+		.getByRole("button", { name: "移除全部验收检查", exact: true })
+		.click();
+	await page.getByRole("button", { name: /^LLM 评分/ }).click();
+	await expect(
+		page.getByLabel("启用 LLM Judge", { exact: true }),
+	).toBeChecked();
+	await page
+		.getByLabel("参考答案", { exact: true })
+		.fill("应包含任务架构与验证结果。".repeat(15));
+	await page.getByLabel("启用 LLM Judge", { exact: true }).uncheck();
+	await page.getByRole("button", { name: /^LLM 评分/ }).click();
+	await expect(page.getByLabel("参考答案", { exact: true })).toHaveValue(
+		"应包含任务架构与验证结果。".repeat(15),
+	);
+	await page.getByLabel("启用 LLM Judge", { exact: true }).uncheck();
+	await page.getByRole("button", { name: "保存", exact: true }).click();
+	await expect
+		.poll(
+			async () =>
+				(await (await request.get(`/api/cases/${item.id}`)).json()).revision,
+		)
+		.toBe(2);
+	await page.reload();
+	await page.getByRole("tab", { name: "判定规则", exact: true }).click();
+	await expect(
+		page.getByText("评分已停用，配置已保留", { exact: true }),
+	).toBeVisible();
+	await page.getByRole("button", { name: /^LLM 评分/ }).click();
+	for (const width of [1440, 390]) {
+		await page.setViewportSize({ width, height: 900 });
+		await expect
+			.poll(() =>
+				page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+			)
+			.toBe(true);
+		await page.screenshot({
+			animations: "disabled",
+			path: testInfo.outputPath(`rules-judge-${width}.png`),
+			fullPage: true,
+		});
+	}
+	await page.getByRole("button", { name: "移除评分配置", exact: true }).click();
+	await page.getByRole("button", { name: "移除", exact: true }).click();
+	await expect(
+		page.getByRole("button", { name: "移除", exact: true }),
+	).toBeHidden();
+	await page.getByRole("button", { name: "保存", exact: true }).click();
+	await expect
+		.poll(
+			async () =>
+				(await (await request.get(`/api/cases/${item.id}`)).json()).revision,
+		)
+		.toBe(3);
+	const saved = await (await request.get(`/api/cases/${item.id}`)).json();
+	expect(saved.definition.assertions?.contains).toBeUndefined();
+	expect(saved.definition.grading).toBeUndefined();
+	expect(saved.definition.llmJudge).toBeUndefined();
+	await page.reload();
+	await page.getByRole("tab", { name: "判定规则", exact: true }).click();
+	await expect(page.getByLabel("参考答案", { exact: true })).toHaveCount(0);
+	expect(errors).toEqual([]);
+});
+
+test("Ant Design desktop and narrow-screen page review", async ({
+	page,
+	request,
+}, testInfo) => {
+	const { module, item } = await seed(request, "Ant Design 全站复核");
+	const run = await send(request, "/api/runs", { caseIds: [item.id] });
+	const errors: string[] = [];
+	page.on("pageerror", (e) => errors.push(e.message));
+	const routes = [
+		["catalog", `/cases/${module.id}`],
+		["editor", `/case/${item.id}`],
+		["imports", "/import"],
+		["runs", "/runs"],
+		["new-run", "/run/new"],
+		["verifiers", "/verifiers"],
+		["settings", "/settings"],
+		["result", `/run/${run.id}`],
+	];
+	for (const [name, route] of routes) {
+		await page.goto(`/#${route}`);
+		await expect(page.locator("main h1").first()).toBeVisible();
+		await expect(page.locator(".ant-skeleton")).toHaveCount(0);
+		if (name === "result")
+			await expect(page.getByText("已完成", { exact: true })).toBeVisible({
+				timeout: 60000,
+			});
+		for (const width of [1440, 390]) {
+			await page.setViewportSize({ width, height: 900 });
+			await expect
+				.poll(
+					() =>
+						page.evaluate(
+							() => document.documentElement.scrollWidth <= innerWidth,
+						),
+					`${name} at ${width}`,
+				)
+				.toBe(true);
+			if (name === "runs" || name === "new-run") {
+				const search = page.getByPlaceholder(
+					name === "runs" ? "搜索批次名称或备注" : "搜索案例",
+					{ exact: true },
+				);
+				expect((await search.boundingBox())!.height).toBeLessThan(48);
+			}
+			await page.screenshot({
+				animations: "disabled",
+				path: testInfo.outputPath(`${name}-${width}.png`),
+				fullPage: true,
+			});
+		}
+	}
+	expect(errors).toEqual([]);
 });

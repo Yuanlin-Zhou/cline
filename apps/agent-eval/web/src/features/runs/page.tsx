@@ -3,15 +3,16 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { RunSummary } from "../../../../src/contracts/api";
 import { api, message, send } from "../../api/client";
+import { ActionLink, DataTable } from "../../components/antd-compat";
 import {
 	Alert,
 	Button,
 	DataState,
+	duration,
 	Heading,
 	Select,
 	Status,
 	Text,
-	duration,
 } from "../../components/ui";
 export function RunsPage() {
 	const [search, setSearch] = useState("");
@@ -39,9 +40,9 @@ export function RunsPage() {
 	return (
 		<>
 			<Heading title="评测批次" description="查看执行进度、历史结果和重试记录">
-				<Link className="btn btn-primary" to="/run/new">
+				<ActionLink className="btn btn-primary" to="/run/new">
 					新建评测
-				</Link>
+				</ActionLink>
 			</Heading>
 			<div className="react-filters">
 				<Text
@@ -66,7 +67,7 @@ export function RunsPage() {
 			<Alert>{cancel.error && message(cancel.error)}</Alert>
 			<DataState query={query}>
 				<div className="react-table-wrap">
-					<table className="react-table">
+					<DataTable className="react-table" emptyText="没有匹配的评测批次">
 						<thead>
 							<tr>
 								<th>评测批次</th>
@@ -103,9 +104,9 @@ export function RunsPage() {
 									<td>{duration(r.summary.durationMs)}</td>
 									<td>{new Date(r.createdAt).toLocaleString()}</td>
 									<td>
-										<Link className="btn" to={`/run/${r.id}`}>
+										<ActionLink className="btn" to={`/run/${r.id}`}>
 											查看
-										</Link>
+										</ActionLink>
 										{["queued", "running"].includes(r.status) && (
 											<Button
 												disabled={cancel.isPending}
@@ -118,8 +119,7 @@ export function RunsPage() {
 								</tr>
 							))}
 						</tbody>
-					</table>
-					{!rows.length && <div className="empty">没有匹配的评测批次</div>}
+					</DataTable>
 				</div>
 			</DataState>
 		</>

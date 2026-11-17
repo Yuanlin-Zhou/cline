@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Checkbox, Empty } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type {
@@ -8,6 +9,8 @@ import type {
 import type { Module, SavedCase } from "../../../../src/contracts/catalog";
 import type { CaseSummary } from "../../../../src/contracts/projections";
 import { api, message, send, useApi } from "../../api/client";
+import { ActionLink, Badge, DataTable } from "../../components/antd-compat";
+import { confirmAction, promptText } from "../../components/confirm";
 import { assertValidEditors } from "../../components/editor-validity";
 import { Tags } from "../../components/tags";
 import {
@@ -19,10 +22,10 @@ import {
 	Heading,
 	JsonInput,
 	Modal,
+	modeLabel,
 	Select,
 	Status,
 	Text,
-	modeLabel,
 	useNotice,
 } from "../../components/ui";
 
@@ -146,7 +149,7 @@ export function CasesPage() {
 				`/api/modules/${module.id}/delete-preview`,
 				{},
 			);
-			const typed = window.prompt(
+			const typed = await promptText(
 				`将永久删除模块和 ${preview.count} 个案例。请输入模块名称“${module.name}”确认`,
 			);
 			if (typed === null) return;
@@ -174,18 +177,18 @@ export function CasesPage() {
 					"跨模块查看、调试与批量评测案例"
 				}
 			>
-				<Link
+				<ActionLink
 					className="btn"
 					to={`/import${moduleId ? `?module=${moduleId}` : ""}`}
 				>
 					导入案例
-				</Link>
-				<Link
+				</ActionLink>
+				<ActionLink
 					className="btn"
 					to={`/case/new${moduleId ? `?module=${moduleId}` : ""}`}
 				>
 					新建案例
-				</Link>
+				</ActionLink>
 				<Button
 					primary
 					onClick={() => startRun([], moduleId ? [moduleId] : [])}
@@ -247,10 +250,10 @@ export function CasesPage() {
 											className="btn-sm btn-icon"
 											title="归档模块"
 											disabled={busy}
-											onClick={() =>
-												window.confirm(
+											onClick={async () =>
+												(await confirmAction(
 													`确定归档模块「${m.name}」吗？其中的案例也会被归档。`,
-												) &&
+												)) &&
 												action(() => send(`/api/modules/${m.id}/archive`, {}))
 											}
 										>
@@ -374,10 +377,10 @@ export function CasesPage() {
 								<Button
 									danger
 									disabled={busy}
-									onClick={() =>
-										window.confirm(
+									onClick={async () =>
+										(await confirmAction(
 											`永久删除 ${selected.length} 个所选案例？`,
-										) &&
+										)) &&
 										action(async () => {
 											await send("/api/cases/delete-batch", {
 												items: selected.map(({ id, revision }) => ({
@@ -396,13 +399,12 @@ export function CasesPage() {
 					)}
 					<DataState query={cases}>
 						<div className="TableWrap">
-							<table className="Table CaseTable">
+							<DataTable className="Table CaseTable">
 								<thead>
 									<tr>
 										<th>
-											<input
+											<Checkbox
 												aria-label="选择筛选结果"
-												type="checkbox"
 												checked={
 													rows.length > 0 &&
 													rows.every((c) => view.selected.has(c.id))
@@ -455,9 +457,8 @@ export function CasesPage() {
 													}
 												}}
 											>
-												<input
+												<Checkbox
 													aria-label={`选择 ${c.definition.id}`}
-													type="checkbox"
 													checked={view.selected.has(c.id)}
 													onClick={(e) => {
 														if (dragClick.current) {
@@ -497,9 +498,9 @@ export function CasesPage() {
 														{c.definition.id}
 													</Link>
 													{c.definition.isBadCase && (
-														<span className="Label Label--attention">
+														<Badge className="Label Label--attention">
 															Bad case
-														</span>
+														</Badge>
 													)}
 												</div>
 												<small className="muted react-block">
@@ -507,17 +508,17 @@ export function CasesPage() {
 												</small>
 											</td>
 											<td>
-												<span
+												<Badge
 													className={`Label ${c.definition.replayMode === "full-task" ? "Label--done" : "Label--accent"}`}
 												>
 													{modeLabel(c.definition.replayMode)}
-												</span>
+												</Badge>
 											</td>
 											<td>
 												{(c.definition.tags ?? []).map((t) => (
-													<span key={t} className="Label Label--tag">
+													<Badge key={t} className="Label Label--tag">
 														{t}
-													</span>
+													</Badge>
 												))}
 											</td>
 											<td className="num">v{c.revision}</td>
@@ -539,10 +540,10 @@ export function CasesPage() {
 													<Button
 														danger
 														disabled={busy}
-														onClick={() =>
-															window.confirm(
+														onClick={async () =>
+															(await confirmAction(
 																`永久删除“${c.definition.id}”？`,
-															) &&
+															)) &&
 															action(() =>
 																send(`/api/cases/${c.id}`, undefined, "DELETE"),
 															)
@@ -562,7 +563,7 @@ export function CasesPage() {
 										</tr>
 									)}
 								</tbody>
-							</table>
+							</DataTable>
 						</div>
 					</DataState>
 				</section>
@@ -687,7 +688,10 @@ function ArchivedModules({
 						</div>
 					))}
 				{!query.data?.some((m) => m.archived) && (
-					<p className="empty">没有已归档模块</p>
+					<Empty
+						image={Empty.PRESENTED_IMAGE_SIMPLE}
+						description="没有已归档模块"
+					/>
 				)}
 			</DataState>
 			<Alert>{restore.error && message(restore.error)}</Alert>

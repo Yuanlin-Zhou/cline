@@ -1,3 +1,4 @@
+import { Button as AntButton, Checkbox, Tag } from "antd";
 import { useState } from "react";
 import { message, useApi } from "../api/client";
 import { TagSelection } from "./tag-selection";
@@ -35,17 +36,18 @@ export function Tags({
 			<div className="TagEditor-chips">
 				{!value.length && <span className="muted small">尚未添加标签</span>}
 				{value.map((tag, i) => (
-					<span className="TagEditor-chip" key={tag}>
+					<Tag key={tag}>
 						<span className="TagEditor-name">{tag}</span>
-						<button
-							type="button"
-							className="TagEditor-remove"
+						<AntButton
+							type="text"
+							size="small"
+							className="eval-tag-remove"
 							aria-label={`移除标签 ${tag}`}
 							onClick={() => onChange(value.filter((_, index) => index !== i))}
 						>
 							×
-						</button>
-					</span>
+						</AntButton>
+					</Tag>
 				))}
 			</div>
 			<div className="page-actions mt-2">
@@ -67,22 +69,20 @@ export function Tags({
 			{open && (
 				<div className="TagEditor-panel">
 					{open === "add" ? (
-						<>
-							<div className="react-row">
-								<Text
-									aria-label="标签名称"
-									value={name}
-									onChange={setName}
-									onKeyDown={(e: any) => {
-										if (e.key === "Enter") {
-											e.preventDefault();
-											add(name);
-										}
-									}}
-								/>
-								<Button onClick={() => add(name)}>添加标签</Button>
-							</div>
-						</>
+						<div className="react-row">
+							<Text
+								aria-label="标签名称"
+								value={name}
+								onChange={setName}
+								onKeyDown={(e: any) => {
+									if (e.key === "Enter") {
+										e.preventDefault();
+										add(name);
+									}
+								}}
+							/>
+							<Button onClick={() => add(name)}>添加标签</Button>
+						</div>
 					) : (
 						<>
 							<Text
@@ -95,9 +95,9 @@ export function Tags({
 								{Array.from(new Set([...candidates, ...(query.data ?? [])]))
 									.filter((t) => t.toLowerCase().includes(search.toLowerCase()))
 									.map((tag) => (
-										<label key={tag} className="TagEditor-option">
-											<input
-												type="checkbox"
+										<div key={tag} className="TagEditor-option">
+											<Checkbox
+												aria-label={tag}
 												checked={value.includes(tag)}
 												onChange={(event) =>
 													event.target.checked
@@ -106,7 +106,7 @@ export function Tags({
 												}
 											/>
 											<span className="TagEditor-name">{tag}</span>
-										</label>
+										</div>
 									))}
 							</div>
 						</>

@@ -1,16 +1,29 @@
-import * as Dialog from "@radix-ui/react-dialog";
-import * as RadixTabs from "@radix-ui/react-tabs";
-import { type UseQueryResult } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
+import {
+	Alert as AntAlert,
+	Button as AntButton,
+	Modal as AntModal,
+	Select as AntSelect,
+	Tabs as AntTabs,
+	App,
+	Card,
+	Checkbox,
+	Form,
+	Input,
+	InputNumber,
+	Skeleton,
+	Tag,
+} from "antd";
 import {
 	cloneElement,
 	createContext,
 	isValidElement,
+	type ReactNode,
 	useContext,
 	useEffect,
 	useId,
 	useRef,
 	useState,
-	type ReactNode,
 } from "react";
 import { message } from "../api/client";
 import { editorError } from "./editor-validity";
@@ -23,14 +36,24 @@ export function Alert({
 	kind?: string;
 }) {
 	return children ? (
-		<div
+		<AntAlert
 			role={kind === "error" ? "alert" : "status"}
-			className={`flash flash-${kind}`}
-		>
-			{children}
-		</div>
+			type={
+				kind === "warning"
+					? "warning"
+					: kind === "success"
+						? "success"
+						: kind === "error"
+							? "error"
+							: "info"
+			}
+			title={children}
+			showIcon
+			className="eval-alert"
+		/>
 	) : null;
 }
+
 export function Field({
 	label,
 	children,
@@ -42,19 +65,14 @@ export function Field({
 }) {
 	const id = useId();
 	return (
-		<div className="form-group">
-			<label className="form-label" id={id + "-label"} htmlFor={id}>
-				{label}
-			</label>
-			<div>
-				{isValidElement<{ id?: string }>(children)
-					? cloneElement(children, { id: children.props.id ?? id })
-					: children}
-			</div>
-			{hint && <p className="form-hint">{hint}</p>}
-		</div>
+		<Form.Item layout="vertical" label={label} htmlFor={id} extra={hint}>
+			{isValidElement<{ id?: string }>(children)
+				? cloneElement(children, { id: children.props.id ?? id })
+				: children}
+		</Form.Item>
 	);
 }
+
 export function Text({
 	value,
 	onChange,
@@ -68,11 +86,24 @@ export function Text({
 }) {
 	const shared = {
 		...props,
-		className: `form-control ${props.className ?? ""}`,
+		className: props.className,
 		value: value ?? "",
 		onChange: (e: any) => onChange(e.target.value),
 	};
-	return multiline ? <textarea rows={5} {...shared} /> : <input {...shared} />;
+	if (props.type === "number")
+		return (
+			<InputNumber
+				{...props}
+				value={value === "" || value === undefined ? null : Number(value)}
+				onChange={(v) => onChange(v === null ? "" : String(v))}
+				style={{ width: "100%" }}
+			/>
+		);
+	return multiline ? (
+		<Input.TextArea rows={5} {...shared} />
+	) : (
+		<Input {...shared} />
+	);
 }
 export function Select({
 	value,
@@ -86,20 +117,17 @@ export function Select({
 	[key: string]: any;
 }) {
 	return (
-		<select
+		<AntSelect
+			virtual={false}
 			{...props}
-			className="form-control"
 			value={value ?? ""}
-			onChange={(e) => onChange(e.target.value)}
-		>
-			{options.map(([v, label]) => (
-				<option key={v} value={v}>
-					{label}
-				</option>
-			))}
-		</select>
+			onChange={onChange}
+			options={options.map(([value, label]) => ({ value, label }))}
+			style={{ width: "100%", ...props.style }}
+		/>
 	);
 }
+
 export function Check({
 	checked,
 	onChange,
@@ -112,17 +140,16 @@ export function Check({
 	disabled?: boolean;
 }) {
 	return (
-		<label className="form-check">
-			<input
-				type="checkbox"
-				checked={!!checked}
-				disabled={disabled}
-				onChange={(e) => onChange(e.target.checked)}
-			/>{" "}
+		<Checkbox
+			checked={!!checked}
+			disabled={disabled}
+			onChange={(e) => onChange(e.target.checked)}
+		>
 			{children}
-		</label>
+		</Checkbox>
 	);
 }
+
 export function Button({
 	children,
 	primary,
@@ -158,15 +185,25 @@ export function Button({
 	};
 	return (
 		<>
-			<button
-				type="button"
+			<AntButton
+				htmlType="button"
 				{...props}
 				disabled={props.disabled || pending}
 				onClick={click}
-				className={`btn ${primary ? "btn-primary" : ""} ${danger ? "btn-danger" : ""} ${props.className ?? ""}`}
+				type={primary ? "primary" : "default"}
+				danger={danger}
+				loading={pending}
+				size={
+					props.size ??
+					(props.className?.includes("btn-sm") ? "small" : "middle")
+				}
+				className={props.className?.replace(
+					/\bbtn(?:-sm|-primary|-danger)?\b/g,
+					"",
+				)}
 			>
 				{children}
-			</button>
+			</AntButton>
 			<Alert>{error}</Alert>
 		</>
 	);
@@ -198,16 +235,12 @@ export function Box({
 	children: ReactNode;
 }) {
 	return (
-		<section className="Box mb-3">
-			{title && (
-				<div className="Box-header">
-					<strong>{title}</strong>
-				</div>
-			)}
-			<div className="Box-body">{children}</div>
-		</section>
+		<Card title={title} className="eval-card" size="small">
+			{children}
+		</Card>
 	);
 }
+
 export function Tabs({
 	entries,
 	initial,
@@ -218,30 +251,20 @@ export function Tabs({
 	onChange?: (value: string) => void;
 }) {
 	return (
-		<RadixTabs.Root
-			defaultValue={initial ?? entries[0]?.[0]}
-			onValueChange={onChange}
-		>
-			<RadixTabs.List className="tab-nav" aria-label="内容分类">
-				{entries.map(([id, title]) => (
-					<RadixTabs.Trigger className="tab-button" key={id} value={id}>
-						{title}
-					</RadixTabs.Trigger>
-				))}
-			</RadixTabs.List>
-			{entries.map(([id, , content]) => (
-				<RadixTabs.Content
-					forceMount
-					className="react-tab-panel"
-					key={id}
-					value={id}
-				>
-					{content}
-				</RadixTabs.Content>
-			))}
-		</RadixTabs.Root>
+		<AntTabs
+			defaultActiveKey={initial ?? entries[0]?.[0]}
+			onChange={onChange}
+			destroyOnHidden={false}
+			items={entries.map(([key, label, children]) => ({
+				key,
+				label,
+				children,
+				forceRender: true,
+			}))}
+		/>
 	);
 }
+
 export function Modal({
 	open,
 	onClose,
@@ -254,25 +277,20 @@ export function Modal({
 	children: ReactNode;
 }) {
 	return (
-		<Dialog.Root open={open} onOpenChange={(v) => !v && onClose()}>
-			<Dialog.Portal>
-				<Dialog.Overlay className="react-modal-overlay" />
-				<Dialog.Content className="react-modal">
-					<Dialog.Title>{title}</Dialog.Title>
-					<Dialog.Description className="sr-only">
-						{title}操作窗口
-					</Dialog.Description>
-					<Dialog.Close asChild>
-						<Button className="react-modal-close" aria-label="关闭">
-							×
-						</Button>
-					</Dialog.Close>
-					{children}
-				</Dialog.Content>
-			</Dialog.Portal>
-		</Dialog.Root>
+		<AntModal
+			open={open}
+			onCancel={onClose}
+			title={title}
+			footer={null}
+			width={800}
+			destroyOnHidden={false}
+			maskClosable={false}
+		>
+			{children}
+		</AntModal>
 	);
 }
+
 export function DataState({
 	query,
 	children,
@@ -280,7 +298,7 @@ export function DataState({
 	query: UseQueryResult<any, any>;
 	children: ReactNode;
 }) {
-	if (query.isPending) return <output className="empty">加载中…</output>;
+	if (query.isPending) return <Skeleton active title paragraph={{ rows: 3 }} />;
 	if (query.isError)
 		return (
 			<>
@@ -315,11 +333,24 @@ export const duration = (ms?: number) =>
 			: `${(ms / 1000).toFixed(1)} s`;
 export function Status({ value }: { value?: string }) {
 	return (
-		<span className={`Label status-${value}`}>
+		<Tag
+			color={
+				value === "passed" || value === "completed"
+					? "success"
+					: value === "failed" || value === "error"
+						? "error"
+						: value === "running"
+							? "processing"
+							: value === "inconclusive"
+								? "warning"
+								: "default"
+			}
+		>
 			{value ? (labels[value] ?? value) : "未运行"}
-		</span>
+		</Tag>
 	);
 }
+
 export function JsonView({ value }: { value: unknown }) {
 	return (
 		<pre className="react-code">
@@ -383,19 +414,14 @@ export function JsonInput<T>({
 const Notices = createContext<(text: string) => void>(() => {});
 export const useNotice = () => useContext(Notices);
 export function NoticesProvider({ children }: { children: ReactNode }) {
-	const [notice, setNotice] = useState("");
-	useEffect(() => {
-		if (notice) {
-			const timer = setTimeout(() => setNotice(""), 5000);
-			return () => clearTimeout(timer);
-		}
-	}, [notice]);
+	const { message: notice } = App.useApp();
 	return (
-		<Notices.Provider value={setNotice}>
+		<Notices.Provider
+			value={(text) => {
+				void notice.success({ key: "eval-notice", content: text });
+			}}
+		>
 			{children}
-			<output className="ToastRoot" aria-live="polite">
-				{notice && <div className="flash flash-success">{notice}</div>}
-			</output>
 		</Notices.Provider>
 	);
 }

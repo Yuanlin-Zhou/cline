@@ -1,18 +1,21 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Suspense, lazy } from "react";
+import { App, ConfigProvider, Menu, Skeleton } from "antd";
+import zhCN from "antd/locale/zh_CN";
+import { lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import {
-	NavLink,
+	createHashRouter,
 	Navigate,
+	NavLink,
 	Outlet,
 	RouterProvider,
-	createHashRouter,
 	useLocation,
 	useRouteError,
 } from "react-router-dom";
-import { Alert, NoticesProvider } from "../components/ui";
+import { Alert, Button, NoticesProvider } from "../components/ui";
 import "../styles/app.css";
 import "../styles/react.css";
+import "../styles/antd.css";
 
 const Cases = lazy(() =>
 	import("../features/catalog/page").then((m) => ({ default: m.CasesPage })),
@@ -65,27 +68,24 @@ function Layout() {
 							<strong>Agent Eval</strong>
 						</span>
 					</NavLink>
-					<nav className="AppHeader-nav" aria-label="主导航">
-						{[
+					<Menu
+						className="eval-navigation"
+						mode="horizontal"
+						selectedKeys={[active]}
+						items={[
 							["cases", "案例集"],
 							["runs", "评测批次"],
 							["verifiers", "验证脚本"],
 							["settings", "运行配置"],
-						].map(([key, label]) => (
-							<NavLink
-								key={key}
-								to={`/${key}`}
-								className={active === key ? "active" : ""}
-								aria-current={active === key ? "page" : undefined}
-							>
-								{label}
-							</NavLink>
-						))}
-					</nav>
+						].map(([key, label]) => ({
+							key,
+							label: <NavLink to={`/${key}`}>{label}</NavLink>,
+						}))}
+					/>
 				</div>
 			</header>
 			<main id="app" className="AppMain" tabIndex={-1}>
-				<Suspense fallback={<output className="empty">加载中…</output>}>
+				<Suspense fallback={<Skeleton active />}>
 					<Outlet />
 				</Suspense>
 			</main>
@@ -97,7 +97,7 @@ function RouteError() {
 	return (
 		<main className="AppMain">
 			<Alert>{error instanceof Error ? error.message : "页面加载失败"}</Alert>
-			<button
+			<Button
 				type="button"
 				className="btn"
 				onClick={() => {
@@ -106,7 +106,7 @@ function RouteError() {
 				}}
 			>
 				重新加载
-			</button>
+			</Button>
 		</main>
 	);
 }
@@ -142,7 +142,19 @@ const queryClient = new QueryClient({
 });
 queryClient.setQueryDefaults(["trial-state"], { gcTime: Infinity });
 createRoot(document.getElementById("root")!).render(
-	<QueryClientProvider client={queryClient}>
-		<RouterProvider router={router} />
-	</QueryClientProvider>,
+	<ConfigProvider
+		wave={{ disabled: true }}
+		button={{ autoInsertSpace: false }}
+		locale={zhCN}
+		theme={{
+			token: { colorPrimary: "#1677ff", borderRadius: 8, fontSize: 14 },
+			components: { Card: { headerFontSize: 16 } },
+		}}
+	>
+		<App>
+			<QueryClientProvider client={queryClient}>
+				<RouterProvider router={router} />
+			</QueryClientProvider>
+		</App>
+	</ConfigProvider>,
 );

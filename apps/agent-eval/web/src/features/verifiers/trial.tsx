@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, message, send, useApi } from "../../api/client";
+import { ActionLink } from "../../components/antd-compat";
 import { assertValidEditors } from "../../components/editor-validity";
 import { RemoteJson } from "../../components/remote-json";
 import {
@@ -36,7 +37,7 @@ export function VerifierTrial({
 		rule?.params ?? {},
 	);
 	const [taskId, setTask] = useRememberedState(
-		runId + "/" + item.id,
+		`${runId}/${item.id}`,
 		"verifierTask",
 		"",
 	);
@@ -78,9 +79,9 @@ export function VerifierTrial({
 				使用固定验证输入，不重新调用被测模型，不改变正式结论。
 			</p>
 			<RemoteJson path={`${path}/validation-input`} title="预览冻结输入" />
-			<a className="btn" href={`${path}/validation-input?download=1`}>
+			<ActionLink className="btn" href={`${path}/validation-input?download=1`}>
 				下载验证输入
-			</a>
+			</ActionLink>
 			<Field label="Python 验证脚本">
 				<Select
 					value={verifierId}

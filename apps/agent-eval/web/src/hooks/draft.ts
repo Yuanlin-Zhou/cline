@@ -1,3 +1,4 @@
+import { App } from "antd";
 import { useEffect, useState } from "react";
 import { useBlocker } from "react-router-dom";
 
@@ -6,12 +7,17 @@ export function useDraft<T>(initial: T) {
 	const [saved, setSaved] = useState(() => JSON.stringify(initial));
 	const dirty = JSON.stringify(value) !== saved;
 	const blocker = useBlocker(dirty);
+	const { modal } = App.useApp();
 	useEffect(() => {
 		if (blocker.state === "blocked") {
-			if (window.confirm("有未保存的修改，确定离开？")) blocker.proceed();
-			else blocker.reset();
+			const dialog = modal.confirm({
+				title: "有未保存的修改，确定离开？",
+				onOk: () => blocker.proceed(),
+				onCancel: () => blocker.reset(),
+			});
+			return () => dialog.destroy();
 		}
-	}, [blocker]);
+	}, [blocker, modal]);
 	useEffect(() => {
 		if (!dirty) return;
 		const handler = (event: BeforeUnloadEvent) => {

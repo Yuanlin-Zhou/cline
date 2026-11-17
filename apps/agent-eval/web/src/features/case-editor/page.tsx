@@ -19,6 +19,13 @@ import {
 import { caseExample, REPLAY_MODES } from "../../../../src/contracts/replay";
 import { parseEvalSuite } from "../../../../src/contracts/schema";
 import { message, send, useApi } from "../../api/client";
+import {
+	ActionLink,
+	Badge,
+	Disclosure,
+	DisclosureTitle,
+} from "../../components/antd-compat";
+import { confirmAction } from "../../components/confirm";
 import { assertValidEditors } from "../../components/editor-validity";
 import { HeadersEditor } from "../../components/headers";
 import { Tags } from "../../components/tags";
@@ -41,9 +48,9 @@ import {
 import { useDraft } from "../../hooks/draft";
 import { TransferDialog } from "../catalog/page";
 import { JudgeEditor } from "../judging/editor";
+import { HistoryTrials } from "../results/history-trials";
 import { InlineItemInspector } from "../results/inspector";
 import { useRun } from "../runs/use-run";
-import { HistoryTrials } from "../results/history-trials";
 import { ConfigEditor } from "../settings/config-editor";
 import { HistoryEditor } from "./history";
 import { RulesEditor } from "./rules";
@@ -214,7 +221,7 @@ function CaseForm({
 							{record ? definition.id : "新建案例"}
 						</span>
 						{definition.badCase && (
-							<span className="Label Label--danger">Bad case</span>
+							<Badge className="Label Label--danger">Bad case</Badge>
 						)}
 					</>
 				}
@@ -235,9 +242,9 @@ function CaseForm({
 					)
 				}
 			>
-				<Link className="btn" to={`/cases/${target}`}>
+				<ActionLink className="btn" to={`/cases/${target}`}>
 					返回
-				</Link>
+				</ActionLink>
 				<Button disabled={save.isPending} onClick={() => save.mutate()}>
 					保存
 				</Button>
@@ -248,7 +255,7 @@ function CaseForm({
 						<Button
 							danger
 							onClick={async () => {
-								if (!confirm("永久删除这个案例？")) return;
+								if (!(await confirmAction("永久删除这个案例？"))) return;
 								try {
 									await send(`/api/cases/${record.id}`, undefined, "DELETE");
 									flushSync(() => draft.markSaved());
@@ -408,10 +415,10 @@ function CaseForm({
 												</>
 											)}
 											{definition.importSource && (
-												<details>
-													<summary>来源信息</summary>
+												<Disclosure>
+													<DisclosureTitle>来源信息</DisclosureTitle>
 													<JsonView value={definition.importSource} />
-												</details>
+												</Disclosure>
 											)}
 										</section>
 									</Box>
@@ -434,14 +441,14 @@ function CaseForm({
 										</p>
 										<Button
 											className="btn-sm mt-2"
-											onClick={() => {
+											onClick={async () => {
 												if (
 													(definition.prompt.trim() ||
 														definition.history.length ||
 														definition.assertions?.contains?.length) &&
-													!window.confirm(
+													!(await confirmAction(
 														"将替换当前输入、历史消息和包含文本规则，并填入示例执行配置。",
-													)
+													))
 												)
 													return;
 												const sample = caseExample(mode);
@@ -524,63 +531,80 @@ function CaseForm({
 							[
 								"grading",
 								"判定规则",
-								<>
-									<RulesEditor
-										value={definition}
-										onChange={setDefinition}
-										caseId={record?.id}
-										judge={
-											<>
-												<JudgeEditor
-													value={definition.llmJudge}
-													onChange={(llmJudge) =>
-														setDefinition({ ...definition, llmJudge })
-													}
-													mode={mode}
-												/>
-												{definition.llmJudge?.enabled && (
-													<Button onClick={() => setJudgeTrial(true)}>
-														试评分
-													</Button>
-												)}{" "}
-											</>
-										}
-									/>
-								</>,
+								<RulesEditor
+									key="grading"
+									value={definition}
+									onChange={setDefinition}
+									caseId={record?.id}
+									judge={
+										<>
+											<JudgeEditor
+												value={definition.llmJudge}
+												onChange={(llmJudge) =>
+													setDefinition({ ...definition, llmJudge })
+												}
+												mode={mode}
+											/>
+											{definition.llmJudge?.enabled && (
+												<Button onClick={() => setJudgeTrial(true)}>
+													试评分
+												</Button>
+											)}{" "}
+										</>
+									}
+								/>,
 							],
 							[
 								"execution",
 								"配置",
-								<>
-									<>
-										<ConfigEditor
-											caseLayout
-											origin={
-												record
-													? "已载入案例保存的配置。"
-													: "已填入当前全局运行配置，可按需修改；保存后作为案例配置。"
-											}
-											caseHeaders={
-												<section className="ConfigGroup">
-													<p className="form-hint">
-														同名请求头覆盖上方默认值；留空继承。
-													</p>
-													<HeadersEditor
-														title="案例请求头覆盖"
-														value={definition}
-														onChange={(headers) =>
-															setDefinition({
-																...definition,
-																headers: headers.headers,
-																headersEnv: headers.headersEnv,
-															})
-														}
-													/>
-												</section>
-											}
-											workspace={mode === "full-task"}
-											value={{
-												...defaults,
+								<ConfigEditor
+									key="execution"
+									caseLayout
+									origin={
+										record
+											? "已载入案例保存的配置。"
+											: "已填入当前全局运行配置，可按需修改；保存后作为案例配置。"
+									}
+									caseHeaders={
+										<section className="ConfigGroup">
+											<p className="form-hint">
+												同名请求头覆盖上方默认值；留空继承。
+											</p>
+											<HeadersEditor
+												title="案例请求头覆盖"
+												value={definition}
+												onChange={(headers) =>
+													setDefinition({
+														...definition,
+														headers: headers.headers,
+														headersEnv: headers.headersEnv,
+													})
+												}
+											/>
+										</section>
+									}
+									workspace={mode === "full-task"}
+									value={{
+										...defaults,
+										...Object.fromEntries(
+											[
+												"cwd",
+												"workspace",
+												"systemPrompt",
+												"tools",
+												"fullTaskRuntime",
+												"maxIterations",
+												"timeoutMs",
+											]
+												.filter((k) => (definition as any)[k] !== undefined)
+												.map((k) => [k, (definition as any)[k]]),
+										),
+									}}
+									onChange={(next) =>
+										draft.setValue((v) => ({
+											defaults: next,
+											definition: {
+												...v.definition,
 												...Object.fromEntries(
 													[
 														"cwd",
@@ -591,36 +615,15 @@ function CaseForm({
 														"maxIterations",
 														"timeoutMs",
 													]
-														.filter((k) => (definition as any)[k] !== undefined)
-														.map((k) => [k, (definition as any)[k]]),
+														.filter(
+															(k) => (v.definition as any)[k] !== undefined,
+														)
+														.map((k) => [k, (next as any)[k]]),
 												),
-											}}
-											onChange={(next) =>
-												draft.setValue((v) => ({
-													defaults: next,
-													definition: {
-														...v.definition,
-														...Object.fromEntries(
-															[
-																"cwd",
-																"workspace",
-																"systemPrompt",
-																"tools",
-																"fullTaskRuntime",
-																"maxIterations",
-																"timeoutMs",
-															]
-																.filter(
-																	(k) => (v.definition as any)[k] !== undefined,
-																)
-																.map((k) => [k, (next as any)[k]]),
-														),
-													},
-												}))
-											}
-										/>
-									</>
-								</>,
+											},
+										}))
+									}
+								/>,
 							],
 						]}
 					/>
@@ -648,11 +651,9 @@ function CaseForm({
 						{inlineRun ? (
 							<DraftResult runId={inlineRun} />
 						) : (
-							<>
-								<p className="muted">
-									点击「运行{modeLabel(mode)}」开始调试，结果将在此显示。
-								</p>
-							</>
+							<p className="muted">
+								点击「运行{modeLabel(mode)}」开始调试，结果将在此显示。
+							</p>
 						)}
 					</Box>
 					<Box title="历史记录">

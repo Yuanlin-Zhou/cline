@@ -2,7 +2,9 @@ This is the **Cline** monorepo. Toolchain is **Bun 1.3.13** (package manager + t
 
 ## Frontend UI review (user requirement, 2026-10-29)
 
-Every frontend change must be reviewed in a real browser before delivery. Inspect actual desktop and narrow-screen screenshots, exercise the affected interactions, and check relevant empty/error/retry and short/long-content states. Review spacing, alignment, information placement and overflow; passing builds/DOM assertions or merely generating screenshots is insufficient. Record the review evidence and fix visible issues before claiming completion. Agent-eval-specific requirements are in `apps/agent-eval/AGENTS.md`.
+Every frontend change must be reviewed in a real browser before delivery. Inspect actual desktop screenshots, exercise the affected interactions, and check relevant empty/error/retry and short/long-content states. Review spacing, alignment, information placement and overflow; passing builds/DOM assertions or merely generating screenshots is insufficient. Record the review evidence and fix visible issues before claiming completion. Agent-eval-specific requirements are in `apps/agent-eval/AGENTS.md`.
+
+User preference updated 2026-11-17: all future UI work targets desktop use. Mobile compatibility and mobile/narrow-screen adaptation or acceptance checks are not required unless the user explicitly requests them. This supersedes earlier mobile/narrow-screen requirements; real-browser desktop review remains required.
 
 ## Cloud Agent Instructions
 

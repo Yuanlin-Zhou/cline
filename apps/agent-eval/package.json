@@ -26,17 +26,17 @@
 		"test:browser": "playwright test --config web/playwright.config.ts"
 	},
 	"dependencies": {
-		"@cline/sdk": "workspace:*",
-		"mongodb": "6.21.0",
+		"@ant-design/icons": "^6.3.4",
+		"@cline/core": "workspace:*",
 		"@cline/llms": "workspace:*",
+		"@cline/sdk": "workspace:*",
+		"@cline/shared": "workspace:*",
+		"@tanstack/react-query": "^5.90.0",
+		"antd": "^6.7.1",
+		"mongodb": "6.21.0",
 		"react": "^19.2.0",
 		"react-dom": "^19.2.0",
-		"react-router-dom": "^7.9.0",
-		"@tanstack/react-query": "^5.90.0",
-		"@radix-ui/react-dialog": "^1.1.15",
-		"@radix-ui/react-tabs": "^1.1.13",
-		"@cline/shared": "workspace:*",
-		"@cline/core": "workspace:*"
+		"react-router-dom": "^7.9.0"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.62.0",

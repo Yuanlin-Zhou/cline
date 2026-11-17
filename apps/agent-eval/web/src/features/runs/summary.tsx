@@ -1,6 +1,11 @@
 import type { RunOverview } from "../../../../src/contracts/api";
 import type { gradingSummary } from "../../../../src/modules/grading/summary";
-import { Status, duration } from "../../components/ui";
+import {
+	DataTable,
+	Disclosure,
+	DisclosureTitle,
+} from "../../components/antd-compat";
+import { duration, Status } from "../../components/ui";
 
 type Fraction = { numerator: number; denominator: number; rate: number | null };
 const fraction = (value: Fraction) =>
@@ -50,11 +55,11 @@ export function GradingMetrics({
 			{!!issues.length && (
 				<p className="ResultMetrics-issues">{issues.join(" · ")}</p>
 			)}
-			<details className="Verifier-details">
-				<summary>详细统计与统计口径</summary>
+			<Disclosure className="Verifier-details">
+				<DisclosureTitle>详细统计与统计口径</DisclosureTitle>
 				{!!metrics.groups.length && (
 					<div className="TableWrap">
-						<table className="Table">
+						<DataTable className="Table">
 							<thead>
 								<tr>
 									<th>案例</th>
@@ -73,25 +78,25 @@ export function GradingMetrics({
 											{g.verifierErrors || g.inconclusive
 												? `验证错误 ${g.verifierErrors} · 未判定 ${g.inconclusive}`
 												: "无"}
-											<details>
-												<summary>更多指标</summary>
+											<Disclosure>
+												<DisclosureTitle>更多指标</DisclosureTitle>
 												<p>
 													全部成功 {fraction(g.successRatio)} · 规则版本{" "}
 													{g.ruleHash ?? "未判分"}
 												</p>
-											</details>
+											</Disclosure>
 										</td>
 									</tr>
 								))}
 							</tbody>
-						</table>
+						</DataTable>
 					</div>
 				)}
 				<p className="form-hint">
 					通过率 = 通过 /（通过 +
 					失败）。回复检查与任务验收分开统计；执行错误、无法判定和取消单列。重试后按最新执行统计，费用与耗时包含全部尝试。
 				</p>
-			</details>
+			</Disclosure>
 		</div>
 	);
 }
@@ -122,15 +127,15 @@ export function RunSummary({ run }: { run: RunOverview }) {
 						Token {(j.inputTokens + j.outputTokens).toLocaleString()} · 评分费用{" "}
 						{cost(j.cost)}
 					</span>
-					<details className="Verifier-details">
-						<summary>Judge 分组均分</summary>
+					<Disclosure className="Verifier-details">
+						<DisclosureTitle>Judge 分组均分</DisclosureTitle>
 						{j.groups.map((g, i) => (
 							<p key={i}>
 								{g.model} · {g.rubric}：{g.average.toFixed(1)}/100（{g.scored}{" "}
 								次）
 							</p>
 						))}
-					</details>
+					</Disclosure>
 				</div>
 			)}
 			{states.some((state) => state !== "passed" && s[state] > 0) && (

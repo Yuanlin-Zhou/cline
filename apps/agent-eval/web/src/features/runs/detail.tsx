@@ -1,23 +1,31 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { Button as AntButton, Empty } from "antd";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { RunOverview } from "../../../../src/contracts/api";
 import { canRetry, type RunItem } from "../../../../src/contracts/catalog";
 import { api, message, send, useApi } from "../../api/client";
 import {
+	ActionLink,
+	Badge,
+	DataTable,
+	Disclosure,
+	DisclosureTitle,
+} from "../../components/antd-compat";
+import {
 	Alert,
 	Box,
 	Button,
 	Check,
 	DataState,
+	duration,
 	JsonView,
 	Modal,
+	modeLabel,
 	Select,
 	Status,
 	Tabs,
 	Text,
-	duration,
-	modeLabel,
 } from "../../components/ui";
 import { InlineItemInspector, ItemInspector } from "../results/inspector";
 import { GradingMetrics, RunSummary } from "./summary";
@@ -127,13 +135,13 @@ function RunDetail({
 						)
 					)}
 					{["json", "csv", "markdown"].map((format) => (
-						<a
+						<ActionLink
 							key={format}
 							className="btn"
 							href={`/api/runs/${run.id}/export?format=${format}`}
 						>
 							导出 {format === "markdown" ? "简报" : format.toUpperCase()}
-						</a>
+						</ActionLink>
 					))}
 					{!running && (
 						<Button onClick={() => setRepeat(true)}>重复评测本批次</Button>
@@ -208,8 +216,7 @@ function RunDetail({
 										hidden={!rows.length}
 									>
 										{rows.map((item) => (
-											<button
-												type="button"
+											<AntButton
 												key={item.id}
 												className="RunItem"
 												aria-label={`查看案例：${item.snapshot.definition.id}`}
@@ -228,9 +235,9 @@ function RunDetail({
 																	isBadCase?: boolean;
 																}
 															).isBadCase) && (
-															<span className="Label Label--danger">
+															<Badge className="Label Label--danger">
 																Bad case
-															</span>
+															</Badge>
 														)}
 													</span>
 													<Status value={item.status} />
@@ -251,7 +258,7 @@ function RunDetail({
 															}[item.phase] ?? item.phase}
 														</span>
 													)}
-											</button>
+											</AntButton>
 										))}
 									</section>
 								</div>
@@ -294,12 +301,14 @@ function RunDetail({
 											)}
 										</>
 									) : (
-										<div className="empty">
-											<div className="empty-title">没有匹配的案例</div>
+										<Empty
+											image={Empty.PRESENTED_IMAGE_SIMPLE}
+											description="没有匹配的案例"
+										>
 											<div className="empty-desc">
 												调整结果、模块或搜索条件后重试。
 											</div>
-										</div>
+										</Empty>
 									)}
 								</section>
 							</div>
@@ -320,7 +329,7 @@ function RunDetail({
 						"modules",
 						"模块统计",
 						<div className="TableWrap" key="modules">
-							<table className="Table">
+							<DataTable className="Table">
 								<thead>
 									<tr>
 										<th>模块</th>
@@ -345,7 +354,7 @@ function RunDetail({
 										</tr>
 									))}
 								</tbody>
-							</table>
+							</DataTable>
 						</div>,
 					],
 				]}
@@ -546,14 +555,14 @@ function RepeatReport({
 								个可比较案例
 							</span>
 						</div>
-						<details className="Verifier-details">
-							<summary>多轮比较口径</summary>
+						<Disclosure className="Verifier-details">
+							<DisclosureTitle>多轮比较口径</DisclosureTitle>
 							<p className="form-hint">{report.method}</p>
-						</details>
+						</Disclosure>
 						<GradingMetrics metrics={report.grading} />
 						<Box title="各轮结果">
 							<div className="TableWrap">
-								<table className="Table">
+								<DataTable className="Table">
 									<thead>
 										<tr>
 											<th>轮次</th>
@@ -580,7 +589,7 @@ function RepeatReport({
 											</tr>
 										))}
 									</tbody>
-								</table>
+								</DataTable>
 							</div>
 						</Box>
 						{report.grading.groups.map((g: any) => (
@@ -602,12 +611,12 @@ function RepeatReport({
 								可比较输出次数，少于两次不计算；输出变化本身不代表质量下降。
 							</p>
 							{report.cases.map((c: any) => (
-								<details key={c.caseId}>
-									<summary>
+								<Disclosure key={c.caseId}>
+									<DisclosureTitle>
 										{c.moduleName} / {c.name} · 通过 {c.passed}/
 										{c.passed + c.failed} · 输出版本 {c.outputVariants} · 一致率{" "}
 										{rate(c.consistencyRate)}
-									</summary>
+									</DisclosureTitle>
 									<div className="page-actions">
 										{c.rounds.map((r: any) => (
 											<Button
@@ -636,13 +645,13 @@ function RepeatReport({
 											</Button>
 										</p>
 									))}
-								</details>
+								</Disclosure>
 							))}
 						</Box>
-						<details>
-							<summary>完整报告数据</summary>
+						<Disclosure>
+							<DisclosureTitle>完整报告数据</DisclosureTitle>
 							<JsonView value={report} />
-						</details>
+						</Disclosure>
 					</>
 				)}
 			</DataState>

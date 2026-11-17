@@ -1,5 +1,7 @@
+import { Card } from "antd";
 import type { ReactNode } from "react";
 import type { EvalDefaults } from "../../../../src/contracts/evaluation";
+import { Disclosure, DisclosureTitle } from "../../components/antd-compat";
 import { HeadersEditor } from "../../components/headers";
 import { Check, Field, Select, Text } from "../../components/ui";
 
@@ -151,61 +153,59 @@ export function ConfigEditor({
 	);
 	const environment = (
 		<div className="react-grid">
-			<>
-				<Field label="工具权限">
-					<Select
-						value={value.tools ?? "read-only"}
-						onChange={(v) => field("tools", v as EvalDefaults["tools"])}
-						options={[
-							["none", "禁用工具"],
-							["read-only", "只读工具"],
-							["full", "全部工具（自动批准）"],
-						]}
-					/>
-				</Field>
-				<Field label="迭代上限">
+			<Field label="工具权限">
+				<Select
+					value={value.tools ?? "read-only"}
+					onChange={(v) => field("tools", v as EvalDefaults["tools"])}
+					options={[
+						["none", "禁用工具"],
+						["read-only", "只读工具"],
+						["full", "全部工具（自动批准）"],
+					]}
+				/>
+			</Field>
+			<Field label="迭代上限">
+				<Text
+					type="number"
+					min={1}
+					value={value.maxIterations ?? 10}
+					onChange={(v) => field("maxIterations", Number(v))}
+				/>
+			</Field>
+			<Field label="工作区目录 cwd">
+				<Text
+					value={value.cwd}
+					onChange={(v) => field("cwd", v || undefined)}
+				/>
+			</Field>
+			<Field label="工作区方式">
+				<Select
+					value={value.workspace?.mode ?? "copy"}
+					onChange={(v) =>
+						field(
+							"workspace",
+							v === "direct" ? { mode: "direct" } : { mode: "copy" },
+						)
+					}
+					options={[
+						["copy", "复制后执行"],
+						["direct", "直接在原目录执行"],
+					]}
+				/>
+			</Field>
+			{value.workspace?.mode !== "direct" && (
+				<Field label="副本保存根目录（可选）">
 					<Text
-						type="number"
-						min={1}
-						value={value.maxIterations ?? 10}
-						onChange={(v) => field("maxIterations", Number(v))}
-					/>
-				</Field>
-				<Field label="工作区目录 cwd">
-					<Text
-						value={value.cwd}
-						onChange={(v) => field("cwd", v || undefined)}
-					/>
-				</Field>
-				<Field label="工作区方式">
-					<Select
-						value={value.workspace?.mode ?? "copy"}
+						value={value.workspace?.copyRoot}
 						onChange={(v) =>
-							field(
-								"workspace",
-								v === "direct" ? { mode: "direct" } : { mode: "copy" },
-							)
+							field("workspace", {
+								mode: "copy",
+								...(v ? { copyRoot: v } : {}),
+							})
 						}
-						options={[
-							["copy", "复制后执行"],
-							["direct", "直接在原目录执行"],
-						]}
 					/>
 				</Field>
-				{value.workspace?.mode !== "direct" && (
-					<Field label="副本保存根目录（可选）">
-						<Text
-							value={value.workspace?.copyRoot}
-							onChange={(v) =>
-								field("workspace", {
-									mode: "copy",
-									...(v ? { copyRoot: v } : {}),
-								})
-							}
-						/>
-					</Field>
-				)}
-			</>
+			)}
 		</div>
 	);
 	const headers = (
@@ -225,19 +225,19 @@ export function ConfigEditor({
 		return (
 			<>
 				{workspace && (
-					<section className="Box mb-3 CaseConfig-environment">
-						<div className="Box-body">
+					<Card size="small" className="eval-card CaseConfig-environment">
+						<div className="eval-panel-body">
 							<h3 className="section-title">环境与执行配置</h3>
 							{environment}
 							{behavior}
 						</div>
-					</section>
+					</Card>
 				)}
-				<details className="Box CaseConfig" open>
-					<summary className="Box-header">
+				<Disclosure className="Box CaseConfig" open>
+					<DisclosureTitle className="Box-header">
 						<span>模型与高级配置</span>
-					</summary>
-					<div className="Box-body">
+					</DisclosureTitle>
+					<div className="eval-panel-body">
 						<p className="CaseConfig-origin">{origin}</p>
 						<section className="ConfigGroup">
 							<h3 className="ConfigGroup-title">模型连接</h3>
@@ -250,7 +250,7 @@ export function ConfigEditor({
 							{advanced}
 						</section>
 					</div>
-				</details>
+				</Disclosure>
 			</>
 		);
 	return (

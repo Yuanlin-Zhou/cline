@@ -1,8 +1,15 @@
 import { useMutation } from "@tanstack/react-query";
+import { Checkbox, Steps } from "antd";
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { EvalDefaults } from "../../../../src/contracts/evaluation";
 import { message, send, useApi } from "../../api/client";
+import {
+	Badge,
+	DataTable,
+	Disclosure,
+	DisclosureTitle,
+} from "../../components/antd-compat";
 import { assertValidEditors } from "../../components/editor-validity";
 import {
 	Alert,
@@ -13,9 +20,9 @@ import {
 	Field,
 	Heading,
 	JsonView,
+	modeLabel,
 	Select,
 	Text,
-	modeLabel,
 } from "../../components/ui";
 import { ConfigEditor } from "../settings/config-editor";
 
@@ -134,16 +141,11 @@ function RunWizard({
 	}
 	return (
 		<>
-			<div className="react-row mb-3">
-				{["选择案例", "运行配置", "确认提交"].map((label, i) => (
-					<span
-						key={label}
-						className={`Label ${step === i + 1 ? "Label--accent" : ""}`}
-					>
-						{i + 1}. {label}
-					</span>
-				))}
-			</div>
+			<Steps
+				className="mb-3"
+				current={step - 1}
+				items={["选择案例", "运行配置", "确认提交"].map((title) => ({ title }))}
+			/>
 			{step === 1 && (
 				<Box title={`选择案例 · 已选 ${selected.size}`}>
 					<div className="react-filters">
@@ -168,7 +170,7 @@ function RunWizard({
 						<Button onClick={() => setSelected(new Set())}>清空选择</Button>
 					</div>
 					<div className="react-table-wrap">
-						<table className="react-table">
+						<DataTable className="react-table">
 							<thead>
 								<tr>
 									<th>选择</th>
@@ -182,8 +184,7 @@ function RunWizard({
 								{visible.map((c) => (
 									<tr key={c.id}>
 										<td>
-											<input
-												type="checkbox"
+											<Checkbox
 												aria-label={`选择 ${c.definition.id}`}
 												checked={selected.has(c.id)}
 												onChange={(e) => toggle(c.id, e.target.checked)}
@@ -192,7 +193,7 @@ function RunWizard({
 										<td>
 											<span className="case-name">{c.definition.id}</span>
 											{c.definition.isBadCase && (
-												<span className="Label Label--danger">Bad case</span>
+												<Badge className="Label Label--danger">Bad case</Badge>
 											)}
 										</td>
 										<td>{modules.find((m) => m.id === c.moduleId)?.name}</td>
@@ -201,60 +202,58 @@ function RunWizard({
 									</tr>
 								))}
 							</tbody>
-						</table>
+						</DataTable>
 					</div>
 				</Box>
 			)}
 			{step === 2 && (
-				<>
-					<Box title="批次配置">
-						<Field label="批次名称">
-							<Text value={name} onChange={setName} />
-						</Field>
-						<Field label="备注">
-							<Text multiline value={note} onChange={setNote} />
-						</Field>
-						<div className="react-grid">
-							<Field label="重复轮数">
-								<Text
-									type="number"
-									min={1}
-									max={100}
-									value={repeatCount}
-									onChange={(v) => setRepeat(Number(v))}
-								/>
-							</Field>
-							<Field label="并发数">
-								<Text
-									type="number"
-									min={1}
-									max={4}
-									value={concurrency}
-									onChange={(v) => setConcurrency(Number(v))}
-								/>
-							</Field>
-						</div>
-						<Field label="回放方式">
-							<Select
-								value={replayMode}
-								onChange={setMode}
-								options={[
-									["", "使用案例自身方式"],
-									["single-turn", "强制单轮回放"],
-									["full-task", "强制完整任务"],
-									["function-call", "强制单轮函数调用"],
-								]}
+				<Box title="批次配置">
+					<Field label="批次名称">
+						<Text value={name} onChange={setName} />
+					</Field>
+					<Field label="备注">
+						<Text multiline value={note} onChange={setNote} />
+					</Field>
+					<div className="react-grid">
+						<Field label="重复轮数">
+							<Text
+								type="number"
+								min={1}
+								max={100}
+								value={repeatCount}
+								onChange={(v) => setRepeat(Number(v))}
 							/>
 						</Field>
-						<Check checked={useSettings} onChange={setUseSettings}>
-							使用当前全局默认配置替换案例 defaults
-						</Check>
-						<Check checked={custom} onChange={setCustom}>
-							指定本批次运行配置覆盖
-						</Check>
-						{custom && <ConfigEditor value={defaults} onChange={setDefaults} />}
-					</Box>
-				</>
+						<Field label="并发数">
+							<Text
+								type="number"
+								min={1}
+								max={4}
+								value={concurrency}
+								onChange={(v) => setConcurrency(Number(v))}
+							/>
+						</Field>
+					</div>
+					<Field label="回放方式">
+						<Select
+							value={replayMode}
+							onChange={setMode}
+							options={[
+								["", "使用案例自身方式"],
+								["single-turn", "强制单轮回放"],
+								["full-task", "强制完整任务"],
+								["function-call", "强制单轮函数调用"],
+							]}
+						/>
+					</Field>
+					<Check checked={useSettings} onChange={setUseSettings}>
+						使用当前全局默认配置替换案例 defaults
+					</Check>
+					<Check checked={custom} onChange={setCustom}>
+						指定本批次运行配置覆盖
+					</Check>
+					{custom && <ConfigEditor value={defaults} onChange={setDefaults} />}
+				</Box>
 			)}
 			{step === 3 && (
 				<Box title="确认执行">
@@ -266,10 +265,10 @@ function RunWizard({
 						{useSettings ? "使用当前全局 defaults" : "保留案例 defaults"}
 						{custom && "，应用本批次配置覆盖"}。任务将使用提交时的配置快照。
 					</p>
-					<details>
-						<summary>查看提交配置</summary>
+					<Disclosure>
+						<DisclosureTitle>查看提交配置</DisclosureTitle>
 						<JsonView value={body} />
-					</details>
+					</Disclosure>
 				</Box>
 			)}
 			<Alert>{error || (submit.error && message(submit.error))}</Alert>

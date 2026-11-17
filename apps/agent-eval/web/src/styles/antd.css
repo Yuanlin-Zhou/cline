@@ -1,0 +1,184 @@
+/* Only application layout lives here; controls are styled by Ant Design tokens. */
+body {
+	background: #f5f7fa;
+}
+.ant-app {
+	min-height: 100vh;
+	color: #1f2329;
+}
+.eval-navigation {
+	flex: 1;
+	min-width: 0;
+	justify-content: flex-end;
+	background: transparent;
+}
+.eval-card {
+	margin-bottom: 16px;
+}
+.eval-card .ant-card-head-title {
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+.eval-card .ant-card-body {
+	min-width: 0;
+}
+.eval-alert {
+	margin: 8px 0;
+	overflow-wrap: anywhere;
+}
+.eval-disclosure {
+	margin-bottom: 12px;
+}
+.eval-table,
+.eval-case-table {
+	overflow-x: auto;
+}
+.eval-case-table .selected > td {
+	background: #e6f4ff;
+}
+.ant-form-item {
+	margin-bottom: 16px;
+}
+.ant-form-item-label > label {
+	height: auto;
+}
+.ant-checkbox-wrapper {
+	margin: 4px 12px 4px 0;
+}
+.ant-select {
+	min-width: 0;
+}
+.ant-tabs-content-holder,
+.ant-tabs-tabpane {
+	min-width: 0;
+}
+.ant-modal-body {
+	max-height: 78vh;
+	overflow-y: auto;
+	padding: 4px;
+}
+.ant-btn.Grading-goal {
+	height: auto;
+	min-height: 112px;
+	padding: 16px;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	white-space: normal;
+	text-align: left;
+}
+.ant-btn.Grading-goal > span {
+	white-space: normal;
+}
+.ant-btn.ReplayMode-option {
+	height: auto;
+	white-space: normal;
+}
+.rule-actions {
+	display: flex;
+	gap: 8px;
+	justify-content: space-between;
+	align-items: center;
+	flex-wrap: wrap;
+	margin-bottom: 12px;
+}
+.eval-section {
+	scroll-margin-top: 24px;
+}
+.ant-tag {
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+.ant-table-cell {
+	overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+	.AppHeader-inner {
+		flex-wrap: wrap;
+	}
+	.eval-navigation {
+		flex-basis: 100%;
+		justify-content: flex-start;
+	}
+	.Grading-goals {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+	.ant-btn.Grading-goal {
+		padding: 12px;
+		min-height: 120px;
+	}
+	.ant-card-body {
+		padding: 12px;
+	}
+	.ant-modal {
+		max-width: calc(100vw - 24px);
+		margin-inline: auto;
+	}
+}
+.ant-btn.RunItem {
+	display: block;
+	height: auto;
+	white-space: normal;
+	text-align: left;
+}
+.ant-btn.RunItem > span {
+	display: block;
+}
+.Grading-goals {
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.rule-actions .ant-btn {
+	flex-shrink: 0;
+}
+.ResultFilters > .ant-select,
+.case-filters > .ant-select,
+.react-filters > .ant-select {
+	flex: 1 1 150px;
+	width: auto !important;
+}
+.ResultFilters > .ant-input,
+.case-filters > .ant-input,
+.react-filters > .ant-input {
+	flex: 2 1 230px;
+	min-width: 0;
+}
+.react-row > .ant-select {
+	flex: 1 1 180px;
+	width: auto !important;
+}
+.ant-btn.eval-tag-remove {
+	height: 20px;
+	width: 20px;
+	padding: 0;
+	margin-left: 4px;
+}
+.module-actions {
+	flex-wrap: wrap;
+}
+.module-item-name {
+	gap: 8px;
+}
+.module-item-name > span:first-child {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+.module-item-count {
+	flex-shrink: 0;
+}
+.GradingWorkspace .react-row {
+	margin-bottom: 12px;
+}
+.GradingWorkspace .ant-form-item-control-input-content > .ant-btn {
+	margin-bottom: 6px;
+}
+.eval-card .ant-btn + .ant-checkbox-wrapper {
+	margin-left: 8px;
+}
+
+@media (max-width: 760px) {
+	.react-filters > .ant-select,
+	.react-filters > .ant-input {
+		flex: none;
+		width: 100% !important;
+	}
+}

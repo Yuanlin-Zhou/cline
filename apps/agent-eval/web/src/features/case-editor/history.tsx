@@ -6,9 +6,9 @@ import {
 	readHistoryDocument,
 } from "../../../../src/modules/catalog/function-call-history";
 import { message } from "../../api/client";
+import { Disclosure, DisclosureTitle } from "../../components/antd-compat";
 import {
 	Alert,
-	Box,
 	Button,
 	Check,
 	Field,
@@ -33,14 +33,14 @@ export function HistoryEditor({
 	const [system, setSystem] = useState("");
 	const [preview, setPreview] = useState<any>();
 	return (
-		<details
+		<Disclosure
 			className="Box mb-3 HistoryPanel"
 			open={native || value.history.length > 0}
 		>
-			<summary className="Box-header">
+			<DisclosureTitle className="Box-header">
 				{native ? "历史对话" : "历史消息（可选）"}
-			</summary>
-			<div className="Box-body">
+			</DisclosureTitle>
+			<div className="eval-panel-body">
 				{native && (
 					<p className="form-hint">
 						选中响应之前的上下文；原始错误响应不能加入模型输入。
@@ -122,8 +122,8 @@ export function HistoryEditor({
 				)}
 
 				{native && (
-					<details>
-						<summary>粘贴 JSON 导入历史</summary>
+					<Disclosure>
+						<DisclosureTitle>粘贴 JSON 导入历史</DisclosureTitle>
 						<Field label="原始对话 JSON">
 							<Text
 								multiline
@@ -148,7 +148,7 @@ export function HistoryEditor({
 										(c) =>
 											[
 												String(c.index),
-												String(c.index + 1) + ". " + c.text.slice(0, 100),
+												`${String(c.index + 1)}. ${c.text.slice(0, 100)}`,
 											] as [string, string],
 									),
 								]}
@@ -233,9 +233,9 @@ export function HistoryEditor({
 								</Button>
 							</>
 						)}
-					</details>
+					</Disclosure>
 				)}
 			</div>
-		</details>
+		</Disclosure>
 	);
 }

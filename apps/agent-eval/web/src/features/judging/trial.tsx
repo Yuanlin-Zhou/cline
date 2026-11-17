@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { JudgeConfig } from "../../../../src/modules/judging/types";
 import { api, message, send, useApi } from "../../api/client";
+import { Disclosure, DisclosureTitle } from "../../components/antd-compat";
 import { Alert, Box, Button, DataState, JsonView } from "../../components/ui";
 import { useRememberedState } from "../../hooks/remembered-state";
 import { JudgeEditor, judgeDefaults } from "./editor";
@@ -20,7 +21,7 @@ export function JudgeTrial({
 	);
 	const [preview, setPreview] = useState<any>();
 	const [taskId, setTask] = useRememberedState(
-		runId + "/" + item.id,
+		`${runId}/${item.id}`,
 		"judgeTask",
 		"",
 	);
@@ -88,10 +89,10 @@ export function JudgeTrial({
 				)}
 			</div>
 			{preview && (
-				<details>
-					<summary>本次评分输入</summary>
+				<Disclosure>
+					<DisclosureTitle>本次评分输入</DisclosureTitle>
 					<JsonView value={preview.input} />
-				</details>
+				</Disclosure>
 			)}
 			{taskId && (
 				<DataState query={task}>
@@ -104,8 +105,8 @@ export function JudgeTrial({
 					)}
 				</DataState>
 			)}
-			<details>
-				<summary>已保存的试评分记录</summary>
+			<Disclosure>
+				<DisclosureTitle>已保存的试评分记录</DisclosureTitle>
 				<DataState query={history}>
 					{history.data?.map((score) => (
 						<Button key={score.id} onClick={() => setTask(score.id)}>
@@ -114,7 +115,7 @@ export function JudgeTrial({
 						</Button>
 					))}
 				</DataState>
-			</details>
+			</Disclosure>
 		</Box>
 	);
 }

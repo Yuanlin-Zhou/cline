@@ -1,8 +1,14 @@
+import { Button as AntButton, Popconfirm, Tag } from "antd";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { EvalCase } from "../../../../src/contracts/evaluation";
 import type { Rule } from "../../../../src/modules/grading/types";
 import { useApi } from "../../api/client";
+import {
+	Badge,
+	Disclosure,
+	DisclosureTitle,
+} from "../../components/antd-compat";
 import {
 	Alert,
 	Box,
@@ -13,6 +19,7 @@ import {
 	Select,
 	Text,
 } from "../../components/ui";
+import { judgeDefaults } from "../judging/editor";
 import { HistoryTrials } from "../results/history-trials";
 import { Guide, UploadDialog } from "../verifiers/page";
 
@@ -35,7 +42,37 @@ export function RulesEditor({
 		),
 	);
 	const [filesOpen, setFilesOpen] = useState(!!value.grading?.rules.length);
-	const [judgeOpen, setJudgeOpen] = useState(true);
+	const replyRef = useRef<HTMLDivElement>(null);
+	const filesRef = useRef<HTMLDivElement>(null);
+	const judgeRef = useRef<HTMLDivElement>(null);
+	const [focusTarget, setFocusTarget] = useState<"reply" | "files" | "judge">();
+	useEffect(() => {
+		if (!focusTarget) return;
+		const element = { reply: replyRef, files: filesRef, judge: judgeRef }[
+			focusTarget
+		].current;
+		element?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+		element
+			?.querySelector<HTMLElement>('textarea,input,[role="combobox"]')
+			?.focus({ preventScroll: true });
+		setFocusTarget(undefined);
+	}, [focusTarget]);
+	function removeReply(key?: "contains" | "notContains" | "matches") {
+		const assertions = { ...value.assertions };
+		for (const field of key
+			? [key]
+			: (["contains", "notContains", "matches"] as const))
+			delete assertions[field];
+		const nextFields = key
+			? activeReplyFields.filter((field) => field !== key)
+			: [];
+		setReplyFields(nextFields);
+		setReplyOpen(nextFields.length > 0);
+		onChange({
+			...value,
+			assertions: Object.keys(assertions).length ? assertions : undefined,
+		});
+	}
 	const [replyFields, setReplyFields] = useState<
 		Array<"contains" | "notContains" | "matches">
 	>(() =>
@@ -58,6 +95,7 @@ export function RulesEditor({
 		]),
 	];
 	function update(next: Rule[]) {
+		if (!next.length) setFilesOpen(false);
 		onChange({
 			...value,
 			grading: next.length ? { version: 1, rules: next } : undefined,
@@ -102,285 +140,349 @@ export function RulesEditor({
 					className="Grading-goal"
 					onClick={() => {
 						setReplyOpen(true);
+						setFocusTarget("reply");
 						if (!replyFields.length) setReplyFields(["contains"]);
 					}}
 				>
 					最终回复
+					<Tag>{activeReplyFields.length ? "已配置" : "未配置"}</Tag>
 					<span className="form-hint">检查回复包含、不包含或匹配文字</span>
 				</Button>
 				<Button
 					className={`Grading-goal ${value.replayMode !== "full-task" ? "Grading-goal--restricted" : ""}`}
 					onClick={() => {
 						setFilesOpen(true);
+						setFocusTarget("files");
 						setKind("file.exists");
 						if (value.replayMode !== "full-task")
 							onChange({ ...value, replayMode: "full-task" });
 					}}
 				>
 					文件产物
+					<Tag>
+						{rules.some((r) => r.kind.startsWith("file."))
+							? "已配置"
+							: "未配置"}
+					</Tag>
 					<span className="form-hint">检查交付文件和 JSON · 需要完整任务</span>
 				</Button>
 				<Button
 					className="Grading-goal"
 					onClick={() => {
 						setFilesOpen(true);
+						setFocusTarget("files");
 						setKind("script");
 					}}
 				>
 					Python 脚本
+					<Tag>
+						{rules.some((r) => r.kind === "script") ? "已配置" : "未配置"}
+					</Tag>
 					<span className="form-hint">自定义检查结果、会话与文件</span>
 				</Button>
-				<Button className="Grading-goal" onClick={() => setJudgeOpen(true)}>
+				<Button
+					className="Grading-goal"
+					onClick={() => {
+						onChange({
+							...value,
+							llmJudge: {
+								...(value.llmJudge ?? judgeDefaults()),
+								enabled: true,
+							},
+						});
+						setFocusTarget("judge");
+					}}
+				>
 					LLM 评分
+					<Tag>{value.llmJudge?.enabled ? "已启用" : "未启用"}</Tag>
 					<span className="form-hint">
 						提供参考答案，自选结果或轨迹，由独立模型评分
 					</span>
 				</Button>
 			</section>
-			<div hidden={!replyOpen && !activeReplyFields.length}>
-				<Box>
-					<div className="section-title flex-between">
-						<span>最终回复检查</span>
-						<span className="Label Label--neutral">影响通过</span>
-					</div>
-					<p className="form-hint">
-						检查 Agent
-						最后发出的回复。每行一项，所有填写项都须满足；留空的项目不执行内容检查。
-					</p>
-					{activeReplyFields.map((key) => (
-						<Field
-							key={key}
-							label={
-								{
-									contains: "必须包含（每行一项）",
-									notContains: "不得包含（每行一项）",
-									matches: "匹配正则（每行一项）",
-								}[key]
-							}
-						>
-							<Text
-								multiline
-								rows={2}
-								value={value.assertions?.[key]?.join("\n") ?? ""}
-								onChange={(v) =>
-									onChange({
-										...value,
-										assertions: {
-											...value.assertions,
-											[key]: v.split("\n").filter(Boolean),
-										},
-									})
-								}
+			{(replyOpen || activeReplyFields.length > 0) && (
+				<div ref={replyRef} className="eval-section">
+					<Box>
+						<div className="section-title flex-between">
+							<span>最终回复检查</span>
+							<RemoveAction
+								label="移除最终回复检查"
+								confirm={activeReplyFields.some(
+									(k) => !!value.assertions?.[k]?.length,
+								)}
+								onRemove={() => removeReply()}
 							/>
-						</Field>
-					))}
-					<div className="flex-between">
-						{(["contains", "notContains", "matches"] as const)
-							.filter((k) => !activeReplyFields.includes(k))
-							.map((k) => (
-								<Button
-									className="btn-sm"
-									key={k}
-									onClick={() => setReplyFields([...replyFields, k])}
-								>
-									{k === "notContains"
-										? "添加不包含检查"
-										: k === "matches"
-											? "添加正则检查"
-											: "添加包含检查"}
-								</Button>
-							))}
-					</div>
-				</Box>
-			</div>
-			<div hidden={!filesOpen && !rules.length}>
-				<Box title="任务验收规则">
-					<p className="form-hint">
-						必要规则全部通过才判通过；验证器故障或证据不足会单独记录。
-					</p>
-					<div className="react-row">
-						<Select
-							value={kind}
-							onChange={setKind}
-							options={[
-								["file.exists", "文件存在"],
-								["file.absent", "文件不存在"],
-								["file.unchanged", "文件保持不变"],
-								["file.text", "文件文本"],
-								["file.json", "JSON 字段"],
-								["script", "Python / 验证脚本"],
-								["command", "验收命令"],
-								["tool.count", "工具次数（诊断）"],
-							]}
-						/>
-						<Button onClick={add}>添加检查</Button>
-					</div>
-					{kind.startsWith("file.") && value.replayMode !== "full-task" && (
-						<Alert kind="warning">
-							文件检查需要完整任务模式。
-							<Button
-								onClick={() => onChange({ ...value, replayMode: "full-task" })}
+							<Badge className="Label Label--neutral">影响通过</Badge>
+						</div>
+						<p className="form-hint">
+							检查 Agent
+							最后发出的回复。每行一项，所有填写项都须满足；留空的项目不执行内容检查。
+						</p>
+						{activeReplyFields.map((key) => (
+							<Field
+								key={key}
+								label={
+									{
+										contains: "必须包含（每行一项）",
+										notContains: "不得包含（每行一项）",
+										matches: "匹配正则（每行一项）",
+									}[key]
+								}
 							>
-								切换为完整任务
-							</Button>
-						</Alert>
-					)}
-					{rules.map((rule: any, index) => (
-						<Box
-							key={rule.id || index}
-							title={
-								<div className="flex-between">
-									<span>{rule.label || rule.kind}</span>
-									<Button
-										danger
-										onClick={() => update(rules.filter((_, i) => i !== index))}
-									>
-										移除检查
-									</Button>
-								</div>
-							}
-						>
-							<Field label="规则 ID">
-								<Text
-									value={rule.id}
-									onChange={(id) => change(index, { id })}
+								<RemoveAction
+									label={`移除${{ contains: "包含", notContains: "不包含", matches: "正则" }[key]}检查`}
+									confirm={!!value.assertions?.[key]?.length}
+									onRemove={() => removeReply(key)}
 								/>
-							</Field>
-							<Field label="规则名称（可选）">
 								<Text
-									value={rule.label}
-									onChange={(label) =>
-										change(index, { label: label || undefined })
+									multiline
+									aria-label={
+										{
+											contains: "必须包含（每行一项）",
+											notContains: "不得包含（每行一项）",
+											matches: "匹配正则（每行一项）",
+										}[key]
+									}
+									rows={2}
+									value={value.assertions?.[key]?.join("\n") ?? ""}
+									onChange={(v) =>
+										onChange({
+											...value,
+											assertions: {
+												...value.assertions,
+												[key]: v.split("\n").filter(Boolean),
+											},
+										})
 									}
 								/>
 							</Field>
-							<Check
-								checked={rule.required !== false}
-								onChange={(required) => change(index, { required })}
+						))}
+						<div className="flex-between">
+							{(["contains", "notContains", "matches"] as const)
+								.filter((k) => !activeReplyFields.includes(k))
+								.map((k) => (
+									<Button
+										className="btn-sm"
+										key={k}
+										onClick={() => setReplyFields([...replyFields, k])}
+									>
+										{k === "notContains"
+											? "添加不包含检查"
+											: k === "matches"
+												? "添加正则检查"
+												: "添加包含检查"}
+									</Button>
+								))}
+						</div>
+					</Box>
+				</div>
+			)}
+			{(filesOpen || rules.length > 0) && (
+				<div ref={filesRef} className="eval-section">
+					<Box
+						title={
+							<div className="rule-actions">
+								<span>任务验收规则</span>
+								<RemoveAction
+									label="移除全部验收检查"
+									confirm={rules.length > 0}
+									description="将移除文件、Python 及其他全部验收规则。"
+									onRemove={() => update([])}
+								/>
+							</div>
+						}
+					>
+						<p className="form-hint">
+							必要规则全部通过才判通过；验证器故障或证据不足会单独记录。
+						</p>
+						<div className="react-row">
+							<Select
+								value={kind}
+								onChange={setKind}
+								options={[
+									["file.exists", "文件存在"],
+									["file.absent", "文件不存在"],
+									["file.unchanged", "文件保持不变"],
+									["file.text", "文件文本"],
+									["file.json", "JSON 字段"],
+									["script", "Python / 验证脚本"],
+									["command", "验收命令"],
+									["tool.count", "工具次数（诊断）"],
+								]}
+							/>
+							<Button onClick={add}>添加检查</Button>
+						</div>
+						{kind.startsWith("file.") && value.replayMode !== "full-task" && (
+							<Alert kind="warning">
+								文件检查需要完整任务模式。
+								<Button
+									onClick={() =>
+										onChange({ ...value, replayMode: "full-task" })
+									}
+								>
+									切换为完整任务
+								</Button>
+							</Alert>
+						)}
+						{rules.map((rule: any, index) => (
+							<Box
+								key={rule.id || index}
+								title={
+									<div className="flex-between">
+										<span>{rule.label || rule.kind}</span>
+										<Button
+											danger
+											onClick={() =>
+												update(rules.filter((_, i) => i !== index))
+											}
+										>
+											移除检查
+										</Button>
+									</div>
+								}
 							>
-								必要检查
-							</Check>
-							{rule.kind.startsWith("file.") && (
-								<Field label="文件相对路径">
+								<Field label="规则 ID">
 									<Text
-										value={rule.path}
-										onChange={(path) => change(index, { path })}
+										value={rule.id}
+										onChange={(id) => change(index, { id })}
 									/>
 								</Field>
-							)}
-							{rule.kind === "file.text" && (
-								<>
-									<Field label="比较方式">
-										<Select
-											value={rule.op}
-											onChange={(op) => change(index, { op })}
-											options={[
-												["contains", "包含"],
-												["notContains", "不包含"],
-												["matches", "正则匹配"],
-											]}
-										/>
-									</Field>
-									<Field label="预期文本">
+								<Field label="规则名称（可选）">
+									<Text
+										value={rule.label}
+										onChange={(label) =>
+											change(index, { label: label || undefined })
+										}
+									/>
+								</Field>
+								<Check
+									checked={rule.required !== false}
+									onChange={(required) => change(index, { required })}
+								>
+									必要检查
+								</Check>
+								{rule.kind.startsWith("file.") && (
+									<Field label="文件相对路径">
 										<Text
-											multiline
-											value={rule.expected}
-											onChange={(expected) => change(index, { expected })}
+											value={rule.path}
+											onChange={(path) => change(index, { path })}
 										/>
 									</Field>
-								</>
-							)}
-							{rule.kind === "file.json" && (
-								<>
-									<Field label="JSON Pointer">
-										<Text
-											value={rule.pointer}
-											onChange={(pointer) => change(index, { pointer })}
-										/>
-									</Field>
-									<Field label="比较方式">
-										<Select
-											value={rule.op}
-											onChange={(op) => change(index, { op })}
-											options={[
-												"exists",
-												"equals",
-												"contains",
-												"matches",
-												"approx",
-											].map((v) => [v, v])}
-										/>
-									</Field>
-									{rule.op !== "exists" && (
-										<JsonInput
-											label="预期 JSON 值"
-											value={rule.expected ?? null}
-											onChange={(expected) => change(index, { expected })}
-										/>
-									)}
-									{rule.op === "approx" && (
-										<>
-											<Field label="绝对容差">
-												<Text
-													type="number"
-													value={rule.absTolerance ?? 0}
-													onChange={(v) =>
-														change(index, { absTolerance: Number(v) })
-													}
-												/>
-											</Field>
-											<Field label="相对容差">
-												<Text
-													type="number"
-													value={rule.relTolerance ?? 0}
-													onChange={(v) =>
-														change(index, { relTolerance: Number(v) })
-													}
-												/>
-											</Field>
-										</>
-									)}
-								</>
-							)}
-							{(rule.kind === "script" || rule.kind === "command") && (
-								<>
-									<div className="page-actions">
-										<Button onClick={() => setUpload(true)}>上传 .py</Button>
-										<Button onClick={() => setGuide(true)}>编写指南</Button>
-										<Button onClick={() => verifiers.refetch()}>
-											刷新列表
-										</Button>
-										{rule.kind === "script" && (
-											<Button onClick={() => setTrial(rule)}>试验证</Button>
-										)}
-									</div>
-									<Field label="验证器">
-										<Select
-											value={rule.verifierId}
-											onChange={(verifierId) => change(index, { verifierId })}
-											options={[
-												["", "请选择验证器"],
-												...(verifiers.data?.verifiers ?? []).map(
-													(v: any) =>
-														[v.id, v.label ?? v.name ?? v.id] as [
-															string,
-															string,
-														],
-												),
-											]}
-										/>
-									</Field>
-									{rule.kind === "script" ? (
-										<>
-											<JsonInput
-												label="验证参数 params"
-												value={rule.params ?? {}}
-												onChange={(params) => change(index, { params })}
+								)}
+								{rule.kind === "file.text" && (
+									<>
+										<Field label="比较方式">
+											<Select
+												value={rule.op}
+												onChange={(op) => change(index, { op })}
+												options={[
+													["contains", "包含"],
+													["notContains", "不包含"],
+													["matches", "正则匹配"],
+												]}
 											/>
-											<details>
-												<summary>高级设置：输入要求</summary>
-												{(["required_inputs", "require_complete"] as const).map(
-													(key) => (
+										</Field>
+										<Field label="预期文本">
+											<Text
+												multiline
+												value={rule.expected}
+												onChange={(expected) => change(index, { expected })}
+											/>
+										</Field>
+									</>
+								)}
+								{rule.kind === "file.json" && (
+									<>
+										<Field label="JSON Pointer">
+											<Text
+												value={rule.pointer}
+												onChange={(pointer) => change(index, { pointer })}
+											/>
+										</Field>
+										<Field label="比较方式">
+											<Select
+												value={rule.op}
+												onChange={(op) => change(index, { op })}
+												options={[
+													"exists",
+													"equals",
+													"contains",
+													"matches",
+													"approx",
+												].map((v) => [v, v])}
+											/>
+										</Field>
+										{rule.op !== "exists" && (
+											<JsonInput
+												label="预期 JSON 值"
+												value={rule.expected ?? null}
+												onChange={(expected) => change(index, { expected })}
+											/>
+										)}
+										{rule.op === "approx" && (
+											<>
+												<Field label="绝对容差">
+													<Text
+														type="number"
+														value={rule.absTolerance ?? 0}
+														onChange={(v) =>
+															change(index, { absTolerance: Number(v) })
+														}
+													/>
+												</Field>
+												<Field label="相对容差">
+													<Text
+														type="number"
+														value={rule.relTolerance ?? 0}
+														onChange={(v) =>
+															change(index, { relTolerance: Number(v) })
+														}
+													/>
+												</Field>
+											</>
+										)}
+									</>
+								)}
+								{(rule.kind === "script" || rule.kind === "command") && (
+									<>
+										<div className="page-actions">
+											<Button onClick={() => setUpload(true)}>上传 .py</Button>
+											<Button onClick={() => setGuide(true)}>编写指南</Button>
+											<Button onClick={() => verifiers.refetch()}>
+												刷新列表
+											</Button>
+											{rule.kind === "script" && (
+												<Button onClick={() => setTrial(rule)}>试验证</Button>
+											)}
+										</div>
+										<Field label="验证器">
+											<Select
+												value={rule.verifierId}
+												onChange={(verifierId) => change(index, { verifierId })}
+												options={[
+													["", "请选择验证器"],
+													...(verifiers.data?.verifiers ?? []).map(
+														(v: any) =>
+															[v.id, v.label ?? v.name ?? v.id] as [
+																string,
+																string,
+															],
+													),
+												]}
+											/>
+										</Field>
+										{rule.kind === "script" ? (
+											<>
+												<JsonInput
+													label="验证参数 params"
+													value={rule.params ?? {}}
+													onChange={(params) => change(index, { params })}
+												/>
+												<Disclosure>
+													<DisclosureTitle>高级设置：输入要求</DisclosureTitle>
+													{(
+														["required_inputs", "require_complete"] as const
+													).map((key) => (
 														<Field
 															key={key}
 															label={
@@ -413,46 +515,62 @@ export function RulesEditor({
 																</Check>
 															))}
 														</Field>
-													),
-												)}
-											</details>
-										</>
-									) : (
-										<Field label="预期退出码">
-											<Text
-												type="number"
-												value={rule.expectedExitCode ?? 0}
-												onChange={(v) =>
-													change(index, { expectedExitCode: Number(v) })
-												}
-											/>
-										</Field>
-									)}
-								</>
-							)}
-							<details>
-								<summary>高级规则 JSON</summary>
-								<JsonInput
-									label="完整规则配置"
-									value={rule}
-									onChange={(next) =>
-										update(
-											rules.map((entry, i) => (i === index ? next : entry)),
-										)
-									}
-								/>
-							</details>
-						</Box>
-					))}
-					<details>
-						<summary>编辑全部规则（支持完整规则合同）</summary>
-						<JsonInput label="验收规则数组" value={rules} onChange={update} />
-					</details>
-				</Box>
-			</div>
-			<div hidden={!judgeOpen}>{judge}</div>
-			<details className="Verifier-details">
-				<summary>高级判定设置</summary>
+													))}
+												</Disclosure>
+											</>
+										) : (
+											<Field label="预期退出码">
+												<Text
+													type="number"
+													value={rule.expectedExitCode ?? 0}
+													onChange={(v) =>
+														change(index, { expectedExitCode: Number(v) })
+													}
+												/>
+											</Field>
+										)}
+									</>
+								)}
+								<Disclosure>
+									<DisclosureTitle>高级规则 JSON</DisclosureTitle>
+									<JsonInput
+										label="完整规则配置"
+										value={rule}
+										onChange={(next) =>
+											update(
+												rules.map((entry, i) => (i === index ? next : entry)),
+											)
+										}
+									/>
+								</Disclosure>
+							</Box>
+						))}
+						<Disclosure>
+							<DisclosureTitle>
+								编辑全部规则（支持完整规则合同）
+							</DisclosureTitle>
+							<JsonInput label="验收规则数组" value={rules} onChange={update} />
+						</Disclosure>
+					</Box>
+				</div>
+			)}
+			{value.llmJudge && (
+				<div ref={judgeRef} className="eval-section">
+					<div className="rule-actions">
+						<Tag color={value.llmJudge.enabled ? "blue" : "default"}>
+							{value.llmJudge.enabled ? "评分已启用" : "评分已停用，配置已保留"}
+						</Tag>
+						<RemoveAction
+							label="移除评分配置"
+							confirm={true}
+							onRemove={() => onChange({ ...value, llmJudge: undefined })}
+						/>
+					</div>
+					{judge}
+				</div>
+			)}
+			<Disclosure className="Verifier-details">
+				<DisclosureTitle>高级判定设置</DisclosureTitle>
 				<Field label="结束原因">
 					<Select
 						value={value.assertions?.finishReason ?? "completed"}
@@ -471,7 +589,7 @@ export function RulesEditor({
 						].map((v) => [v, v])}
 					/>
 				</Field>
-			</details>
+			</Disclosure>
 			{upload && (
 				<UploadDialog
 					close={() => setUpload(false)}
@@ -487,5 +605,36 @@ export function RulesEditor({
 				/>
 			)}
 		</section>
+	);
+}
+
+function RemoveAction({
+	label,
+	confirm,
+	description,
+	onRemove,
+}: {
+	label: string;
+	confirm: boolean;
+	description?: string;
+	onRemove: () => void;
+}) {
+	const button = (
+		<AntButton danger size="small" onClick={confirm ? undefined : onRemove}>
+			{label}
+		</AntButton>
+	);
+	return confirm ? (
+		<Popconfirm
+			title={`${label}？`}
+			description={description ?? "将清除已填写内容，保存后生效。"}
+			onConfirm={onRemove}
+			okText="移除"
+			cancelText="取消"
+		>
+			{button}
+		</Popconfirm>
+	) : (
+		button
 	);
 }

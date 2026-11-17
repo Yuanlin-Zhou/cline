@@ -1,18 +1,24 @@
 import { useQuery } from "@tanstack/react-query";
+import { Empty } from "antd";
 import { useState } from "react";
 import { api, useApi } from "../../api/client";
+import {
+	ActionLink,
+	Disclosure,
+	DisclosureTitle,
+} from "../../components/antd-compat";
 import { RemoteJson } from "../../components/remote-json";
 import {
 	Alert,
 	Box,
 	Button,
 	DataState,
+	duration,
 	JsonView,
 	Modal,
 	Select,
 	Status,
 	Tabs,
-	duration,
 } from "../../components/ui";
 import { JudgeTrial } from "../judging/trial";
 import { useRunItem } from "../runs/use-run";
@@ -82,15 +88,15 @@ export function ItemContent({ runId, item }: { runId: string; item: any }) {
 							title={`${rule.label ?? rule.id} · ${rule.status}`}
 						>
 							<p>{rule.message}</p>
-							<details>
-								<summary>预期与实际</summary>
+							<Disclosure>
+								<DisclosureTitle>预期与实际</DisclosureTitle>
 								<JsonView
 									value={{
 										expected: rule.expected,
 										actual: rule.actual,
 									}}
 								/>
-							</details>
+							</Disclosure>
 							{rule.evidenceRefs?.map((id: string) => (
 								<Button key={id} onClick={() => setEvidenceId(id)}>
 									查看证据
@@ -176,15 +182,15 @@ export function ItemContent({ runId, item }: { runId: string; item: any }) {
 										{result.functionCallResponse.completeness}
 									</p>
 									<JsonView value={result.functionCallResponse.raw_response} />
-									<details>
-										<summary>本次公布的工具与调用策略</summary>
+									<Disclosure>
+										<DisclosureTitle>本次公布的工具与调用策略</DisclosureTitle>
 										<JsonView
 											value={{
 												tools: result.functionCallResponse.request_tools,
 												toolChoice: result.functionCallResponse.tool_choice,
 											}}
 										/>
-									</details>
+									</Disclosure>
 								</Box>
 							)}
 							{item.snapshot.definition.badCase && (
@@ -192,20 +198,20 @@ export function ItemContent({ runId, item }: { runId: string; item: any }) {
 									<p className="form-hint">
 										仅作案例对照，不是本次模型输入或评分参考答案。
 									</p>
-									<details>
-										<summary>展开原始错误输出</summary>
+									<Disclosure>
+										<DisclosureTitle>展开原始错误输出</DisclosureTitle>
 										<JsonView
 											value={item.snapshot.definition.badCase.observedOutput}
 										/>
-									</details>
+									</Disclosure>
 									{item.snapshot.definition.badCase.reason && (
 										<p>{item.snapshot.definition.badCase.reason}</p>
 									)}
 								</Box>
 							)}
 							{tab === "result" && checks}
-							<details className="Verifier-details Inspector-execution">
-								<summary>执行详情</summary>
+							<Disclosure className="Verifier-details Inspector-execution">
+								<DisclosureTitle>执行详情</DisclosureTitle>
 								<div className="Inspector-execution-body">
 									<p>
 										结束原因：{result?.finishReason ?? "—"} · 迭代：
@@ -225,18 +231,18 @@ export function ItemContent({ runId, item }: { runId: string; item: any }) {
 											· 实际目录：{item.workspace}
 										</p>
 									)}
-									<details>
-										<summary>任务配置快照</summary>
+									<Disclosure>
+										<DisclosureTitle>任务配置快照</DisclosureTitle>
 										<JsonView value={item.snapshot} />
 										{result?.runtime && (
-											<details>
-												<summary>生效执行配置</summary>
+											<Disclosure>
+												<DisclosureTitle>生效执行配置</DisclosureTitle>
 												<JsonView value={result.runtime} />
-											</details>
+											</Disclosure>
 										)}
-									</details>
+									</Disclosure>
 								</div>
-							</details>
+							</Disclosure>
 							{result && (
 								<div className="metric-row mt-3">
 									<span className="metric">
@@ -265,7 +271,7 @@ export function ItemContent({ runId, item }: { runId: string; item: any }) {
 							)}
 						</>,
 					],
-					["checks", "验收结果", <>{tab === "checks" && checks}</>],
+					["checks", "验收结果", tab === "checks" && checks],
 					[
 						"conversation",
 						"会话与工具",
@@ -274,11 +280,11 @@ export function ItemContent({ runId, item }: { runId: string; item: any }) {
 								<Conversation runId={runId} item={item} />
 							)}
 							{result?.toolCalls?.map((call: any, i: number) => (
-								<details key={i}>
-									<summary>
+								<Disclosure key={i}>
+									<DisclosureTitle>
 										{call.name} · {duration(call.durationMs)}
 										{call.error ? " · 错误" : ""}
-									</summary>
+									</DisclosureTitle>
 									<JsonView
 										value={{
 											input: call.input,
@@ -286,7 +292,7 @@ export function ItemContent({ runId, item }: { runId: string; item: any }) {
 											error: call.error,
 										}}
 									/>
-								</details>
+								</Disclosure>
 							))}
 							<p className="form-hint">
 								已保存的工具诊断不证明真实执行或审批事件。
@@ -296,27 +302,23 @@ export function ItemContent({ runId, item }: { runId: string; item: any }) {
 					[
 						"artifacts",
 						"文件产物",
-						<>
-							{tab === "artifacts" && <Artifacts runId={runId} item={item} />}
-						</>,
+						tab === "artifacts" && <Artifacts runId={runId} item={item} />,
 					],
 					[
 						"trials",
 						"试验证 / 试评分",
-						<>
-							{finished ? (
+						finished ? (
+							tab === "trials" && (
 								<>
-									{tab === "trials" && (
-										<>
-											<VerifierTrial runId={runId} item={item} />
-											<JudgeTrial runId={runId} item={item} />
-										</>
-									)}
+									<VerifierTrial runId={runId} item={item} />
+									<JudgeTrial runId={runId} item={item} />
 								</>
-							) : (
-								<p>请选择已结束的执行。试验证和试评分不改写原批次正式结论。</p>
-							)}
-						</>,
+							)
+						) : (
+							<p key="trial-empty">
+								请选择已结束的执行。试验证和试评分不改写原批次正式结论。
+							</p>
+						),
 					],
 				]}
 			/>
@@ -337,9 +339,9 @@ function Conversation({ runId, item }: { runId: string; item: any }) {
 			{query.data && (
 				<>
 					<p className="form-hint">{query.data.notice}</p>
-					<a className="btn" href={`${path}?download=1`}>
+					<ActionLink className="btn" href={`${path}?download=1`}>
 						下载完整会话
-					</a>
+					</ActionLink>
 					{query.data.messages.map((m: any) => (
 						<Box key={m.id} title={`${m.index + 1} · ${m.role}`}>
 							{m.blocks.map((b: any, i: number) => (
@@ -380,7 +382,12 @@ function Artifacts({ runId, item }: { runId: string; item: any }) {
 	const list = useApi<any[]>(path, applicable);
 	const diff = useApi<any>(`${path}&file=${encodeURIComponent(file)}`, !!file);
 	if (!applicable)
-		return <p className="empty">单轮回放不产生工作区文件变更。</p>;
+		return (
+			<Empty
+				image={Empty.PRESENTED_IMAGE_SIMPLE}
+				description="单轮回放不产生工作区文件变更。"
+			/>
+		);
 	return (
 		<>
 			<DataState query={list}>

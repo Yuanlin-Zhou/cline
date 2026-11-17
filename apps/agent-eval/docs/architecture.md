@@ -1,6 +1,6 @@
 # Agent Eval 架构与开发
 
-正式应用：`apps/agent-eval`，workspace 包名：`@cline/agent-eval`。源码已按业务组织；Web 使用 React + TypeScript、Vite、TanStack Query、React Router hash 路由与必要的 Radix UI 原语。
+正式应用：`apps/agent-eval`，workspace 包名：`@cline/agent-eval`。源码已按业务组织；Web 使用 React + TypeScript、Vite、TanStack Query、React Router hash 路由与 Ant Design 6（中文主题）。
 
 ## 入口和命令
 
@@ -74,9 +74,13 @@ web/src/api/                     请求与错误处理
 web/src/components/              表单、对话框、标签、请求头等组件
 web/src/features/                案例、导入、执行、结果、脚本和 Judge
 web/src/hooks/                   草稿、未保存保护和会话内试验证状态
-web/src/styles/                  既有视觉规则及 React 适配
+web/src/styles/                  业务布局、响应式规则及 Ant Design 适配
 web/checks/                      实际浏览器验收
 ```
+
+公共表单、按钮、Tabs、Modal、Collapse、Table、上传和状态标签使用 Ant Design。`components/antd-compat.tsx` 将已有声明式表格单元格适配到 Ant Design Table，保留稳定行身份、拖选事件与业务布局；Collapse 保留已挂载表单，防止跨页签/折叠丢失 JSON 校验错误。
+
+判定规则支持单项删除及整组移除；LLM 入口启用并定位评分表单，停用保留配置，移除配置才清除已填内容，均在保存后持久化。
 
 React 负责渲染和表单状态，不保留旧 DOM 应用。TanStack Query 管理服务端数据；输入草稿与查询缓存分开，后台刷新不会覆盖未保存修改。大文本和证据不会写入浏览器持久缓存。
 
@@ -108,4 +112,11 @@ CHROMIUM_EXECUTABLE=/usr/bin/chromium bun run test:browser
 
 MongoDB 集成测试沿用 `EVAL_TEST_MONGODB_URI` 等既有开关，仅使用隔离测试数据库；未配置时跳过。Windows 专属进程测试需要在 Windows 环境执行。
 
-正式 UI 验收还需亲自查看桌面与窄屏截图，检查短/长内容、空/错误/重试状态、弹窗和横向溢出。测试与实际复核记录见仓库根目录 SPEC-034/035。
+正式 UI 验收还需亲自查看桌面与窄屏截图，检查短/长内容、空/错误/重试状态、弹窗和横向溢出。测试与实际复核记录见仓库根目录 SPEC-034/035/038/039。
+
+
+## 内网构建依赖
+
+UI 使用 `antd` 6.7.1 与 `@ant-design/icons` 6.3.4，完整版本树以仓库 `bun.lock` 为准。内网源码构建需将这两个包的完整依赖同步到内网 registry 或准备好的依赖目录；仍需 TypeScript/Vite 等开发依赖。组件样式和 SVG 图标随前端资源本地提供，不使用 CDN、在线字体或外部图标服务。已预构建的生产静态资源不需要运行时联网下载 Ant Design。
+
+macOS 的 `node_modules` 不适用于 Windows 离线构建；须按目标 Windows 架构准备 Bun、Node 和包含对应构建工具二进制的依赖。此次 UI 迁移没有新增数据库或其他后台服务。

@@ -3,12 +3,6 @@
 	grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
 	gap: 16px;
 }
-summary {
-	list-style: none;
-}
-summary::-webkit-details-marker {
-	display: none;
-}
 .crumbs {
 	white-space: nowrap;
 	overflow: hidden;
@@ -21,9 +15,6 @@ summary::-webkit-details-marker {
 	overflow: hidden;
 	overflow-wrap: anywhere;
 }
-.react-tab-panel[data-state="inactive"] {
-	display: none;
-}
 .react-module-list {
 	align-content: start;
 }
@@ -35,17 +26,8 @@ summary::-webkit-details-marker {
 	justify-content: flex-start;
 	margin-top: 6px;
 }
-.react-module-list .module-item .btn {
-	font-size: 11px;
-	padding: 1px 5px;
-}
 .react-module-list .module-item a {
 	color: inherit;
-}
-.react-module-list > .btn:last-child {
-	align-self: start;
-	justify-self: start;
-	margin-top: 8px;
 }
 .react-cases .empty {
 	padding: 16px;
@@ -98,10 +80,6 @@ summary::-webkit-details-marker {
 	align-items: center;
 	margin: 12px 0;
 }
-.react-filters > .form-control {
-	width: auto;
-	min-width: 150px;
-}
 .react-filters > input {
 	flex: 1;
 }
@@ -110,39 +88,6 @@ summary::-webkit-details-marker {
 	border: 1px solid #d0d7de;
 	border-radius: 8px;
 	background: white;
-}
-.react-table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: 14px;
-}
-.react-table td,
-.react-table th {
-	padding: 10px 12px;
-	text-align: left;
-	border-bottom: 1px solid #d8dee4;
-	vertical-align: top;
-}
-.react-table th {
-	background: #f6f8fa;
-	font-size: 12px;
-	color: #57606a;
-	white-space: nowrap;
-}
-.react-table td {
-	overflow-wrap: anywhere;
-	max-width: 420px;
-}
-.react-table tr.selected {
-	background: #ddf4ff;
-}
-.react-table .page-actions {
-	flex-wrap: wrap;
-	gap: 4px;
-}
-.react-cases .react-table {
-	table-layout: fixed;
-	min-width: 1000px;
 }
 .react-cases th:first-child {
 	width: 48px;
@@ -161,38 +106,6 @@ summary::-webkit-details-marker {
 }
 .react-cases th:nth-child(7) {
 	width: 210px;
-}
-.react-table .btn {
-	font-size: 12px;
-	padding: 3px 7px;
-}
-.react-modal-overlay {
-	position: fixed;
-	inset: 0;
-	background: rgb(0 0 0 / 0.4);
-	z-index: 1000;
-}
-.react-modal {
-	position: fixed;
-	top: 50%;
-	left: 50%;
-	transform: translate(-50%, -50%);
-	width: min(1000px, calc(100vw - 32px));
-	max-height: calc(100dvh - 32px);
-	overflow: auto;
-	background: white;
-	border-radius: 12px;
-	padding: 24px;
-	z-index: 1001;
-	box-shadow: 0 16px 48px #0004;
-}
-.react-modal-close {
-	position: absolute;
-	right: 16px;
-	top: 16px;
-}
-.react-modal h2 {
-	margin: 0 40px 20px 0;
 }
 .react-code {
 	font-family: ui-monospace, monospace;
@@ -219,27 +132,6 @@ summary::-webkit-details-marker {
 }
 .react-history-row select {
 	align-self: start;
-}
-.tab-nav {
-	display: flex;
-	gap: 8px;
-	border-bottom: 1px solid #d0d7de;
-	margin: 16px 0;
-	overflow: auto;
-}
-.tab-button {
-	background: none;
-	border: 0;
-	border-bottom: 3px solid transparent;
-	white-space: nowrap;
-	padding: 12px;
-	cursor: pointer;
-	color: #57606a;
-}
-.tab-button[data-state="active"] {
-	border-bottom-color: #0969da;
-	color: #24292f;
-	font-weight: 600;
 }
 .status-passed,
 .status-completed {
@@ -317,20 +209,11 @@ summary::-webkit-details-marker {
 		flex-direction: column;
 		align-items: stretch;
 	}
-	.react-filters > .form-control {
-		width: 100%;
-	}
 	.react-history-row {
 		grid-template-columns: 1fr;
 	}
 	.react-diff {
 		grid-template-columns: 1fr;
-	}
-	.react-modal {
-		padding: 18px;
-	}
-	.react-table {
-		min-width: 1000px;
 	}
 	.page-actions {
 		flex-wrap: wrap;
@@ -373,18 +256,8 @@ summary::-webkit-details-marker {
 .react-grid > * {
 	min-width: 0;
 }
-.react-tab-panel {
-	min-width: 0;
-}
 .AppMain {
 	min-width: 0;
-}
-.react-table .case-name {
-	display: -webkit-box;
-	-webkit-box-orient: vertical;
-	-webkit-line-clamp: 3;
-	overflow: hidden;
-	overflow-wrap: anywhere;
 }
 
 output.empty {
@@ -413,17 +286,11 @@ fieldset.replay-cards {
 .RunDetailPage .RunSummary .ResultMetrics-primary {
 	margin-top: 0;
 }
-.RunDetailPage .ResultFilters .form-control {
-	min-width: 0;
-}
 .RunDetailPage .RunWorkbench > * {
 	min-width: 0;
 }
 .RunDetailPage .RunItem .case-name {
 	overflow-wrap: anywhere;
-}
-.RunDetailPage .RunItem .Label--danger {
-	margin-left: 6px;
 }
 .RunDetailPage .RunItem .small {
 	display: block;
@@ -442,15 +309,6 @@ fieldset.replay-cards {
 	gap: 8px;
 	margin-bottom: 16px;
 }
-.Inspector-toolbar .form-control {
-	width: auto;
-	min-width: 0;
-	flex: 1 1 160px;
-}
-.Inspector-toolbar .btn {
-	padding: 4px 10px;
-	font-size: 12px;
-}
 .RunInspector .Inspector-context {
 	margin: 6px 0;
 	overflow-wrap: anywhere;
@@ -458,13 +316,6 @@ fieldset.replay-cards {
 .RunInspector .react-row {
 	gap: 10px;
 	font-size: 12px;
-}
-.RunInspector .tab-nav {
-	margin: 16px 0;
-}
-.RunInspector .tab-button {
-	padding: 10px 12px;
-	font-size: 13px;
 }
 .RunInspector .Box {
 	border: 0;
@@ -508,10 +359,6 @@ fieldset.replay-cards {
 	.RunDetailPage .page-actions {
 		gap: 8px;
 	}
-	.RunDetailPage .page-actions .btn {
-		font-size: 12px;
-		padding: 5px 10px;
-	}
 	.RunDetailPage .ResultFilters {
 		gap: 8px;
 	}
@@ -541,10 +388,6 @@ fieldset.replay-cards {
 	border: 1px solid var(--color-border-default);
 }
 @media (max-width: 760px) {
-	.Inspector-toolbar .form-control {
-		flex-basis: 100%;
-		width: 100%;
-	}
 }
 
 .RunDetailPage .RunWorkbench[data-empty="true"] {
@@ -572,9 +415,6 @@ fieldset.replay-cards {
 .CaseEditor-results .Box-body {
 	min-width: 0;
 }
-.CaseEditor .tab-nav {
-	margin-top: 0;
-}
 .CaseEditor .Box {
 	margin-bottom: 16px;
 }
@@ -582,11 +422,6 @@ fieldset.replay-cards {
 	margin-top: 16px;
 	border-top: 1px solid var(--color-border-muted);
 	padding-top: 12px;
-}
-.CaseEditor .CaseEditor-bad > summary {
-	cursor: pointer;
-	font-weight: 600;
-	margin-bottom: 12px;
 }
 .CaseEditor .CaseConfig .react-grid {
 	grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -615,20 +450,12 @@ fieldset.replay-cards {
 .CaseCatalog-selection {
 	gap: 6px;
 }
-.CaseCatalog-selection .btn,
-.CaseCatalog .CaseTable-actions .btn {
-	font-size: 12px;
-	padding: 3px 10px;
-}
 .CaseCatalog .CaseTable td:last-child {
 	width: 1%;
 	white-space: nowrap;
 }
 .CaseCatalog .BatchBar {
 	margin-bottom: 12px;
-}
-.CaseCatalog .CaseTable .Label {
-	margin-right: 4px;
 }
 @media (max-width: 600px) {
 	.CaseEditor .CaseConfig .react-grid {
@@ -641,15 +468,6 @@ fieldset.replay-cards {
 	.CaseCatalog-selection {
 		width: 100%;
 	}
-}
-.CaseEditor .tab-nav {
-	gap: 2px;
-	margin: 0 0 16px;
-}
-.CaseEditor .tab-button {
-	padding: 8px 14px;
-	border-bottom-width: 2px;
-	font: inherit;
 }
 .CaseEditor .Box-header > strong {
 	display: block;
@@ -708,25 +526,6 @@ fieldset.replay-cards {
 
 .CaseEditor .CaseConfig .react-grid {
 	row-gap: 0;
-}
-.react-modal:has(.CaseModule-actions) {
-	width: min(560px, calc(100vw - 32px));
-	padding: 0;
-}
-.react-modal:has(.CaseModule-actions) > h2 {
-	padding: 14px 16px;
-	border-bottom: 1px solid var(--color-border-default);
-	font-size: 16px;
-	margin: 0;
-}
-.react-modal:has(.CaseModule-actions) > .form-group,
-.react-modal:has(.CaseModule-actions) > .flash {
-	margin: 16px;
-}
-.react-modal:has(.CaseModule-actions) > .CaseModule-actions {
-	margin: 0;
-	padding: 12px 16px;
-	border-top: 1px solid var(--color-border-default);
 }
 .react-header-field {
 	display: contents;
