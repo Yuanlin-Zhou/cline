@@ -1186,3 +1186,192 @@ test("criterion editor and formal/trial results show every verdict independently
 	).json();
 	expect(after.result.llmJudges[0].id).toBe(score.id);
 });
+
+test("repeat report hierarchy, attempt modes, comparison and single-round states", async ({
+	page,
+	request,
+}, testInfo) => {
+	const { item } = await seed(request, "多轮报告原型验收");
+	const run = await send(request, "/api/runs", {
+		caseIds: [item.id],
+		repeatCount: 1,
+	});
+	let detail: any;
+	await expect
+		.poll(
+			async () => {
+				detail = await (await request.get(`/api/runs/${run.id}`)).json();
+				return detail.status;
+			},
+			{ timeout: 60000 },
+		)
+		.toBe("completed");
+	const original = await (
+		await request.get(`/api/runs/${run.id}/report?attemptMode=latest`)
+	).json();
+	const fixture: any = structuredClone(original);
+	let fail = false;
+	await page.route(`**/api/runs/${run.id}/report?*`, async (route) => {
+		if (fail) {
+			await route.fulfill({ status: 503, json: { error: "报告暂时不可用" } });
+			return;
+		}
+		const data = structuredClone(fixture);
+		if (
+			new URL(route.request().url()).searchParams.get("attemptMode") ===
+				"first" &&
+			data.repeatReport.repeatCount > 1
+		) {
+			for (const c of data.repeatReport.cases)
+				for (const r of c.rounds) r.status = "failed";
+			data.repeatReport.cases[0].rounds[0].status = "cancelled";
+		}
+		await route.fulfill({ json: data });
+	});
+	await page.goto(`/#/run/${run.id}`);
+	await page.getByRole("tab", { name: "多轮报告", exact: true }).click();
+	const report = page.locator(".RepeatReport");
+	await expect(
+		report.getByText(
+			"当前仅执行 1 轮，暂无法判断稳定性；至少执行 2 轮后可比较。",
+		),
+	).toBeVisible();
+	await expect(report.locator(".RepeatMetrics")).not.toContainText("0 / 0");
+	await report.screenshot({
+		path: testInfo.outputPath("repeat-single-1440.png"),
+	});
+	const base = structuredClone(original.repeatReport.cases[0]);
+	fixture.repeatReport = {
+		...original.repeatReport,
+		repeatCount: 3,
+		caseCount: 3,
+		completedRounds: 3,
+		partial: false,
+		rounds: [1, 2, 3].map((round) => ({
+			...original.repeatReport.rounds[0],
+			round,
+		})),
+		cases: ["仓库用途分析", "构建说明检查", "关键文件定位"].map((name, i) => ({
+			...base,
+			caseId: `case-${i}`,
+			name,
+			moduleName: ["read_file", "run_commands", "search_codebase"][i],
+			comparedOutputs: 3,
+			outputVariants: i ? 2 : 1,
+			variants: i
+				? [
+						{ rounds: [1], itemIds: [detail.items[0].id] },
+						{ rounds: [2, 3], itemIds: [detail.items[0].id] },
+					]
+				: [{ rounds: [1, 2, 3], itemIds: [detail.items[0].id] }],
+			rounds: [1, 2, 3].map((round) => ({
+				round,
+				itemId: detail.items[0].id,
+				status: i === 2 && round > 1 ? "failed" : "passed",
+				failedAssertions: i === 2 && round > 1 ? ["未定位关键文件"] : [],
+			})),
+		})),
+	};
+	await page.reload();
+	await page.getByRole("tab", { name: "多轮报告", exact: true }).click();
+	await expect(report.locator(".RepeatMetrics")).toContainText("77.8%");
+	await expect(report.locator(".RepeatMetrics")).toContainText("2 / 3");
+	await report.screenshot({
+		path: testInfo.outputPath("repeat-multi-1440.png"),
+	});
+	await report.getByText("有波动 1", { exact: true }).click();
+	await expect(
+		report.getByRole("button", { name: "查看对比", exact: true }),
+	).toHaveCount(1);
+	await report.getByRole("button", { name: "查看对比", exact: true }).click();
+	await expect(page.getByRole("dialog")).toContainText("未定位关键文件");
+	await expect(page.getByRole("dialog")).toContainText("输出版本 2");
+	await page
+		.getByRole("dialog")
+		.screenshot({ path: testInfo.outputPath("repeat-comparison.png") });
+	await page
+		.getByRole("button", { name: "查看完整输出", exact: true })
+		.first()
+		.click();
+	await expect(page.getByRole("dialog")).toContainText("Use Bun");
+	await page
+		.getByRole("dialog")
+		.getByRole("button", { name: /关闭|Close/, exact: true })
+		.click();
+	await report.getByRole("button", { name: "第 2 轮", exact: true }).click();
+	await expect(page.getByRole("dialog")).toContainText("仓库用途分析");
+	await page
+		.getByRole("dialog")
+		.getByRole("button", { name: /关闭|Close/, exact: true })
+		.click();
+	await report.getByRole("combobox", { name: "统计口径" }).click();
+	await page.getByText("各轮首次尝试", { exact: true }).last().click();
+	await expect(report.locator(".RepeatMetrics")).toContainText("0.0%");
+	await expect(report.getByText("每轮失败", { exact: true })).toHaveCount(2);
+	await expect(
+		report.getByText("阶段性报告：部分执行尚未完成或已取消，以下为当前结果。"),
+	).toBeVisible();
+	// Selected-attempt rows are authoritative even when legacy summaries differ.
+	await report.getByRole("button", { name: "口径说明", exact: true }).click();
+	await expect(report.getByText("原始报告数据", { exact: true })).toBeVisible();
+	fixture.repeatReport.cases[0].name =
+		"长名称案例：" + "评估仓库结构与关键文件".repeat(12);
+	fixture.repeatReport.partial = true;
+	fixture.repeatReport.cases[0].rounds[1].status = "error";
+	fixture.repeatReport.cases[0].rounds[2].status = "running";
+	fixture.repeatReport.cases[1].rounds[1].status = "cancelled";
+	fixture.repeatReport.cases[1].rounds[2].status = "inconclusive";
+	await page.reload();
+	await page.getByRole("tab", { name: "多轮报告", exact: true }).click();
+	await expect(
+		report.getByText("阶段性报告：部分执行尚未完成或已取消，以下为当前结果。"),
+	).toBeVisible();
+	await page.setViewportSize({ width: 1280, height: 1000 });
+	await report.screenshot({
+		path: testInfo.outputPath("repeat-long-partial-1280.png"),
+	});
+	expect(
+		await page.evaluate(
+			() => document.documentElement.scrollWidth <= innerWidth,
+		),
+	).toBe(true);
+	fixture.repeatReport.repeatCount = 8;
+	fixture.repeatReport.rounds = Array.from({ length: 8 }, (_, i) => ({
+		...original.repeatReport.rounds[0],
+		round: i + 1,
+	}));
+	await page.reload();
+	await page.getByRole("tab", { name: "多轮报告", exact: true }).click();
+	const matrix = report.locator(".ant-table-content").nth(1);
+	expect(await matrix.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(
+		true,
+	);
+	await matrix.evaluate((el) => {
+		el.scrollLeft = el.scrollWidth;
+	});
+	await report.screenshot({
+		path: testInfo.outputPath("repeat-eight-rounds-1280.png"),
+	});
+	expect(
+		await page.evaluate(
+			() => document.documentElement.scrollWidth <= innerWidth,
+		),
+	).toBe(true);
+
+	fail = true;
+	await page.reload();
+	await page.getByRole("tab", { name: "多轮报告", exact: true }).click();
+	await expect(report.getByRole("button", { name: "重试加载" })).toBeVisible();
+	await expect(report.getByRole("alert")).toHaveCount(1);
+	await report.screenshot({
+		path: testInfo.outputPath("repeat-error-1280.png"),
+	});
+	fail = false;
+	fixture.repeatReport.cases = [];
+	fixture.repeatReport.caseCount = 0;
+	await report.getByRole("button", { name: "重试加载" }).click();
+	await expect(report.getByText("暂无符合条件的案例")).toBeVisible();
+	await report.screenshot({
+		path: testInfo.outputPath("repeat-empty-1280.png"),
+	});
+});

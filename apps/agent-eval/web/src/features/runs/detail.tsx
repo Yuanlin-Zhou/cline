@@ -1,10 +1,10 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Button as AntButton, Empty } from "antd";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { RunOverview } from "../../../../src/contracts/api";
 import { canRetry, type RunItem } from "../../../../src/contracts/catalog";
-import { api, message, send, useApi } from "../../api/client";
+import { message, send, useApi } from "../../api/client";
 import {
 	ActionLink,
 	Badge,
@@ -28,7 +28,8 @@ import {
 	Text,
 } from "../../components/ui";
 import { InlineItemInspector, ItemInspector } from "../results/inspector";
-import { GradingMetrics, RunSummary } from "./summary";
+import { RepeatReport } from "./repeat-report";
+import { RunSummary } from "./summary";
 import { useRun } from "./use-run";
 
 export function RunPage() {
@@ -502,170 +503,5 @@ function RepeatDialog({ run, close }: { run: any; close: () => void }) {
 				开始重复评测
 			</Button>
 		</Modal>
-	);
-}
-function RepeatReport({
-	runId,
-	revision,
-}: {
-	runId: string;
-	revision: number;
-}) {
-	const [mode, setMode] = useState("latest");
-	const [chosen, setChosen] = useState("");
-	const path = `/api/runs/${runId}/report?attemptMode=${mode}`;
-	const query = useQuery<any>({
-		queryKey: [path, revision],
-		queryFn: ({ signal }) => api(path, { signal }),
-	});
-	const selected = useApi<any>(`/api/runs/${runId}/items/${chosen}`, !!chosen);
-	const report = query.data?.repeatReport;
-	const rate = (v: number | null | undefined) =>
-		v == null ? "—" : `${(v * 100).toFixed(1)}%`;
-	return (
-		<>
-			<Select
-				value={mode}
-				onChange={setMode}
-				options={[
-					["latest", "各轮最新尝试"],
-					["first", "各轮首次尝试"],
-				]}
-			/>
-			<DataState query={query}>
-				{report && (
-					<>
-						<h2 className="section-title">重复多轮评测报告</h2>
-						<p>
-							{report.caseCount} 个案例 × {report.repeatCount} 轮 · 完整执行{" "}
-							{report.completedRounds} 轮
-						</p>
-						{report.partial && (
-							<Alert kind="warning">
-								这是阶段性报告，部分执行尚未完成或已取消。
-							</Alert>
-						)}
-						<div className="ReviewSummary">
-							<strong>
-								全轮通过 {report.allRoundsPassedCases}/{report.caseCount}
-							</strong>
-							<span>通过/失败波动 {report.judgmentChangedCases} 个案例</span>
-							<span>
-								输出变化 {report.outputChangedCases}/{report.comparableCases}{" "}
-								个可比较案例
-							</span>
-						</div>
-						<Disclosure className="Verifier-details">
-							<DisclosureTitle>多轮比较口径</DisclosureTitle>
-							<p className="form-hint">{report.method}</p>
-						</Disclosure>
-						<GradingMetrics metrics={report.grading} />
-						<Box title="各轮结果">
-							<div className="TableWrap">
-								<DataTable className="Table">
-									<thead>
-										<tr>
-											<th>轮次</th>
-											<th>通过</th>
-											<th>失败</th>
-											<th>错误 / 无法判定</th>
-											<th>取消 / 待完成</th>
-											<th>文本通过率</th>
-										</tr>
-									</thead>
-									<tbody>
-										{report.rounds.map((r: any) => (
-											<tr key={r.round}>
-												<td>{r.round}</td>
-												<td>{r.passed}</td>
-												<td>{r.failed}</td>
-												<td>
-													{r.error} / {r.inconclusive}
-												</td>
-												<td>
-													{r.cancelled} / {r.queued + r.running}
-												</td>
-												<td>{rate(r.passRate)}</td>
-											</tr>
-										))}
-									</tbody>
-								</DataTable>
-							</div>
-						</Box>
-						{report.grading.groups.map((g: any) => (
-							<Box key={g.ruleHash ?? g.name} title={g.name}>
-								<p>
-									已判定通过率 {rate(g.passRate.rate)}（{g.passRate.numerator}/
-									{g.passRate.denominator}） · 覆盖率 {rate(g.coverage.rate)} ·
-									全部成功率 {rate(g.successRatio.rate)}
-								</p>
-								<p>
-									关键约束通过率 {rate(g.constraints.rate)} · 验证错误{" "}
-									{g.verifierErrors} · 未判定约束 {g.unknownConstraints}
-								</p>
-							</Box>
-						))}
-						<Box title="案例重复性">
-							<p className="form-hint">
-								一致率 = 最常见输出次数 /
-								可比较输出次数，少于两次不计算；输出变化本身不代表质量下降。
-							</p>
-							{report.cases.map((c: any) => (
-								<Disclosure key={c.caseId}>
-									<DisclosureTitle>
-										{c.moduleName} / {c.name} · 通过 {c.passed}/
-										{c.passed + c.failed} · 输出版本 {c.outputVariants} · 一致率{" "}
-										{rate(c.consistencyRate)}
-									</DisclosureTitle>
-									<div className="page-actions">
-										{c.rounds.map((r: any) => (
-											<Button
-												key={r.itemId}
-												onClick={() => setChosen(r.itemId)}
-											>
-												第 {r.round} 轮 · {r.status}
-											</Button>
-										))}
-									</div>
-									{c.rounds
-										.filter((r: any) => r.error || r.failedAssertions.length)
-										.map((r: any) => (
-											<Alert key={r.itemId}>
-												第 {r.round} 轮：
-												{[...r.failedAssertions, r.error]
-													.filter(Boolean)
-													.join("；")}
-											</Alert>
-										))}
-									{c.variants.map((v: any, i: number) => (
-										<p key={i}>
-											输出版本 {i + 1} · 第 {v.rounds.join("、")} 轮{" "}
-											<Button onClick={() => setChosen(v.itemIds[0])}>
-												查看完整输出
-											</Button>
-										</p>
-									))}
-								</Disclosure>
-							))}
-						</Box>
-						<Disclosure>
-							<DisclosureTitle>完整报告数据</DisclosureTitle>
-							<JsonView value={report} />
-						</Disclosure>
-					</>
-				)}
-			</DataState>
-			{chosen && (
-				<DataState query={selected}>
-					{selected.data && (
-						<ItemInspector
-							runId={runId}
-							item={selected.data}
-							close={() => setChosen("")}
-						/>
-					)}
-				</DataState>
-			)}
-		</>
 	);
 }

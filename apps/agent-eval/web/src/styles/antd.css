@@ -253,3 +253,30 @@ body {
 .JudgeCriteria > .ant-card { margin-bottom:12px; }
 .JudgeCriteriaResults { margin:16px 0; }
 .JudgeCriteriaResults .ant-table-cell { overflow-wrap:anywhere; }
+
+/* Desktop repeat report: summary, rounds, then case-level evidence. */
+.RepeatReport { display: grid; gap: 16px; min-width: 0; }
+.RepeatHeading, .RepeatControls { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.RepeatHeading { margin-bottom: 16px; }
+.RepeatHeading h2 { margin: 0 0 4px; font-size: 18px; }
+.RepeatControls { flex-shrink: 0; color: #667085; }
+.RepeatControls .ant-select { min-width: 160px; }
+.RepeatMetrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 16px; margin-top: 16px; }
+.RepeatMetrics .ant-statistic-content { font-size: 28px; color: #1677ff; }
+.RepeatMetrics > :nth-child(2) .ant-statistic-content { color: #389e0d; }
+.RepeatMetrics > :nth-child(3) .ant-statistic-content { color: #d46b08; }
+.RepeatMetrics .ant-card-body > span { color: #667085; font-size: 12px; }
+.RepeatReport .ant-alert + .ant-alert { margin-top: 12px; }
+.RepeatProgress { display: flex; align-items: center; gap: 12px; }
+.RepeatProgress .ant-progress { width: 140px; margin: 0; }
+.RepeatProgress > span { min-width: 58px; }
+.RepeatCaseName { white-space: normal; overflow-wrap: anywhere; }
+.RepeatCaseName > span { display:block; color: #667085; font-size: 12px; }
+.RepeatFootnote { margin: 12px 0 0; }
+.RepeatReport .ant-card-head-title .form-hint { font-weight: 400; margin-left: 12px; font-size: 12px; }
+.RepeatIssue { max-height: 160px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.RepeatVariant { display:flex; gap:16px; align-items:center; justify-content: space-between; margin-top:12px; }
+.RepeatReport { grid-template-columns: minmax(0, 1fr); }
+.RepeatReport > .ant-card { min-width: 0; }
+.RepeatCaseName > strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.RepeatReport > .ant-btn { justify-self: start; }
