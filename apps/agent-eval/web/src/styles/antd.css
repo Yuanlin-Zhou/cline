@@ -280,3 +280,18 @@ body {
 .RepeatReport > .ant-card { min-width: 0; }
 .RepeatCaseName > strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .RepeatReport > .ant-btn { justify-self: start; }
+
+.RunSummary.CompactRunSummary { display:block; padding: 8px 24px; }
+.CompactSummaryRow { display:grid; grid-template-columns: 112px minmax(0,1fr) auto; gap: 20px; align-items:start; padding: 18px 0; }
+.CompactSummaryRow + .CompactSummaryRow { border-top:1px solid #edf0f3; }
+.CompactSummaryRow h2 { margin:0; font-size:16px; line-height:32px; }
+.CompactSummaryContent { min-width:0; padding-top:4px; }
+.CompactSummaryLine { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; min-height:24px; }
+.CompactSummaryLine > span:not(.ant-tag) { color:#667085; }
+.CompactSummaryMeta { display:block; margin:4px 0 0; color:#667085; font-size:13px; }
+.CompactJudgeGroup { display:flex; gap:16px; align-items:baseline; margin-top:4px; }
+.CompactJudgeGroup > span:first-child { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.CompactJudgeGroup > span:last-child { flex-shrink:0; }
+.SummaryLongText { overflow-wrap:anywhere; }
+.SummaryRubric { max-height:120px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; }
+.CompactJudgeInline { margin-top:0; flex:1; min-width:240px; }

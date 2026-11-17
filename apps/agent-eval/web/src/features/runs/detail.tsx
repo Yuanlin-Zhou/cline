@@ -1,12 +1,11 @@
 import { useMutation } from "@tanstack/react-query";
-import { Button as AntButton, Empty } from "antd";
+import { Button as AntButton, Dropdown, Empty } from "antd";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { RunOverview } from "../../../../src/contracts/api";
 import { canRetry, type RunItem } from "../../../../src/contracts/catalog";
 import { message, send, useApi } from "../../api/client";
 import {
-	ActionLink,
 	Badge,
 	DataTable,
 	Disclosure,
@@ -115,7 +114,8 @@ function RunDetail({
 					<p className="page-desc">
 						创建于{" "}
 						{new Date(run.createdAt).toLocaleString("zh-CN", { hour12: false })}{" "}
-						· {run.repeatCount ?? 1} 轮 · 并发 {run.concurrency}
+						· {new Set(run.items.map((item) => item.snapshot.id)).size} 个案例 ·{" "}
+						{run.repeatCount ?? 1} 轮 · 并发 {run.concurrency}
 						{run.note ? ` · ${run.note}` : ""}
 					</p>
 				</div>
@@ -135,17 +135,25 @@ function RunDetail({
 							</Button>
 						)
 					)}
-					{["json", "csv", "markdown"].map((format) => (
-						<ActionLink
-							key={format}
-							className="btn"
-							href={`/api/runs/${run.id}/export?format=${format}`}
-						>
-							导出 {format === "markdown" ? "简报" : format.toUpperCase()}
-						</ActionLink>
-					))}
+					<Dropdown
+						trigger={["click"]}
+						menu={{
+							items: ["json", "csv", "markdown"].map((format) => ({
+								key: format,
+								label: (
+									<a href={`/api/runs/${run.id}/export?format=${format}`}>
+										导出 {format === "markdown" ? "简报" : format.toUpperCase()}
+									</a>
+								),
+							})),
+						}}
+					>
+						<AntButton>导出 ▾</AntButton>
+					</Dropdown>
 					{!running && (
-						<Button onClick={() => setRepeat(true)}>重复评测本批次</Button>
+						<Button primary onClick={() => setRepeat(true)}>
+							重复评测
+						</Button>
 					)}
 				</div>
 			</div>

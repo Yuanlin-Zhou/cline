@@ -933,7 +933,9 @@ test("DevAgent desktop alignment, scorer management and multiple independent sco
 		).ok(),
 	).toBeTruthy();
 	await page.goto(`/#/run/${run.id}`);
-	await expect(page.getByText("LLM 已评分 2/2")).toBeVisible();
+	await expect(
+		page.getByLabel("批次摘要").getByText("已评分 2 / 2", { exact: true }),
+	).toBeVisible();
 	await page
 		.getByRole("button", { name: /多评分器-案例/ })
 		.first()
@@ -1374,4 +1376,150 @@ test("repeat report hierarchy, attempt modes, comparison and single-round states
 	await report.screenshot({
 		path: testInfo.outputPath("repeat-empty-1280.png"),
 	});
+});
+
+test("compact batch summary keeps token counts, separate scorer groups and export actions", async ({
+	page,
+	request,
+}, testInfo) => {
+	const { item } = await seed(request, "紧凑摘要验收");
+	const run = await send(request, "/api/runs", { caseIds: [item.id] });
+	let detail: any;
+	await expect
+		.poll(
+			async () => {
+				detail = await (await request.get(`/api/runs/${run.id}`)).json();
+				return detail.status;
+			},
+			{ timeout: 60000 },
+		)
+		.toBe("completed");
+	await page.goto(`/#/run/${run.id}`);
+	const summary = page.getByLabel("批次摘要");
+	await expect(summary).toContainText("未配置 LLM 评分器");
+	await expect(summary).toContainText("Token");
+	await expect(summary).not.toContainText("费用");
+	await page.getByRole("button", { name: "导出 ▾", exact: true }).click();
+	for (const [label, format] of [
+		["导出 JSON", "json"],
+		["导出 CSV", "csv"],
+		["导出 简报", "markdown"],
+	])
+		await expect(
+			page.getByRole("link", { name: label, exact: true }),
+		).toHaveAttribute("href", `/api/runs/${run.id}/export?format=${format}`);
+	await page.keyboard.press("Escape");
+	await page.getByRole("heading", { name: detail.name, exact: true }).click();
+	await page.getByRole("button", { name: "重复评测", exact: true }).click();
+	await expect(page.getByRole("dialog")).toContainText(
+		"保留原批次案例与配置快照",
+	);
+	await page
+		.getByRole("dialog")
+		.getByRole("button", { name: /关闭|Close/ })
+		.click();
+	await summary.getByRole("button", { name: "统计说明" }).click();
+	await expect(page.getByRole("dialog")).toContainText("已结束包含通过");
+	await expect(page.getByRole("dialog")).not.toContainText("费用");
+	await page
+		.getByRole("dialog")
+		.getByRole("button", { name: /关闭|Close/ })
+		.click();
+	await expect(page.getByRole("dialog")).toHaveCount(0);
+	await summary.screenshot({
+		path: testInfo.outputPath("compact-no-judge.png"),
+	});
+	const original = await (
+		await request.get(`/api/runs/${run.id}/overview`)
+	).json();
+	const fixture = structuredClone(original);
+	fixture.judgeSummary = {
+		...fixture.judgeSummary,
+		expected: 1,
+		scored: 1,
+		errors: 0,
+		insufficient: 0,
+		unscored: 0,
+		pending: 0,
+		inputTokens: 800,
+		outputTokens: 173,
+		durationMs: 2600,
+		groups: [
+			{
+				model: "API 测试集评分器 · v1 · openai-compatible / deepseek-flash",
+				rubric: "默认评分标准",
+				scored: 1,
+				sum: 100,
+				average: 100,
+			},
+		],
+	};
+	await page.route(`**/api/runs/${run.id}/overview`, (route) =>
+		route.fulfill({ json: fixture }),
+	);
+	await page.reload();
+	await expect(summary).toContainText("平均分 100.0 / 100");
+	await expect(summary).toContainText("Token 973");
+	await expect(summary).not.toContainText("费用");
+	await page.getByRole("tab", { name: "多轮报告", exact: true }).click();
+	await page.screenshot({
+		path: testInfo.outputPath("compact-single-1440.png"),
+		fullPage: true,
+	});
+	fixture.judgeSummary.expected = 5;
+	fixture.judgeSummary.scored = 3;
+	fixture.judgeSummary.errors = 1;
+	fixture.judgeSummary.insufficient = 1;
+	fixture.judgeSummary.unscored = 2;
+	fixture.judgeSummary.groups = Array.from({ length: 3 }, (_, i) => ({
+		model: `评分器 ${i + 1} · v1 · ` + "较长的评分器名称".repeat(12),
+		rubric: "长评分标准\n".repeat(30),
+		scored: 1,
+		sum: 80 + i,
+		average: 80 + i,
+	}));
+	await page.setViewportSize({ width: 1280, height: 900 });
+	await page.reload();
+	await expect(summary).toContainText("另有 1 个评分分组");
+	await expect(summary).toContainText("评分错误 1");
+	await summary.screenshot({
+		path: testInfo.outputPath("compact-multiple-1280.png"),
+	});
+	await summary.getByRole("button", { name: "查看详情", exact: true }).click();
+	await expect(
+		page.getByRole("dialog").getByRole("cell", { name: /评分器 3/ }),
+	).toBeVisible();
+	await expect(page.getByRole("dialog")).not.toContainText("费用");
+	await page
+		.getByRole("dialog")
+		.screenshot({ path: testInfo.outputPath("compact-judge-details.png") });
+	await page
+		.getByRole("dialog")
+		.getByRole("button", { name: /关闭|Close/ })
+		.click();
+	fixture.summary = {
+		...fixture.summary,
+		passed: 0,
+		total: 3,
+		queued: 1,
+		running: 1,
+		error: 1,
+	};
+	fixture.status = "running";
+	fixture.judgeSummary.groups = [];
+	fixture.judgeSummary.scored = 0;
+	fixture.judgeSummary.unscored = 5;
+	fixture.judgeSummary.pending = 3;
+	await page.reload();
+	await expect(summary).toContainText("待完成 2");
+	await expect(summary).toContainText("暂无有效均分");
+	await expect(page.getByRole("button", { name: "停止评测" })).toBeVisible();
+	await summary.screenshot({
+		path: testInfo.outputPath("compact-running-1280.png"),
+	});
+	expect(
+		await page.evaluate(
+			() => document.documentElement.scrollWidth <= innerWidth,
+		),
+	).toBe(true);
 });
