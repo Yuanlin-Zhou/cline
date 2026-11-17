@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parseEvalSuite } from "../contracts/schema.js";
+import { judgeResults } from "../modules/judging/bindings.js";
 import { HELP, parseCliArgs } from "./args.js";
 
 async function main(): Promise<void> {
@@ -35,7 +36,11 @@ async function main(): Promise<void> {
 		process.stderr.write(`[report] ${outputPath}\n`);
 	}
 	process.stdout.write(json);
-	if (report.cases.some((c) => c.grading || c.llmJudge?.affectsOutcome)) {
+	if (
+		report.cases.some(
+			(c) => c.grading || judgeResults(c).some((b) => b.affectsOutcome),
+		)
+	) {
 		process.exitCode = report.cases.some((c) => c.status === "failed")
 			? 1
 			: report.cases.some(

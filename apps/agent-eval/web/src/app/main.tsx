@@ -46,15 +46,20 @@ const Settings = lazy(() =>
 	})),
 );
 
+const Scorers = lazy(() =>
+	import("../features/scorers/page").then((m) => ({ default: m.ScorersPage })),
+);
 function Layout() {
 	const route = useLocation();
-	const active = route.pathname.startsWith("/run")
-		? "runs"
-		: route.pathname.startsWith("/verifiers")
-			? "verifiers"
-			: route.pathname.startsWith("/settings")
-				? "settings"
-				: "cases";
+	const active = route.pathname.startsWith("/scorers")
+		? "scorers"
+		: route.pathname.startsWith("/run")
+			? "runs"
+			: route.pathname.startsWith("/verifiers")
+				? "verifiers"
+				: route.pathname.startsWith("/settings")
+					? "settings"
+					: "cases";
 	return (
 		<NoticesProvider>
 			<a className="SkipLink" href="#app">
@@ -64,7 +69,7 @@ function Layout() {
 				<div className="AppHeader-inner">
 					<NavLink className="AppHeader-brand" to="/cases">
 						<span>
-							Cline <span className="brand-slash">/</span>{" "}
+							DevAgent <span className="brand-slash">/</span>{" "}
 							<strong>Agent Eval</strong>
 						</span>
 					</NavLink>
@@ -76,6 +81,7 @@ function Layout() {
 							["cases", "案例集"],
 							["runs", "评测批次"],
 							["verifiers", "验证脚本"],
+							["scorers", "LLM 评分器"],
 							["settings", "运行配置"],
 						].map(([key, label]) => ({
 							key,
@@ -125,6 +131,7 @@ const router = createHashRouter([
 			{ path: "run/:id", element: <Run /> },
 			{ path: "verifiers", element: <Verifiers /> },
 			{ path: "settings", element: <Settings /> },
+			{ path: "scorers", element: <Scorers /> },
 			{ path: "*", element: <Navigate to="/cases" replace /> },
 		],
 	},

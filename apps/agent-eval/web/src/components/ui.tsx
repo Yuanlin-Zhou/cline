@@ -230,12 +230,18 @@ export function Heading({
 export function Box({
 	title,
 	children,
+	className,
 }: {
 	title?: ReactNode;
+	className?: string;
 	children: ReactNode;
 }) {
 	return (
-		<Card title={title} className="eval-card" size="small">
+		<Card
+			title={title}
+			className={["eval-card", className].filter(Boolean).join(" ")}
+			size="small"
+		>
 			{children}
 		</Card>
 	);

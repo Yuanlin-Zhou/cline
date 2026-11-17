@@ -1,6 +1,6 @@
-// 警告：执行后将永久删除以下三个集合中的全部数据及索引。
+// 警告：执行后将永久删除以下四个集合中的全部数据及索引。
 // 请先停止评测服务及其他写入者，并备份需要保留的数据。
-// 仅重建本评测系统的三个集合，不删除整个数据库。
+// 仅重建本评测系统的四个集合，不删除整个数据库。
 use agent_eval
 
 // 集合不存在时 drop() 返回 false；存在时删除集合及其中全部索引。
@@ -8,7 +8,9 @@ db.getCollection("agent_eval_cases").drop();
 db.getCollection("agent_eval_modules").drop();
 db.getCollection("agent_eval_verifiers").drop();
 
-// 重建三个集合及完整校验器，不创建自定义索引。
+db.getCollection("agent_eval_llm_scorers").drop();
+
+// 重建四个集合及完整校验器，不创建自定义索引。
 db.runCommand({
   "create": "agent_eval_cases",
   "validator": {
@@ -142,6 +144,34 @@ db.runCommand({
                   "bsonType": "string",
                   "maxLength": 16384
                 },
+                "criteria": {
+                  "bsonType": "array",
+                  "items": {
+                    "bsonType": "object",
+                    "required": [
+                      "id",
+                      "name",
+                      "standard"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "bsonType": "string",
+                        "pattern": "^[a-zA-Z0-9-]{1,100}$"
+                      },
+                      "name": {
+                        "bsonType": "string",
+                        "minLength": 1,
+                        "maxLength": 240
+                      },
+                      "standard": {
+                        "bsonType": "string",
+                        "minLength": 1,
+                        "maxLength": 16384
+                      }
+                    }
+                  }
+                },
                 "targets": {
                   "bsonType": "array",
                   "maxItems": 2,
@@ -219,6 +249,165 @@ db.runCommand({
                   "uniqueItems": true,
                   "items": {
                     "bsonType": "string"
+                  }
+                }
+              }
+            },
+            "llmJudges": {
+              "bsonType": "array",
+              "items": {
+                "bsonType": "object",
+                "required": [
+                  "bindingId",
+                  "name",
+                  "config"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "bindingId": {
+                    "bsonType": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "bsonType": "string",
+                    "minLength": 1
+                  },
+                  "scorerId": {
+                    "bsonType": "string",
+                    "minLength": 1
+                  },
+                  "sourceRevision": {
+                    "bsonType": [
+                      "int",
+                      "long",
+                      "double"
+                    ],
+                    "minimum": 1,
+                    "multipleOf": 1
+                  },
+                  "config": {
+                    "bsonType": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "enabled": {
+                        "bsonType": "bool"
+                      },
+                      "referenceAnswer": {
+                        "bsonType": "string",
+                        "maxLength": 65536
+                      },
+                      "rubric": {
+                        "bsonType": "string",
+                        "maxLength": 16384
+                      },
+                      "criteria": {
+                        "bsonType": "array",
+                        "items": {
+                          "bsonType": "object",
+                          "required": [
+                            "id",
+                            "name",
+                            "standard"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "id": {
+                              "bsonType": "string",
+                              "pattern": "^[a-zA-Z0-9-]{1,100}$"
+                            },
+                            "name": {
+                              "bsonType": "string",
+                              "minLength": 1,
+                              "maxLength": 240
+                            },
+                            "standard": {
+                              "bsonType": "string",
+                              "minLength": 1,
+                              "maxLength": 16384
+                            }
+                          }
+                        }
+                      },
+                      "targets": {
+                        "bsonType": "array",
+                        "maxItems": 2,
+                        "uniqueItems": true,
+                        "items": {
+                          "enum": [
+                            "result",
+                            "trajectory"
+                          ]
+                        }
+                      },
+                      "model": {
+                        "bsonType": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "providerId": {
+                            "bsonType": "string"
+                          },
+                          "modelId": {
+                            "bsonType": "string"
+                          },
+                          "baseUrl": {
+                            "bsonType": "string"
+                          },
+                          "apiKeyEnv": {
+                            "bsonType": "string"
+                          },
+                          "headers": {
+                            "bsonType": "object",
+                            "additionalProperties": {
+                              "bsonType": "string"
+                            }
+                          },
+                          "headersEnv": {
+                            "bsonType": "object",
+                            "additionalProperties": {
+                              "bsonType": "string"
+                            }
+                          }
+                        }
+                      },
+                      "affectsOutcome": {
+                        "bsonType": "bool"
+                      },
+                      "passScore": {
+                        "bsonType": [
+                          "int",
+                          "long",
+                          "double"
+                        ],
+                        "minimum": 0,
+                        "maximum": 100
+                      },
+                      "timeoutMs": {
+                        "bsonType": [
+                          "int",
+                          "long",
+                          "double"
+                        ],
+                        "minimum": 1000,
+                        "maximum": 300000
+                      },
+                      "maxInputBytes": {
+                        "bsonType": [
+                          "int",
+                          "long",
+                          "double"
+                        ],
+                        "minimum": 1024,
+                        "maximum": 1048576
+                      },
+                      "resultFiles": {
+                        "bsonType": "array",
+                        "maxItems": 20,
+                        "uniqueItems": true,
+                        "items": {
+                          "bsonType": "string"
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -647,10 +836,7 @@ db.runCommand({
     }
   },
   "validationLevel": "strict",
-  "validationAction": "error",
-  "collation": {
-    "locale": "simple"
-  }
+  "validationAction": "error"
 });
 
 db.runCommand({
@@ -710,10 +896,7 @@ db.runCommand({
     }
   },
   "validationLevel": "strict",
-  "validationAction": "error",
-  "collation": {
-    "locale": "simple"
-  }
+  "validationAction": "error"
 });
 
 db.runCommand({
@@ -803,8 +986,187 @@ db.runCommand({
     }
   },
   "validationLevel": "strict",
-  "validationAction": "error",
-  "collation": {
-    "locale": "simple"
-  }
+  "validationAction": "error"
+});
+
+db.runCommand({
+  "create": "agent_eval_llm_scorers",
+  "validator": {
+    "$jsonSchema": {
+      "bsonType": "object",
+      "required": [
+        "_id",
+        "id",
+        "name",
+        "revision",
+        "enabled",
+        "config",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "_id": {
+          "bsonType": "string",
+          "minLength": 1
+        },
+        "id": {
+          "bsonType": "string",
+          "minLength": 1
+        },
+        "name": {
+          "bsonType": "string",
+          "minLength": 1
+        },
+        "description": {
+          "bsonType": "string"
+        },
+        "revision": {
+          "bsonType": [
+            "int",
+            "long",
+            "double"
+          ],
+          "minimum": 1,
+          "multipleOf": 1
+        },
+        "enabled": {
+          "bsonType": "bool"
+        },
+        "config": {
+          "bsonType": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "bsonType": "bool"
+            },
+            "referenceAnswer": {
+              "bsonType": "string",
+              "maxLength": 65536
+            },
+            "rubric": {
+              "bsonType": "string",
+              "maxLength": 16384
+            },
+            "criteria": {
+              "bsonType": "array",
+              "items": {
+                "bsonType": "object",
+                "required": [
+                  "id",
+                  "name",
+                  "standard"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "bsonType": "string",
+                    "pattern": "^[a-zA-Z0-9-]{1,100}$"
+                  },
+                  "name": {
+                    "bsonType": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "standard": {
+                    "bsonType": "string",
+                    "minLength": 1,
+                    "maxLength": 16384
+                  }
+                }
+              }
+            },
+            "targets": {
+              "bsonType": "array",
+              "maxItems": 2,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "result",
+                  "trajectory"
+                ]
+              }
+            },
+            "model": {
+              "bsonType": "object",
+              "additionalProperties": false,
+              "properties": {
+                "providerId": {
+                  "bsonType": "string"
+                },
+                "modelId": {
+                  "bsonType": "string"
+                },
+                "baseUrl": {
+                  "bsonType": "string"
+                },
+                "apiKeyEnv": {
+                  "bsonType": "string"
+                },
+                "headers": {
+                  "bsonType": "object",
+                  "additionalProperties": {
+                    "bsonType": "string"
+                  }
+                },
+                "headersEnv": {
+                  "bsonType": "object",
+                  "additionalProperties": {
+                    "bsonType": "string"
+                  }
+                }
+              }
+            },
+            "affectsOutcome": {
+              "bsonType": "bool"
+            },
+            "passScore": {
+              "bsonType": [
+                "int",
+                "long",
+                "double"
+              ],
+              "minimum": 0,
+              "maximum": 100
+            },
+            "timeoutMs": {
+              "bsonType": [
+                "int",
+                "long",
+                "double"
+              ],
+              "minimum": 1000,
+              "maximum": 300000
+            },
+            "maxInputBytes": {
+              "bsonType": [
+                "int",
+                "long",
+                "double"
+              ],
+              "minimum": 1024,
+              "maximum": 1048576
+            },
+            "resultFiles": {
+              "bsonType": "array",
+              "maxItems": 20,
+              "uniqueItems": true,
+              "items": {
+                "bsonType": "string"
+              }
+            }
+          }
+        },
+        "createdAt": {
+          "bsonType": "string",
+          "minLength": 1
+        },
+        "updatedAt": {
+          "bsonType": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "validationLevel": "strict",
+  "validationAction": "error"
 });

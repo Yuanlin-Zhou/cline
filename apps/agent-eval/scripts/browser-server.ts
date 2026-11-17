@@ -16,12 +16,43 @@ const model = Bun.serve({
 			return Response.json(requests);
 		const body = (await request.json()) as Record<string, any>;
 		requests.push(body);
+		let judgeInput: any;
+		if (body.model === "ui-judge") {
+			try {
+				const value = body.messages?.find(
+					(m: any) => m.role === "user",
+				)?.content;
+				judgeInput = JSON.parse(
+					typeof value === "string"
+						? value
+						: value
+								?.filter((b: any) => b.type === "text")
+								.map((b: any) => b.text)
+								.join(""),
+				);
+			} catch {}
+		}
+		const criteriaResults = judgeInput?.criteria?.map((c: any) => ({
+			criterionId: c.id,
+			status: c.standard.includes("故意失败")
+				? "fail"
+				: c.standard.includes("证据不足")
+					? "insufficient"
+					: "pass",
+			rationale: c.standard.includes("故意失败")
+				? "结果未满足此条目的要求"
+				: c.standard.includes("证据不足")
+					? "材料不足以判断此条目"
+					: "结果满足条目要求",
+			evidence: [{ ref: "result.final_response", quote: "Use Bun" }],
+		}));
 		const content =
 			body.model === "ui-judge"
 				? JSON.stringify({
 						status: "scored",
 						score: 90,
 						rationale: "符合参考答案",
+						...(criteriaResults ? { criteriaResults } : {}),
 						evidence: [{ ref: "result.final_response" }],
 					})
 				: "Use Bun. 已完成验证。";

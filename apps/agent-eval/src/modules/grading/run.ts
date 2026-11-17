@@ -1,4 +1,3 @@
-import { resolveFullTaskRuntime } from "../execution/full-task-runtime.js";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
@@ -16,6 +15,11 @@ import type {
 	EvalCaseResult,
 	EvalDefaults,
 } from "../../contracts/evaluation.js";
+import { loadCliVerifierSnapshots } from "../../infrastructure/verifier-source.js";
+import {
+	applyJudgesOutcome,
+	judgeBindings,
+} from "../../modules/judging/bindings.js";
 import {
 	manifest,
 	redact,
@@ -24,25 +28,24 @@ import {
 	sha256,
 	snapshot,
 } from "../evidence/evidence.js";
+import { resolveFullTaskRuntime } from "../execution/full-task-runtime.js";
 import { preflightFunctionCall } from "../execution/function-call.js";
-import { workspaceLease } from "../execution/workspace-lease.js";
 import {
 	directWorkspace,
 	prepareExecutionWorkspace,
 } from "../execution/workspace.js";
+import { workspaceLease } from "../execution/workspace-lease.js";
 import {
-	applyJudgeOutcome,
 	judgeSecrets,
 	preflightJudge,
 	scoreWithJudge,
 } from "../judging/engine.js";
-import { JUDGE_PROMPT_VERSION } from "../judging/input.js";
+import { judgePromptVersion } from "../judging/input.js";
 import { gradeCase, preflight } from "./engine.js";
 import { killTree } from "./process.js";
 import type { EvidenceEvent } from "./types.js";
 import type { UploadedVerifier } from "./uploaded-verifiers.js";
 import { freezeValidationInput } from "./validation-context.js";
-import { loadCliVerifierSnapshots } from "../../infrastructure/verifier-source.js";
 import { materializeVerifiers, resolveVerifiers } from "./verifiers.js";
 
 async function executeIsolated(input: {
@@ -77,7 +80,9 @@ async function executeIsolated(input: {
 	];
 	preflight(definition, verifiers);
 	preflightFunctionCall(definition, defaults);
-	preflightJudge(definition.llmJudge);
+	judgeBindings(definition).forEach((b) => {
+		preflightJudge(b.config);
+	});
 	const sourceInput =
 		definition.replayMode === "full-task"
 			? (definition.cwd ?? defaults.cwd)
@@ -103,7 +108,9 @@ async function executeIsolated(input: {
 			"正式验收脚本不能位于 Agent fixture 内，请将验证器移到独立目录",
 		);
 	const secrets = [
-		...(definition.llmJudge?.enabled ? judgeSecrets(definition.llmJudge) : []),
+		...judgeBindings(definition)
+			.filter((b) => b.config.enabled)
+			.flatMap((b) => judgeSecrets(b.config)),
 		defaults.apiKeyEnv ? (process.env[defaults.apiKeyEnv] ?? "") : "",
 		...verifiers.flatMap((v) => v.env.map((k) => process.env[k] ?? "")),
 	];
@@ -143,7 +150,7 @@ async function executeIsolated(input: {
 		persisted = persisted.then(() =>
 			appendFile(
 				path.join(directory, "evidence/events.jsonl"),
-				redact(JSON.stringify(event), secrets) + "\n",
+				`${redact(JSON.stringify(event), secrets)}\n`,
 			),
 		);
 	};
@@ -170,6 +177,7 @@ async function executeIsolated(input: {
 			{
 				...definition,
 				llmJudge: undefined,
+				llmJudges: undefined,
 				grading: undefined,
 				assertions: definition.grading ? undefined : definition.assertions,
 				cwd: workspace,
@@ -283,12 +291,11 @@ async function executeIsolated(input: {
 						event.event = redactValue(event.event, secrets);
 						if (event.event?.type === "execution_config")
 							runtimeRecord = event.event.config;
-						const entry =
-							JSON.stringify({
-								seq: ++diagnosticSeq,
-								timestamp: new Date().toISOString(),
-								...event.event,
-							}) + "\n";
+						const entry = `${JSON.stringify({
+							seq: ++diagnosticSeq,
+							timestamp: new Date().toISOString(),
+							...event.event,
+						})}\n`;
 						if (diagnosticBytes + Buffer.byteLength(entry) <= 4 * 1024 * 1024) {
 							diagnosticBytes += Buffer.byteLength(entry);
 							diagnostics += entry;
@@ -424,8 +431,13 @@ async function executeIsolated(input: {
 		});
 	result.evidence = evidence;
 	if (result.grading) result.status = result.grading.verdict;
-	if (definition.llmJudge?.enabled) {
-		const config = definition.llmJudge;
+	const baseStatus = result.status;
+	const scores: import("../judging/bindings.js").BoundJudgeResult[] = [];
+	for (const binding of judgeBindings(definition).filter(
+		(b) => b.config.enabled,
+	)) {
+		const config = binding.config;
+		let score: import("../judging/types.js").JudgeResult;
 		input.onPhase?.("judging");
 		input.onUpdate?.({
 			phase: "judging",
@@ -437,7 +449,7 @@ async function executeIsolated(input: {
 		});
 		if (result.execution.status !== "completed" || signal?.aborted) {
 			const at = new Date().toISOString();
-			result.llmJudge = {
+			score = {
 				id: randomUUID(),
 				status: signal?.aborted ? "cancelled" : "skipped",
 				score: null,
@@ -449,7 +461,8 @@ async function executeIsolated(input: {
 				affectsOutcome: config.affectsOutcome,
 				passScore: config.passScore,
 				configHash: sha256(JSON.stringify(config)),
-				promptVersion: JUDGE_PROMPT_VERSION,
+				promptVersion: judgePromptVersion(config),
+				...(config.criteria?.length ? { criteria: config.criteria } : {}),
 				limitations: [],
 				startedAt: at,
 				endedAt: at,
@@ -457,7 +470,7 @@ async function executeIsolated(input: {
 				usage: {},
 			};
 		} else {
-			result.llmJudge = await scoreWithJudge({
+			score = await scoreWithJudge({
 				config,
 				directory,
 				evidence,
@@ -465,10 +478,19 @@ async function executeIsolated(input: {
 				sessionId: result.sessionId,
 				signal,
 			});
-			result.llmJudge.baseStatus = result.status;
-			applyJudgeOutcome(result, result.llmJudge);
 		}
+		scores.push({
+			...score,
+			baseStatus,
+			bindingId: binding.bindingId,
+			name: binding.name,
+			scorerId: binding.scorerId,
+			sourceRevision: binding.sourceRevision,
+		});
 	}
+	if (definition.llmJudges) result.llmJudges = scores;
+	else if (scores.length) result.llmJudge = scores[0];
+	applyJudgesOutcome(result, scores);
 	await writeFile(
 		path.join(directory, "execution.json"),
 		JSON.stringify(result, null, 2),

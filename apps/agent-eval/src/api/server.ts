@@ -1,27 +1,25 @@
 import path from "node:path";
-import { type Run } from "../contracts/catalog.js";
+import type { Run } from "../contracts/catalog.js";
 import { defaultDataDirectory } from "../infrastructure/filesystem/paths.js";
 import { acquireServiceLock } from "../infrastructure/filesystem/service-lock.js";
 import {
 	MongoCatalog,
-	mongoConfig,
 	type MongoConfig,
+	mongoConfig,
 } from "../infrastructure/mongodb/catalog.js";
+import { MongoVerifiers } from "../infrastructure/mongodb/verifiers.js";
 import { SqliteCatalog } from "../infrastructure/sqlite/catalog.js";
 import { EvalStore } from "../infrastructure/sqlite/store.js";
+import { SqliteVerifiers } from "../infrastructure/sqlite/verifiers.js";
 import { BATCH_BYTE_LIMIT } from "../modules/catalog/batch-conversations.js";
 import {
 	CatalogError,
 	type CatalogRepository,
 } from "../modules/catalog/repository.js";
-import { settingsRoutes } from "./routes/settings.js";
-
-import { MongoVerifiers } from "../infrastructure/mongodb/verifiers.js";
-import { SqliteVerifiers } from "../infrastructure/sqlite/verifiers.js";
 import { TransferError } from "../modules/catalog/transfer.js";
-import { type VerifierRepository } from "../modules/grading/uploaded-verifiers.js";
-
+import type { VerifierRepository } from "../modules/grading/uploaded-verifiers.js";
 import { VerifierTests } from "../modules/grading/verifier-tests.js";
+import { Scorers } from "../modules/judging/scorers.js";
 import { JudgeScores } from "../modules/judging/scores.js";
 import { RunViews } from "../modules/runs/queries.js";
 import { EvalQueue, type Executor } from "../modules/runs/queue.js";
@@ -31,6 +29,8 @@ import { catalogRoutes } from "./routes/catalog.js";
 import { evidenceRoutes } from "./routes/evidence.js";
 import { judgingRoutes } from "./routes/judging.js";
 import { runsRoutes } from "./routes/runs.js";
+import { scorerRoutes } from "./routes/scorers.js";
+import { settingsRoutes } from "./routes/settings.js";
 import { verifiersRoutes } from "./routes/verifiers.js";
 import { viewsRoutes } from "./routes/views.js";
 
@@ -89,7 +89,13 @@ export async function createEvalServer(
 				: new SqliteVerifiers(store));
 		if (verifierRepository instanceof MongoVerifiers)
 			await verifierRepository.preflight();
+		const scorers = new Scorers(
+			store,
+			catalog,
+			catalog instanceof MongoCatalog ? catalog.db : undefined,
+		);
 		const context = {
+			scorers,
 			store,
 			catalog,
 			queue,
@@ -99,6 +105,7 @@ export async function createEvalServer(
 			judgeScores,
 		};
 		const routes = [
+			scorerRoutes(context),
 			settingsRoutes(context),
 			catalogRoutes(context),
 			viewsRoutes(context),
@@ -107,6 +114,15 @@ export async function createEvalServer(
 			evidenceRoutes(context),
 			runsRoutes(context),
 		];
+		// Serialize catalog/scorer mutations through this local server, including reference checks.
+		let writeTail: Promise<unknown> = Promise.resolve();
+		const dispatch = async (request: Request, url: URL) => {
+			for (const handler of routes) {
+				const response = await handler(request, url);
+				if (response) return response;
+			}
+			return undefined;
+		};
 		const server = Bun.serve({
 			hostname: "127.0.0.1",
 			port: options.port ?? Number(process.env.EVAL_PORT ?? 3130),
@@ -129,10 +145,15 @@ export async function createEvalServer(
 						!request.headers.get("content-type")?.startsWith("application/json")
 					)
 						return json({ error: "请求须为 application/json" }, 415);
-					for (const routeHandler of routes) {
-						const response = await routeHandler(request, url);
-						if (response) return response;
-					}
+					const serialize =
+						method !== "GET" &&
+						/^\/api\/(cases|modules|llm-scorers|import|transfer)/.test(route);
+					const work = serialize
+						? writeTail.then(() => dispatch(request, url))
+						: dispatch(request, url);
+					if (serialize) writeTail = work.catch(() => {});
+					const response = await work;
+					if (response) return response;
 					return json({ error: "接口不存在" }, 404);
 				} catch (error) {
 					const status =

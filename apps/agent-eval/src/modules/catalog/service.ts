@@ -19,6 +19,7 @@ export class CatalogService {
 		readonly catalog: CatalogRepository,
 		private verifiers: VerifierRepository,
 		private imports: SuiteImportParser,
+		private scorers?: import("../judging/scorers.js").Scorers,
 	) {}
 	private async writeInput(body: {
 		defaults: EvalDefaults;
@@ -35,6 +36,7 @@ export class CatalogService {
 	async create(body: any) {
 		if (!body.moduleId) throw new Error("缺少目标模块");
 		const suite = await this.writeInput(body);
+		await this.scorers?.validateBindings(suite.cases[0]);
 		return this.catalog.createCase(
 			body.moduleId,
 			suite.defaults,
@@ -43,6 +45,10 @@ export class CatalogService {
 	}
 	async update(id: string, body: any) {
 		const suite = await this.writeInput(body);
+		await this.scorers?.validateBindings(
+			suite.cases[0],
+			(await this.catalog.getCase(id))?.definition,
+		);
 		return this.catalog.updateCase(
 			id,
 			body.revision,
@@ -69,6 +75,9 @@ export class CatalogService {
 		);
 		for (const definition of suite.cases)
 			validateWorkspacePaths(definition, suite.defaults);
+		if (apply)
+			for (const definition of suite.cases)
+				await this.scorers?.validateBindings(definition, undefined, true);
 		if (apply)
 			return this.catalog.importCases(body.moduleId, suite, body.policy);
 		const existing = (await this.catalog.snapshot()).cases.filter(

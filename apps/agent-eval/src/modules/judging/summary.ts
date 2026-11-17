@@ -1,7 +1,36 @@
 import { latestAttempts, type RunItem } from "../../contracts/catalog.js";
-import type { JudgeResult } from "./types.js";
+import { judgeBindings, judgeResults } from "./bindings.js";
 export function judgeSummary(items: RunItem[]) {
-	const current = latestAttempts(items).filter(
+	const expand = (items: RunItem[]) =>
+		items.flatMap((item) =>
+			judgeBindings(item.snapshot.definition).map((b) => ({
+				...item,
+				id: `${item.id}:${b.bindingId}`,
+				judgeGroupKey: JSON.stringify([
+					b.scorerId,
+					b.sourceRevision,
+					b.config.model,
+					b.config.rubric,
+					b.config.targets,
+					b.config.passScore,
+					b.config.criteria,
+				]),
+				scorerName: `${b.name}${b.sourceRevision ? ` · v${b.sourceRevision}` : ""}`,
+				snapshot: {
+					...item.snapshot,
+					definition: { ...item.snapshot.definition, llmJudge: b.config },
+				},
+				result: item.result
+					? {
+							...item.result,
+							llmJudge: judgeResults(item.result).find(
+								(s) => s.bindingId === b.bindingId,
+							),
+						}
+					: undefined,
+			})),
+		);
+	const current = expand(latestAttempts(items)).filter(
 		(i) => i.snapshot.definition.llmJudge?.enabled,
 	);
 	const groups = new Map<
@@ -16,7 +45,7 @@ export function judgeSummary(items: RunItem[]) {
 			(item as RunItem & { judgeGroupKey?: string }).judgeGroupKey ??
 			JSON.stringify([config.model, config.rubric ?? ""]);
 		const g = groups.get(key) ?? {
-			model: `${config.model?.providerId} / ${config.model?.modelId}`,
+			model: `${item.scorerName} · ${config.model?.providerId} / ${config.model?.modelId}`,
 			rubric: config.rubric ?? "默认评分标准",
 			scored: 0,
 			sum: 0,
@@ -25,9 +54,9 @@ export function judgeSummary(items: RunItem[]) {
 		g.sum += score.score;
 		groups.set(key, g);
 	}
-	const scores = items
+	const scores = expand(items)
 		.map((i) => i.result?.llmJudge)
-		.filter((s): s is JudgeResult => !!s);
+		.filter((s) => s !== undefined);
 	const known =
 		scores.length > 0 && scores.every((s) => s.usage.totalCost !== undefined);
 	return {
@@ -37,7 +66,9 @@ export function judgeSummary(items: RunItem[]) {
 		errors: current.filter((i) => i.result?.llmJudge?.status === "error")
 			.length,
 		insufficient: current.filter(
-			(i) => i.result?.llmJudge?.status === "insufficient",
+			(i) =>
+				i.result?.llmJudge?.status === "insufficient" ||
+				i.result?.llmJudge?.criteriaOutcome === "insufficient",
 		).length,
 		unscored: current.filter((i) => i.result?.llmJudge?.status !== "scored")
 			.length,

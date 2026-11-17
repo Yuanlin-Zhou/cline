@@ -134,7 +134,7 @@ body {
 .case-filters > .ant-select,
 .react-filters > .ant-select {
 	flex: 1 1 150px;
-	width: auto !important;
+	width: auto;
 }
 .ResultFilters > .ant-input,
 .case-filters > .ant-input,
@@ -144,7 +144,7 @@ body {
 }
 .react-row > .ant-select {
 	flex: 1 1 180px;
-	width: auto !important;
+	width: auto;
 }
 .ant-btn.eval-tag-remove {
 	height: 20px;
@@ -179,6 +179,77 @@ body {
 	.react-filters > .ant-select,
 	.react-filters > .ant-input {
 		flex: none;
-		width: 100% !important;
+		width: 100%;
 	}
 }
+
+/* The tab navigation occupies its own row; both content columns start below it. */
+.CaseEditor {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	column-gap: 24px;
+	row-gap: 0;
+	align-items: start;
+}
+.CaseEditor-form,
+.CaseEditor-form > .ant-tabs {
+	display: contents;
+}
+.CaseEditor-form > .ant-tabs > .ant-tabs-nav {
+	grid-column: 1;
+	grid-row: 1;
+	margin-bottom: 16px;
+}
+.CaseEditor-form > .ant-tabs > .ant-tabs-body-holder {
+	grid-column: 1;
+	grid-row: 2;
+	min-width: 0;
+}
+.CaseEditor-results {
+	grid-column: 2;
+	grid-row: 2;
+	min-width: 0;
+}
+.Conversation-list {
+	display: grid;
+	gap: 16px;
+	margin: 16px 0;
+}
+.Conversation-blocks {
+	display: grid;
+	gap: 16px;
+}
+.Conversation-content {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	margin: 0;
+	max-height: 320px;
+	overflow: auto;
+}
+.Conversation-block-title {
+	margin-bottom: 8px;
+}
+.Conversation-code {
+	padding: 12px;
+	background: #f6f8fa;
+	border: 1px solid #e5e7eb;
+	border-radius: 8px;
+}
+
+.JudgeEditor .ant-card-body > .ant-btn {
+	margin-right: 8px;
+	margin-bottom: 8px;
+}
+.JudgeEditor .ant-card-body > .ant-collapse {
+	margin-top: 12px;
+}
+
+.Conversation-content + .ant-btn,
+.Conversation-content + .ant-collapse {
+	margin-top: 8px;
+}
+
+.JudgeCriteria { margin:16px 0; }
+.JudgeCriteria > .ant-card { margin-bottom:12px; }
+.JudgeCriteriaResults { margin:16px 0; }
+.JudgeCriteriaResults .ant-table-cell { overflow-wrap:anywhere; }

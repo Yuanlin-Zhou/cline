@@ -1,13 +1,14 @@
 import { parseGrading } from "../modules/grading/schema.js";
+import { parseJudgeBindings } from "../modules/judging/bindings.js";
 import { parseJudgeConfig } from "../modules/judging/config.js";
 import { parseBadCase, parseImportSource } from "./case-origin.js";
 import type {
-	FullTaskRuntime,
 	EvalAssertions,
 	EvalCase,
 	EvalDefaults,
 	EvalMessage,
 	EvalSuite,
+	FullTaskRuntime,
 	ToolMode,
 } from "./evaluation.js";
 import { parseFunctionCall } from "./function-call-config.js";
@@ -243,6 +244,11 @@ function parseCase(value: unknown, index: number): EvalCase {
 				? undefined
 				: parseToolMode(value.tools, `${path}.tools`),
 		assertions: parseAssertions(value.assertions, `${path}.assertions`),
+		llmJudges: parseJudgeBindings(
+			value.llmJudges,
+			value.llmJudge,
+			String(value.replayMode ?? "single-turn"),
+		),
 		llmJudge: parseJudgeConfig(
 			value.llmJudge,
 			String(value.replayMode ?? "single-turn"),

@@ -1,23 +1,23 @@
 import {
 	latestAttempts,
-	summarize,
 	type Run,
+	summarize,
 } from "../../contracts/catalog.js";
-import { caseSummary } from "../../modules/catalog/summary.js";
 import { BATCH_BYTE_LIMIT } from "../../modules/catalog/batch-conversations.js";
 import { CatalogError } from "../../modules/catalog/repository.js";
 import { moduleDeletion } from "../../modules/catalog/resource-management.js";
 import { CatalogService } from "../../modules/catalog/service.js";
+import { caseSummary } from "../../modules/catalog/summary.js";
 import { judgeSummary } from "../../modules/judging/summary.js";
-import { readJsonBody } from "../http/json-body.js";
-
 import type { ApiContext } from "../context.js";
 import { json } from "../http/helpers.js";
+import { readJsonBody } from "../http/json-body.js";
 export function catalogRoutes(context: ApiContext) {
 	const application = new CatalogService(
 		context.catalog,
 		context.verifierRepository,
 		context.store,
+		context.scorers,
 	);
 	const { store, catalog, verifierRepository } = context;
 	const catalogSummaries = async () =>

@@ -11,7 +11,9 @@ type Item = {
 	result?: EvalCaseResult;
 };
 const baseStatus = (item: Item) =>
-	item.result?.llmJudge?.baseStatus ?? item.status;
+	item.result?.llmJudges?.[0]?.baseStatus ??
+	item.result?.llmJudge?.baseStatus ??
+	item.status;
 const fraction = (numerator: number, denominator: number) => ({
 	numerator,
 	denominator,

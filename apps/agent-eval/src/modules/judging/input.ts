@@ -3,6 +3,10 @@ import type { EvidenceManifest } from "../grading/types.js";
 import { frozenValidationInput } from "../grading/validation-context.js";
 import type { JudgeConfig, JudgeInput, JudgeSource } from "./types.js";
 export const JUDGE_PROMPT_VERSION = "reference-judge-v1";
+export const judgePromptVersion = (config: { criteria?: unknown[] }) =>
+	config.criteria?.length
+		? "reference-judge-criteria-v2"
+		: JUDGE_PROMPT_VERSION;
 export class JudgeInputError extends Error {
 	constructor(
 		message: string,
@@ -137,7 +141,8 @@ export async function buildJudgeInput(
 			"产物归档不完整；仅评选定的已保存文件",
 		);
 	const input: JudgeInput = {
-		promptVersion: JUDGE_PROMPT_VERSION,
+		promptVersion: judgePromptVersion(config),
+		...(config.criteria?.length ? { criteria: config.criteria } : {}),
 		task: {
 			prompt: ctx.case.prompt,
 			history: ctx.case.history,

@@ -1,10 +1,11 @@
 import {
 	latestAttempts,
-	summarize,
 	type RunDetail,
 	type RunItem,
+	summarize,
 } from "../../contracts/catalog.js";
 import { gradingSummary } from "../grading/summary.js";
+import { judgeResults } from "../judging/bindings.js";
 import { judgeSummary } from "../judging/summary.js";
 
 const judged = (item: RunItem) =>
@@ -151,7 +152,7 @@ export function repeatReportMarkdown(
 	report = buildRepeatReport(run),
 ): string {
 	const escapeMarkdown = (value: string) =>
-		value.replace(/[\\`*_{}\[\]()<>#!|]/g, "\\$&").replace(/[\r\n]+/g, " ");
+		value.replace(/[\\`*_{}[\]()<>#!|]/g, "\\$&").replace(/[\r\n]+/g, " ");
 	const rate = (value: number | null) =>
 		value === null ? "—" : `${(value * 100).toFixed(1)}%`;
 	const status = {
@@ -246,10 +247,9 @@ export function repeatReportMarkdown(
 			"",
 		);
 		for (const item of latestAttempts(run.items)) {
-			const j = item.result?.llmJudge;
-			if (j)
+			for (const j of judgeResults(item.result))
 				lines.push(
-					`- ${escapeMarkdown(item.snapshot.definition.id)} · 第 ${item.round ?? 1} 轮：${j.score === null ? j.status : j.score + "/100"}；${escapeMarkdown(j.rationale)}`,
+					`- ${escapeMarkdown(item.snapshot.definition.id)} · ${escapeMarkdown(j.name)} · 第 ${item.round ?? 1} 轮：${j.score === null ? j.status : `${j.score}/100`}；${escapeMarkdown(j.rationale)}`,
 				);
 		}
 	}

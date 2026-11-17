@@ -1,9 +1,7 @@
-import { CORE_BUILD_VERSION } from "@cline/core";
-import { resolveFullTaskPrompt } from "./full-task-runtime.js";
-import { createHash } from "node:crypto";
-import type { ToolPolicy } from "@cline/sdk";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
+import { CORE_BUILD_VERSION } from "@cline/core";
+import type { ToolPolicy } from "@cline/sdk";
 import type {
 	CliOverrides,
 	EvalCase,
@@ -13,11 +11,13 @@ import type {
 	ToolMode,
 } from "../../contracts/evaluation.js";
 import { replayConfig } from "../../contracts/replay.js";
+import { judgeBindings } from "../../modules/judging/bindings.js";
 import { evaluateAssertions } from "../grading/assertions.js";
 import { runIsolated } from "../grading/run.js";
 import { gradingSummary } from "../grading/summary.js";
 import { preflightJudge } from "../judging/engine.js";
 import { judgeSummary } from "../judging/summary.js";
+import { resolveFullTaskPrompt } from "./full-task-runtime.js";
 import { preflightFunctionCall, runFunctionCall } from "./function-call.js";
 import { prepareRequestHeaders } from "./request-headers.js";
 import { createEvaluationRuntime, type EvaluationRuntime } from "./runtime.js";
@@ -145,7 +145,7 @@ async function runCase(input: {
 		if (resolved) {
 			runtimeRecord = {
 				version: 1,
-				profile: resolved.profile.promptPreset + "-v1",
+				profile: `${resolved.profile.promptPreset}-v1`,
 				mode: runtimeMode,
 				cwd,
 				providerId: overrides.providerId ?? defaults.providerId,
@@ -334,7 +334,10 @@ export async function runEvalSuite(input: {
 	const suiteDirectory = path.dirname(suitePath);
 	resolveApiKey(overrides.apiKeyEnv ?? suite.defaults.apiKeyEnv);
 	if (!input.executionOnly)
-		for (const c of suite.cases) preflightJudge(c.llmJudge);
+		for (const c of suite.cases)
+			judgeBindings(c).forEach((b) => {
+				preflightJudge(b.config);
+			});
 	for (const definition of suite.cases)
 		preflightFunctionCall(definition, {
 			...suite.defaults,
@@ -345,7 +348,7 @@ export async function runEvalSuite(input: {
 	const shouldIsolate = (c: EvalCase) =>
 		!input.executionOnly &&
 		(!!c.grading ||
-			!!c.llmJudge?.enabled ||
+			judgeBindings(c).some((b) => b.config.enabled) ||
 			(c.replayMode === "full-task" &&
 				!!(c.workspace ?? suite.defaults.workspace)));
 	const cline = suite.cases.some(
@@ -480,7 +483,10 @@ export async function runEvalSuite(input: {
 			failed: results.filter((result) =>
 				suite.cases.some(
 					(c) =>
-						c.grading || (c.llmJudge?.enabled && c.llmJudge.affectsOutcome),
+						c.grading ||
+						judgeBindings(c).some(
+							(b) => b.config.enabled && b.config.affectsOutcome,
+						),
 				)
 					? result.status === "failed"
 					: result.status !== "passed",

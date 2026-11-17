@@ -13,6 +13,7 @@ import {
 	JsonInput,
 	Text,
 } from "../../components/ui";
+import { CriteriaEditor } from "./criteria";
 
 export function JudgeModelEditor({
 	value,
@@ -74,10 +75,12 @@ export function JudgeEditor({
 	value,
 	onChange,
 	mode,
+	template = false,
 }: {
 	value?: JudgeConfig;
 	onChange: (value: JudgeConfig | undefined) => void;
 	mode?: string;
+	template?: boolean;
 }) {
 	const [stored, setStored] = useState(value ?? judgeDefaults());
 	const config = value ?? stored;
@@ -88,22 +91,26 @@ export function JudgeEditor({
 	const set = <K extends keyof JudgeConfig>(key: K, next: JudgeConfig[K]) =>
 		change({ ...config, [key]: next });
 	return (
-		<Box title="LLM 评分">
-			<Check
-				checked={value?.enabled}
-				onChange={(enabled) => change({ ...config, enabled })}
-			>
-				启用 LLM Judge
-			</Check>
-			{value?.enabled && (
+		<Box title="LLM 评分" className="JudgeEditor">
+			{!template && (
+				<Check
+					checked={value?.enabled}
+					onChange={(enabled) => change({ ...config, enabled })}
+				>
+					启用 LLM Judge
+				</Check>
+			)}
+			{(template || value?.enabled) && (
 				<>
-					<Field label="参考答案">
-						<Text
-							multiline
-							value={config.referenceAnswer}
-							onChange={(v) => set("referenceAnswer", v)}
-						/>
-					</Field>
+					{!template && (
+						<Field label="参考答案">
+							<Text
+								multiline
+								value={config.referenceAnswer}
+								onChange={(v) => set("referenceAnswer", v)}
+							/>
+						</Field>
+					)}
 					<Field label="评审内容">
 						{(["result", "trajectory"] as const).map((target) => (
 							<Check
@@ -122,6 +129,12 @@ export function JudgeEditor({
 							</Check>
 						))}
 					</Field>
+					<CriteriaEditor
+						value={config.criteria ?? []}
+						onChange={(criteria) =>
+							set("criteria", criteria.length ? criteria : undefined)
+						}
+					/>
 					<Field label="评分标准（可选）">
 						<Text
 							multiline
@@ -164,7 +177,7 @@ export function JudgeEditor({
 					>
 						影响通过结果
 					</Check>
-					{config.affectsOutcome && (
+					{config.affectsOutcome && !config.criteria?.length && (
 						<Field label="及格分">
 							<Text
 								type="number"
@@ -191,7 +204,7 @@ export function JudgeEditor({
 								onChange={(v) => set("maxInputBytes", Number(v))}
 							/>
 						</Field>
-						{mode === "full-task" && (
+						{!template && mode === "full-task" && (
 							<Field label="归档产物文件（每行一个相对路径）">
 								<Text
 									multiline

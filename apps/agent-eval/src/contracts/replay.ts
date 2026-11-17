@@ -193,7 +193,7 @@ export const IMPORT_FIELDS: Array<[string, string, string, string]> = [
 		"DEEPSEEK_API_KEY / https://api.deepseek.com",
 	],
 	[
-		"llmJudge",
+		"llmJudge / llmJudges",
 		"object · 可选",
 		"参考答案评分：自选结果/轨迹，独立评审模型；默认只评分",
 		'{"enabled":true,"referenceAnswer":"参考答案","targets":["result"],"model":{"providerId":"openai-compatible","modelId":"Judge 模型","baseUrl":"https://服务地址/v1","apiKeyEnv":"JUDGE_API_KEY"}}',

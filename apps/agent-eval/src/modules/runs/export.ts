@@ -1,9 +1,10 @@
 import {
 	latestAttempts,
-	summarize,
 	type RunDetail,
+	summarize,
 } from "../../contracts/catalog.js";
 import { gradingSummary } from "../grading/summary.js";
+import { judgeResults } from "../judging/bindings.js";
 import { judgeSummary } from "../judging/summary.js";
 import { buildRepeatReport } from "./repeat-report.js";
 
@@ -69,57 +70,81 @@ export function runCsv(run: RunDetail) {
 			"judge_output_tokens",
 			"judge_cost",
 			"judge_duration_ms",
+			"judge_binding_id",
+			"judge_name",
+			"judge_source_id",
+			"judge_source_revision",
+			"judge_criteria_outcome",
+			"judge_criteria_results",
 		],
-		...run.items.map((i) => [
-			i.moduleName,
-			i.snapshot.definition.id,
-			i.snapshot.revision,
-			i.snapshot.definition.replayMode ?? "single-turn",
-			i.snapshot.defaults.modelId,
-			i.status,
-			i.result?.durationMs,
-			(i.result?.usage.inputTokens ?? 0) + (i.result?.usage.outputTokens ?? 0),
-			i.result?.usage.totalCost ?? "",
-			i.error ?? i.result?.error ?? "",
-			i.round ?? 1,
-			i.id,
-			i.result?.text ?? i.text,
-			i.result?.assertions
-				.filter((a) => !a.passed)
-				.map((a) => a.message)
-				.join("; "),
-			i.result?.sessionId,
-			i.snapshot.definition.grading ? "task" : "legacy-text",
-			i.result?.grading?.verdict,
-			i.result?.grading?.status,
-			i.result?.grading?.results
-				.filter((r) => r.status === "fail")
-				.map((r) => r.id)
-				.join("; "),
-			i.result?.evidence?.refs.map((r) => r.id).join("; "),
-			i.result?.grading?.ruleHash,
-			i.rootItemId ?? i.id,
-			i.attempt ?? 0,
-			i.previousItemId ?? "",
-			latestIds.has(i.id),
-			i.result?.llmJudge?.score,
-			i.result?.llmJudge?.status,
-			i.result?.llmJudge?.targets.join(";"),
-			i.result?.llmJudge?.passScore,
-			i.result?.llmJudge?.affectsOutcome,
-			i.result?.llmJudge?.meetsThreshold,
-			i.result?.llmJudge?.rationale,
-			i.result?.llmJudge?.model?.providerId,
-			i.result?.llmJudge?.model?.modelId,
-			i.result?.llmJudge?.id,
-			i.result?.llmJudge?.inputHash,
-			i.result?.llmJudge?.configHash,
-			i.result?.llmJudge?.promptVersion,
-			i.result?.llmJudge?.usage.inputTokens,
-			i.result?.llmJudge?.usage.outputTokens,
-			i.result?.llmJudge?.usage.totalCost,
-			i.result?.llmJudge?.durationMs,
-		]),
+		...run.items.flatMap((original) => {
+			const scores = judgeResults(original.result);
+			return (scores.length ? scores : [undefined]).map((score) => {
+				const i = {
+					...original,
+					result: original.result
+						? { ...original.result, llmJudge: score }
+						: undefined,
+				};
+				return [
+					i.moduleName,
+					i.snapshot.definition.id,
+					i.snapshot.revision,
+					i.snapshot.definition.replayMode ?? "single-turn",
+					i.snapshot.defaults.modelId,
+					i.status,
+					i.result?.durationMs,
+					(i.result?.usage.inputTokens ?? 0) +
+						(i.result?.usage.outputTokens ?? 0),
+					i.result?.usage.totalCost ?? "",
+					i.error ?? i.result?.error ?? "",
+					i.round ?? 1,
+					i.id,
+					i.result?.text ?? i.text,
+					i.result?.assertions
+						.filter((a) => !a.passed)
+						.map((a) => a.message)
+						.join("; "),
+					i.result?.sessionId,
+					i.snapshot.definition.grading ? "task" : "legacy-text",
+					i.result?.grading?.verdict,
+					i.result?.grading?.status,
+					i.result?.grading?.results
+						.filter((r) => r.status === "fail")
+						.map((r) => r.id)
+						.join("; "),
+					i.result?.evidence?.refs.map((r) => r.id).join("; "),
+					i.result?.grading?.ruleHash,
+					i.rootItemId ?? i.id,
+					i.attempt ?? 0,
+					i.previousItemId ?? "",
+					latestIds.has(i.id),
+					i.result?.llmJudge?.score,
+					i.result?.llmJudge?.status,
+					i.result?.llmJudge?.targets.join(";"),
+					i.result?.llmJudge?.passScore,
+					i.result?.llmJudge?.affectsOutcome,
+					i.result?.llmJudge?.meetsThreshold,
+					i.result?.llmJudge?.rationale,
+					i.result?.llmJudge?.model?.providerId,
+					i.result?.llmJudge?.model?.modelId,
+					i.result?.llmJudge?.id,
+					i.result?.llmJudge?.inputHash,
+					i.result?.llmJudge?.configHash,
+					i.result?.llmJudge?.promptVersion,
+					i.result?.llmJudge?.usage.inputTokens,
+					i.result?.llmJudge?.usage.outputTokens,
+					i.result?.llmJudge?.usage.totalCost,
+					i.result?.llmJudge?.durationMs,
+					score?.bindingId,
+					score?.name,
+					score?.scorerId,
+					score?.sourceRevision,
+					score?.criteriaOutcome,
+					score?.criteriaResults ? JSON.stringify(score.criteriaResults) : "",
+				];
+			});
+		}),
 	];
 	return `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}`;
 }

@@ -115,7 +115,7 @@ test("React drafts, native history conversion, JSON errors and real function-cal
 		.getByLabel("原生 Function Call 历史", { exact: true })
 		.fill(JSON.stringify(saved.definition.functionCall.history));
 	await page.getByRole("button", { name: "保存", exact: true }).click();
-	await page.setViewportSize({ width: 390, height: 844 });
+	await page.setViewportSize({ width: 1280, height: 900 });
 	expect(
 		await page.evaluate(
 			() => document.documentElement.scrollWidth <= innerWidth,
@@ -123,7 +123,7 @@ test("React drafts, native history conversion, JSON errors and real function-cal
 	).toBe(true);
 	await page.screenshot({
 		animations: "disabled",
-		path: testInfo.outputPath("case-mobile.png"),
+		path: testInfo.outputPath("case-desktop-1280.png"),
 		fullPage: true,
 	});
 	await page.setViewportSize({ width: 1440, height: 900 });
@@ -533,7 +533,7 @@ test("case workbench keeps legacy tabs, permanent result/history and scoped conf
 			.locator(".CaseEditor-results")
 			.getByText("Use Bun. 已完成验证。", { exact: true }),
 	).toBeVisible({ timeout: 60000 });
-	for (const width of [1440, 390]) {
+	for (const width of [1440, 1280]) {
 		await page.setViewportSize({ width, height: 900 });
 		await expect
 			.poll(() =>
@@ -579,7 +579,7 @@ test("full-task Act configuration persists and actual runtime record is inspecta
 		page.getByLabel("自动压缩上下文", { exact: true }),
 	).not.toBeChecked();
 	await expect(page.getByText("Basic", { exact: true })).toBeVisible();
-	for (const width of [1440, 390]) {
+	for (const width of [1440, 1280]) {
 		await page.setViewportSize({ width, height: 900 });
 		await expect
 			.poll(() =>
@@ -676,6 +676,9 @@ test("Ant Design rule removal, Judge activation and saved configuration roundtri
 		.getByRole("button", { name: "移除全部验收检查", exact: true })
 		.click();
 	await page.getByRole("button", { name: /^LLM 评分/ }).click();
+	await page
+		.getByRole("button", { name: "添加独立评分配置", exact: true })
+		.click();
 	await expect(
 		page.getByLabel("启用 LLM Judge", { exact: true }),
 	).toBeChecked();
@@ -701,7 +704,7 @@ test("Ant Design rule removal, Judge activation and saved configuration roundtri
 		page.getByText("评分已停用，配置已保留", { exact: true }),
 	).toBeVisible();
 	await page.getByRole("button", { name: /^LLM 评分/ }).click();
-	for (const width of [1440, 390]) {
+	for (const width of [1440, 1280]) {
 		await page.setViewportSize({ width, height: 900 });
 		await expect
 			.poll(() =>
@@ -730,16 +733,14 @@ test("Ant Design rule removal, Judge activation and saved configuration roundtri
 	expect(saved.definition.assertions?.contains).toBeUndefined();
 	expect(saved.definition.grading).toBeUndefined();
 	expect(saved.definition.llmJudge).toBeUndefined();
+	expect(saved.definition.llmJudges).toBeUndefined();
 	await page.reload();
 	await page.getByRole("tab", { name: "判定规则", exact: true }).click();
 	await expect(page.getByLabel("参考答案", { exact: true })).toHaveCount(0);
 	expect(errors).toEqual([]);
 });
 
-test("Ant Design desktop and narrow-screen page review", async ({
-	page,
-	request,
-}, testInfo) => {
+test("Ant Design desktop page review", async ({ page, request }, testInfo) => {
 	const { module, item } = await seed(request, "Ant Design 全站复核");
 	const run = await send(request, "/api/runs", { caseIds: [item.id] });
 	const errors: string[] = [];
@@ -762,7 +763,7 @@ test("Ant Design desktop and narrow-screen page review", async ({
 			await expect(page.getByText("已完成", { exact: true })).toBeVisible({
 				timeout: 60000,
 			});
-		for (const width of [1440, 390]) {
+		for (const width of [1440, 1280]) {
 			await page.setViewportSize({ width, height: 900 });
 			await expect
 				.poll(
@@ -788,4 +789,400 @@ test("Ant Design desktop and narrow-screen page review", async ({
 		}
 	}
 	expect(errors).toEqual([]);
+});
+
+test("DevAgent desktop alignment, scorer management and multiple independent scores", async ({
+	page,
+	request,
+}, testInfo) => {
+	const { item } = await seed(request, "多评分器");
+	await page.goto("/#/scorers");
+	await expect(
+		page.getByRole("link", { name: "DevAgent / Agent Eval" }),
+	).toBeVisible();
+	await page.getByRole("button", { name: "新增评分器", exact: true }).click();
+	await page.getByLabel("评分器名称", { exact: true }).fill("正确性评分器");
+	await page
+		.getByLabel("评分器说明", { exact: true })
+		.fill("检查结果是否符合参考答案");
+	await page
+		.getByLabel("评分标准（可选）", { exact: true })
+		.fill("判断正确性，使用 0–100 分");
+	await page.getByLabel("独立配置评审模型", { exact: true }).check();
+	await page.getByLabel("Judge 模型", { exact: true }).fill("ui-judge");
+	await page
+		.getByLabel("Judge Base URL", { exact: true })
+		.fill(defaults.baseUrl);
+	await page
+		.getByLabel("Judge 密钥环境变量名", { exact: true })
+		.fill("EVAL_BROWSER_KEY");
+	await page.screenshot({
+		path: testInfo.outputPath("scorer-form-1440.png"),
+		fullPage: true,
+		animations: "disabled",
+	});
+	await page.getByRole("button", { name: "保存评分器", exact: true }).click();
+	await expect(page.getByRole("dialog")).toHaveCount(0);
+	const all = await (await request.get("/api/llm-scorers")).json();
+	const first = all.find((s: any) => s.name === "正确性评分器");
+	expect(first).toBeTruthy();
+	const second = await send(request, "/api/llm-scorers", {
+		name: "完整性评分器",
+		description: "检查任务要求覆盖",
+		enabled: true,
+		config: { ...first.config, rubric: "检查完整性" },
+	});
+	await page.reload();
+	await expect(
+		page.getByRole("cell", { name: "完整性评分器", exact: true }),
+	).toBeVisible();
+	await page.screenshot({
+		path: testInfo.outputPath("scorers-1440.png"),
+		fullPage: true,
+		animations: "disabled",
+	});
+	await page.goto(`/#/case/${item.id}`);
+	await expect(
+		page.getByRole("heading", { name: "基本信息", exact: true }),
+	).toBeVisible();
+	const left = page.locator(".CaseEditor-form .ant-card:visible").first();
+	const right = page.locator(".CaseEditor-results > .ant-card").first();
+	for (const width of [1280, 1440, 1920]) {
+		await page.setViewportSize({ width, height: 1000 });
+		await expect
+			.poll(async () =>
+				Math.abs(
+					((await left.boundingBox())?.y ?? -10000) -
+						((await right.boundingBox())?.y ?? 10000),
+				),
+			)
+			.toBeLessThan(2);
+	}
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	await page.screenshot({
+		path: testInfo.outputPath("alignment-1440.png"),
+		fullPage: true,
+		animations: "disabled",
+	});
+	await page.getByRole("tab", { name: "判定规则", exact: true }).click();
+	await page.getByRole("button", { name: /^LLM 评分/ }).click();
+	const select = page.getByRole("combobox", {
+		name: "选择 LLM 评分器",
+		exact: true,
+	});
+	await select.click();
+	await page
+		.getByRole("option", { name: "正确性评分器 · v1", exact: true })
+		.click();
+	await page
+		.getByRole("option", { name: "完整性评分器 · v1", exact: true })
+		.click();
+	await page.keyboard.press("Escape");
+	await page.getByLabel("参考答案", { exact: true }).nth(0).fill("Use Bun");
+	await page
+		.getByLabel("参考答案", { exact: true })
+		.nth(1)
+		.fill("Use Bun. 已完成验证。");
+	await page.getByRole("button", { name: "保存", exact: true }).click();
+	await expect(page.getByText(/版本 v2 · 已保存/)).toBeVisible();
+	const saved = await (await request.get(`/api/cases/${item.id}`)).json();
+	expect(saved.definition.llmJudges).toHaveLength(2);
+	expect(saved.definition.llmJudge).toBeUndefined();
+	await send(
+		request,
+		`/api/llm-scorers/${first.id}`,
+		{ ...first, config: { ...first.config, rubric: "更新标准" } },
+		"PUT",
+	);
+	await page.reload();
+	await page.getByRole("tab", { name: "判定规则", exact: true }).click();
+	await expect(
+		page.getByRole("button", { name: "有新版本 · 更新" }),
+	).toBeVisible();
+	await expect(
+		page.getByLabel("评分标准（可选）", { exact: true }).nth(0),
+	).toHaveValue("判断正确性，使用 0–100 分");
+	await page.screenshot({
+		path: testInfo.outputPath("bindings-1440.png"),
+		fullPage: true,
+		animations: "disabled",
+	});
+	const run = await send(request, "/api/runs", { caseIds: [item.id] });
+	let detail: any;
+	await expect
+		.poll(
+			async () => {
+				detail = await (await request.get(`/api/runs/${run.id}`)).json();
+				return detail.items[0].status;
+			},
+			{ timeout: 60000 },
+		)
+		.toBe("passed");
+	const full = await (
+		await request.get(`/api/runs/${run.id}/items/${detail.items[0].id}`)
+	).json();
+	expect(full.result.llmJudges.map((s: any) => s.score)).toEqual([90, 90]);
+	expect(detail.judgeSummary.scored).toBe(2);
+	const path = `/api/runs/${run.id}/items/${full.id}/judge-scores/official-input`;
+	expect((await request.get(path)).ok()).toBeFalsy();
+	expect(
+		(
+			await request.get(
+				`${path}?bindingId=${full.result.llmJudges[1].bindingId}`,
+			)
+		).ok(),
+	).toBeTruthy();
+	await page.goto(`/#/run/${run.id}`);
+	await expect(page.getByText("LLM 已评分 2/2")).toBeVisible();
+	await page
+		.getByRole("button", { name: /多评分器-案例/ })
+		.first()
+		.click();
+	await expect(
+		page.getByText("LLM 评分 · 正确性评分器 · 90", { exact: true }),
+	).toBeVisible();
+	await page.screenshot({
+		path: testInfo.outputPath("multi-results-1440.png"),
+		fullPage: true,
+		animations: "disabled",
+	});
+	await page.getByRole("tab", { name: "试验证 / 试评分", exact: true }).click();
+	const previewButtons = page.getByRole("button", {
+		name: "预览评分输入",
+		exact: true,
+	});
+	await expect(previewButtons).toHaveCount(2);
+	await previewButtons.nth(0).click();
+	await page
+		.getByRole("button", { name: "确认试评分", exact: true })
+		.nth(0)
+		.click();
+	await previewButtons.nth(1).click();
+	await page
+		.getByRole("button", { name: "确认试评分", exact: true })
+		.nth(1)
+		.click();
+	await expect
+		.poll(async () => {
+			const records = await (
+				await request.get(`/api/runs/${run.id}/items/${full.id}/judge-scores`)
+			).json();
+			return records.filter((r: any) => r.status === "completed" && r.binding)
+				.length;
+		})
+		.toBe(2);
+	await page.screenshot({
+		path: testInfo.outputPath("trial-scorers-1440.png"),
+		fullPage: true,
+		animations: "disabled",
+	});
+	const conversation = `**/api/runs/${run.id}/items/${full.id}/conversation?*`;
+	await page.route(conversation, (r) =>
+		r.fulfill({
+			json: {
+				notice: "已保存上下文可能包含压缩记录。",
+				total: 2,
+				messages: [
+					{
+						id: "1",
+						index: 0,
+						role: "user",
+						blocks: [
+							{
+								type: "text",
+								text: '<user_input mode="act">请分析仓库用途</user_input>',
+							},
+						],
+					},
+					{
+						id: "2",
+						index: 1,
+						role: "assistant",
+						blocks: [
+							{
+								type: "thinking",
+								text: JSON.stringify({
+									type: "thinking",
+									thinking: "正在分析已有会话记录。",
+								}),
+							},
+							{ type: "text", text: "我来分析仓库用途。\n先查看项目结构。" },
+							{
+								type: "tool_use",
+								toolName: "run_commands",
+								toolCallId: "call-1",
+								text: JSON.stringify(
+									{ commands: ["ls -la", "cat README.md"] },
+									null,
+									2,
+								),
+							},
+							{
+								type: "tool_result",
+								toolName: "run_commands",
+								toolCallId: "call-1",
+								text: `README.md\nsrc\n${"输出详情\n".repeat(80)}`,
+							},
+						],
+					},
+				],
+			},
+		}),
+	);
+	await page.getByRole("tab", { name: "会话与工具", exact: true }).click();
+	await expect(page.getByText("请分析仓库用途", { exact: true })).toBeVisible();
+	await expect(page.getByText("思考记录", { exact: true })).toBeVisible();
+	await expect(page.getByText("工具返回", { exact: true })).toBeVisible();
+	await page.screenshot({
+		path: testInfo.outputPath("conversation-1440.png"),
+		fullPage: true,
+		animations: "disabled",
+	});
+	const deletion = await request.delete(`/api/llm-scorers/${second.id}`, {
+		data: { revision: second.revision },
+	});
+	expect(deletion.status()).toBe(409);
+});
+
+test("criterion editor and formal/trial results show every verdict independently of score", async ({
+	page,
+	request,
+}, testInfo) => {
+	const { item } = await seed(request, "逐条评分验收");
+	await send(
+		request,
+		"/api/judge-settings",
+		{
+			...defaults,
+			modelId: "ui-judge",
+			tools: undefined,
+			maxIterations: undefined,
+			timeoutMs: undefined,
+		},
+		"PUT",
+	);
+	await page.goto("/#/scorers");
+	await page.getByRole("button", { name: "新增评分器", exact: true }).click();
+	await page.getByLabel("评分器名称", { exact: true }).fill("逐条质量检查");
+	for (const [i, name, standard] of [
+		[1, "准确性", "确认提到 Bun"],
+		[2, "完整性", "故意失败：要求给出验证命令"],
+		[3, "执行证据", "证据不足：需要实际测试日志"],
+	] as const) {
+		await page
+			.getByRole("button", { name: "添加评分条目", exact: true })
+			.click();
+		await page.getByLabel(`条目 ${i} 名称`, { exact: true }).fill(name);
+		await page.getByLabel(`条目 ${i} 判定标准`, { exact: true }).fill(standard);
+	}
+	await page.getByRole("button", { name: "移除条目 3", exact: true }).click();
+	await page.getByRole("button", { name: "取消", exact: true }).click();
+	await expect(page.getByLabel("条目 3 名称", { exact: true })).toHaveValue(
+		"执行证据",
+	);
+	await page
+		.getByRole("button", { name: "使用全局 Judge 配置", exact: true })
+		.click();
+	await page.getByLabel("影响通过结果", { exact: true }).check();
+	await expect(page.getByLabel("及格分", { exact: true })).toHaveCount(0);
+	await page
+		.locator(".JudgeCriteria h4")
+		.evaluate((el) => el.scrollIntoView({ block: "start" }));
+	await page.screenshot({
+		path: testInfo.outputPath("criteria-editor-1440.png"),
+		fullPage: true,
+		animations: "disabled",
+	});
+	await page.getByRole("button", { name: "保存评分器", exact: true }).click();
+	await expect(page.getByRole("dialog")).toHaveCount(0);
+	const scorer = (await (await request.get("/api/llm-scorers")).json()).find(
+		(s: any) => s.name === "逐条质量检查",
+	);
+	expect(scorer.config.criteria).toHaveLength(3);
+	const binding = {
+		bindingId: "criteria-review",
+		name: scorer.name,
+		scorerId: scorer.id,
+		sourceRevision: scorer.revision,
+		config: { ...scorer.config, referenceAnswer: "Use Bun. 已完成验证。" },
+	};
+	await send(
+		request,
+		`/api/cases/${item.id}`,
+		{
+			revision: item.revision,
+			defaults,
+			definition: { ...item.definition, llmJudges: [binding] },
+		},
+		"PUT",
+	);
+	const run = await send(request, "/api/runs", { caseIds: [item.id] });
+	let detail: any;
+	await expect
+		.poll(
+			async () => {
+				detail = await (await request.get(`/api/runs/${run.id}`)).json();
+				return detail.items[0].status;
+			},
+			{ timeout: 60000 },
+		)
+		.toBe("failed");
+	const full = await (
+		await request.get(`/api/runs/${run.id}/items/${detail.items[0].id}`)
+	).json();
+	const score = full.result.llmJudges[0];
+	expect(score.score).toBe(90);
+	expect(score.criteriaOutcome).toBe("fail");
+	expect(score.meetsThreshold).toBe(false);
+	expect(score.criteriaResults.map((c: any) => c.status)).toEqual([
+		"pass",
+		"fail",
+		"insufficient",
+	]);
+	expect(score.promptVersion).toBe("reference-judge-criteria-v2");
+	await page.goto(`/#/run/${run.id}`);
+	await page
+		.getByRole("button", { name: /逐条评分验收-案例/ })
+		.first()
+		.click();
+	const table = page.locator(".JudgeCriteriaResults:visible");
+	await expect(
+		table.getByRole("cell", { name: "准确性", exact: true }),
+	).toBeVisible();
+	await expect(table.getByText("不通过", { exact: true })).toBeVisible();
+	await expect(table.getByText("无法判定", { exact: true })).toBeVisible();
+	await table.locator(".ant-table-row-expand-icon").nth(1).click();
+	await expect(
+		table.getByText("故意失败：要求给出验证命令", { exact: false }),
+	).toBeVisible();
+	await page.screenshot({
+		path: testInfo.outputPath("criteria-result-1440.png"),
+		fullPage: true,
+		animations: "disabled",
+	});
+	await page.getByRole("tab", { name: "试验证 / 试评分", exact: true }).click();
+	await page.getByRole("button", { name: "预览评分输入", exact: true }).click();
+	await page.getByRole("button", { name: "确认试评分", exact: true }).click();
+	await expect
+		.poll(async () => {
+			const tasks = await (
+				await request.get(`/api/runs/${run.id}/items/${full.id}/judge-scores`)
+			).json();
+			return tasks[0]?.result?.criteriaResults?.length;
+		})
+		.toBe(3);
+	await expect(
+		page
+			.locator(".JudgeCriteriaResults:visible")
+			.getByText("不通过", { exact: true }),
+	).toBeVisible();
+	await page.screenshot({
+		path: testInfo.outputPath("criteria-trial-1440.png"),
+		fullPage: true,
+		animations: "disabled",
+	});
+	const after = await (
+		await request.get(`/api/runs/${run.id}/items/${full.id}`)
+	).json();
+	expect(after.result.llmJudges[0].id).toBe(score.id);
 });

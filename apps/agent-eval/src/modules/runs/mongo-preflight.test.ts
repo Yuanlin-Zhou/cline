@@ -1,11 +1,12 @@
 import { expect, test } from "bun:test";
-import type { Db, MongoClient } from "mongodb";
 import { readFile } from "node:fs/promises";
+import type { Db, MongoClient } from "mongodb";
 import { MongoCatalog } from "../../infrastructure/mongodb/catalog.js";
 import {
 	caseValidator,
 	moduleValidator,
 	prepareMongoCollections,
+	scorerValidator,
 } from "../../infrastructure/mongodb/schema.js";
 import {
 	MongoVerifiers,
@@ -103,11 +104,12 @@ test("explicit Mongo preparation creates or updates validators without accessing
 		},
 	} as unknown as Db;
 	await prepareMongoCollections(db, "cases", "modules", "scripts");
-	expect(creates).toHaveLength(3);
+	expect(creates).toHaveLength(4);
 	for (const [name, validator] of [
 		["cases", caseValidator],
 		["modules", moduleValidator],
 		["scripts", verifierValidator],
+		["agent_eval_llm_scorers", scorerValidator],
 	] as const)
 		expect(creates.find((c) => c.name === name)?.options).toEqual({
 			validator,
@@ -115,8 +117,8 @@ test("explicit Mongo preparation creates or updates validators without accessing
 			validationAction: "error",
 		});
 	await prepareMongoCollections(db, "cases", "modules", "scripts");
-	expect(creates).toHaveLength(3);
-	expect(updates).toHaveLength(3);
+	expect(creates).toHaveLength(4);
+	expect(updates).toHaveLength(4);
 	await expect(
 		prepareMongoCollections(db, "same", "same", "scripts"),
 	).rejects.toThrow("不能同名");
@@ -134,11 +136,12 @@ test("native Mongo commands keep complete validators with no custom index operat
 		const commands = [...text.matchAll(/db\.runCommand\(([\s\S]*?)\);/g)].map(
 			(match) => JSON.parse(match[1]),
 		);
-		expect(commands).toHaveLength(3);
+		expect(commands).toHaveLength(4);
 		expect(commands.map((command) => command.validator)).toEqual([
 			caseValidator,
 			moduleValidator,
 			verifierValidator,
+			scorerValidator,
 		]);
 		expect(
 			commands.map(
@@ -148,7 +151,8 @@ test("native Mongo commands keep complete validators with no custom index operat
 			"agent_eval_cases",
 			"agent_eval_modules",
 			"agent_eval_verifiers",
+			"agent_eval_llm_scorers",
 		]);
-		if (name === "rebuild") expect(text.match(/\.drop\(\);/g)).toHaveLength(3);
+		if (name === "rebuild") expect(text.match(/\.drop\(\);/g)).toHaveLength(4);
 	}
 });

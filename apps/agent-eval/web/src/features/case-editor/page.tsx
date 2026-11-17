@@ -18,6 +18,7 @@ import {
 } from "../../../../src/contracts/function-call-config";
 import { caseExample, REPLAY_MODES } from "../../../../src/contracts/replay";
 import { parseEvalSuite } from "../../../../src/contracts/schema";
+import { judgeBindings } from "../../../../src/modules/judging/bindings";
 import { message, send, useApi } from "../../api/client";
 import {
 	ActionLink,
@@ -47,10 +48,10 @@ import {
 } from "../../components/ui";
 import { useDraft } from "../../hooks/draft";
 import { TransferDialog } from "../catalog/page";
-import { JudgeEditor } from "../judging/editor";
 import { HistoryTrials } from "../results/history-trials";
 import { InlineItemInspector } from "../results/inspector";
 import { useRun } from "../runs/use-run";
+import { ScorerBindings } from "../scorers/bindings";
 import { ConfigEditor } from "../settings/config-editor";
 import { HistoryEditor } from "./history";
 import { RulesEditor } from "./rules";
@@ -538,14 +539,13 @@ function CaseForm({
 									caseId={record?.id}
 									judge={
 										<>
-											<JudgeEditor
-												value={definition.llmJudge}
-												onChange={(llmJudge) =>
-													setDefinition({ ...definition, llmJudge })
-												}
-												mode={mode}
+											<ScorerBindings
+												value={definition}
+												onChange={setDefinition}
 											/>
-											{definition.llmJudge?.enabled && (
+											{judgeBindings(definition).some(
+												(b) => b.config.enabled,
+											) && (
 												<Button onClick={() => setJudgeTrial(true)}>
 													试评分
 												</Button>
@@ -689,7 +689,7 @@ function CaseForm({
 			{judgeTrial && (
 				<HistoryTrials
 					caseId={record?.id}
-					judge={definition.llmJudge}
+					bindings={judgeBindings(definition)}
 					close={() => setJudgeTrial(false)}
 				/>
 			)}

@@ -68,6 +68,7 @@ export type EvalCase = HeaderConfig & {
 	badCase?: import("./case-origin.js").BadCase;
 	importSource?: import("./case-origin.js").ImportSource;
 	llmJudge?: import("../modules/judging/types.js").JudgeConfig;
+	llmJudges?: import("../modules/judging/bindings.js").JudgeBinding[];
 	id: string;
 	replayMode?: "single-turn" | "full-task" | "function-call";
 	functionCall?: import("./function-call-config.js").FunctionCallConfig;
@@ -108,6 +109,7 @@ export type AssertionResult = {
 export type EvalCaseResult = {
 	runtime?: ExecutionRuntimeRecord;
 	llmJudge?: import("../modules/judging/types.js").JudgeResult;
+	llmJudges?: import("../modules/judging/bindings.js").BoundJudgeResult[];
 	workspaceInfo?: import("./workspace.js").WorkspaceInfo;
 	functionCallResponse?: import("./function-call-response.js").FunctionCallResponse;
 	id: string;

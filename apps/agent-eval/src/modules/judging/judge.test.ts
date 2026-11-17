@@ -16,6 +16,7 @@ import {
 } from "./engine.js";
 import { buildJudgeInput } from "./input.js";
 import type { JudgeConfig } from "./types.js";
+
 const config = (extra: Partial<JudgeConfig> = {}): JudgeConfig =>
 	parseJudgeConfig({
 		enabled: true,
@@ -613,6 +614,84 @@ test(
 					if (previous === undefined) delete process.env.EVAL_DATA_DIR;
 					else process.env.EVAL_DATA_DIR = previous;
 				}
+			} finally {
+				api.server.stop(true);
+			}
+		}),
+	30000,
+);
+
+test(
+	"multiple judges share one execution, isolate reference input and retain independent results",
+	async () =>
+		temp(async (dir) => {
+			const api = mockJudge((body) =>
+				JSON.stringify(body).includes("reference-judge-v1")
+					? {
+							text: JSON.stringify({
+								status: "scored",
+								score: 65,
+								rationale: "部分正确",
+								evidence: [{ ref: "result.final_response" }],
+							}),
+						}
+					: { text: "ACTOR ONLY" },
+			);
+			try {
+				const make = (bindingId: string, passScore: number) => ({
+					bindingId,
+					name: bindingId,
+					config: config({
+						affectsOutcome: true,
+						passScore,
+						referenceAnswer: "PRIVATE MULTI REFERENCE",
+						model: {
+							providerId: "openai-compatible",
+							modelId: "gpt-4o-mini",
+							baseUrl: api.url,
+						},
+					}),
+				});
+				const result = await runIsolated({
+					definition: {
+						id: "multi",
+						prompt: "ACTOR TASK",
+						history: [],
+						replayMode: "function-call",
+						functionCall: { tools: ["read_files"] },
+						llmJudges: [make("one", 60), make("two", 80)],
+					},
+					defaults: {
+						providerId: "openai-compatible",
+						modelId: "gpt-4o-mini",
+						baseUrl: api.url,
+					},
+					directory: dir,
+				});
+				expect(result.status).toBe("failed");
+				expect(result.llmJudge).toBeUndefined();
+				expect(result.llmJudges).toHaveLength(2);
+				expect(result.llmJudges?.map((s) => s.meetsThreshold)).toEqual([
+					true,
+					false,
+				]);
+				expect(new Set(result.llmJudges?.map((s) => s.id)).size).toBe(2);
+				expect(api.requests).toHaveLength(3);
+				expect(JSON.stringify(api.requests[0])).not.toContain(
+					"PRIVATE MULTI REFERENCE",
+				);
+				expect(
+					await readFile(path.join(dir, "suite.json"), "utf8"),
+				).not.toContain("PRIVATE MULTI REFERENCE");
+				for (const score of result.llmJudges!)
+					expect(
+						JSON.parse(
+							await readFile(
+								path.join(dir, "judge", score.id, "input.json"),
+								"utf8",
+							),
+						).referenceAnswer,
+					).toBe("PRIVATE MULTI REFERENCE");
 			} finally {
 				api.server.stop(true);
 			}

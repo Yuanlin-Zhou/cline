@@ -1,19 +1,22 @@
 import { useState } from "react";
+import type { JudgeBinding } from "../../../../src/modules/judging/bindings";
 import type { JudgeConfig } from "../../../../src/modules/judging/types";
 import { useApi } from "../../api/client";
 import { DataState, Field, Modal, Select } from "../../components/ui";
-import { JudgeTrial } from "../judging/trial";
+import { MultiJudgeTrial } from "../judging/trial";
 import { VerifierTrial } from "../verifiers/trial";
 
 export function HistoryTrials({
 	caseId,
 	rule,
 	judge,
+	bindings,
 	close,
 }: {
 	caseId?: string;
 	rule?: any;
 	judge?: JudgeConfig;
+	bindings?: JudgeBinding[];
 	close: () => void;
 }) {
 	const runs = useApi<any[]>(`/api/cases/${caseId}/runs`, !!caseId);
@@ -68,11 +71,22 @@ export function HistoryTrials({
 								rule={rule}
 							/>
 						) : (
-							<JudgeTrial
+							<MultiJudgeTrial
 								key={selected}
 								runId={entry.run.id}
 								item={item.data}
-								initialConfig={judge}
+								bindings={
+									bindings ??
+									(judge
+										? [
+												{
+													bindingId: "legacy",
+													name: "原案例评分配置",
+													config: judge,
+												},
+											]
+										: undefined)
+								}
 							/>
 						))}
 				</DataState>

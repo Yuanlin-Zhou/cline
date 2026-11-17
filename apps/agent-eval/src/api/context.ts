@@ -7,6 +7,7 @@ import type { RunViews } from "../modules/runs/queries.js";
 import type { EvalQueue } from "../modules/runs/queue.js";
 export type ApiContext = {
 	store: EvalStore;
+	scorers: import("../modules/judging/scorers.js").Scorers;
 	catalog: CatalogRepository;
 	queue: EvalQueue;
 	views: RunViews;

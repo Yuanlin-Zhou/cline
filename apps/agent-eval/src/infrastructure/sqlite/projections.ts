@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import type { Database } from "bun:sqlite";
 import { createHash, randomUUID } from "node:crypto";
 import {
 	closeSync,
@@ -11,9 +11,11 @@ import {
 import path from "node:path";
 import type { RunItem, SavedCase } from "../../contracts/catalog.js";
 import type { CaseSummary, ItemSummary } from "../../contracts/projections.js";
+
 export type { CaseSummary, ItemSummary } from "../../contracts/projections.js";
 
 import { caseSummary } from "../../modules/catalog/summary.js";
+
 export { caseSummary } from "../../modules/catalog/summary.js";
 
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -23,6 +25,22 @@ export function itemSummary(item: RunItem, version: number): ItemSummary {
 		j = r?.llmJudge,
 		config = item.snapshot.definition.llmJudge;
 	const snapshot = caseSummary(item.snapshot) as unknown as SavedCase;
+	snapshot.definition.llmJudges = item.snapshot.definition.llmJudges?.map(
+		(b) => ({
+			...b,
+			config: {
+				...b.config,
+				referenceAnswer: "",
+				resultFiles: [],
+				model: b.config.model
+					? {
+							providerId: b.config.model.providerId,
+							modelId: b.config.model.modelId,
+						}
+					: undefined,
+			},
+		}),
+	);
 	if (item.snapshot.definition.grading)
 		snapshot.definition.grading = { version: 1, rules: [] };
 	if (config?.enabled)
@@ -96,6 +114,15 @@ export function itemSummary(item: RunItem, version: number): ItemSummary {
 								})),
 							}
 						: undefined,
+					llmJudges: r.llmJudges?.map((j) => ({
+						...j,
+						rationale: "",
+						evidence: [],
+						limitations: [],
+						model: j.model
+							? { providerId: j.model.providerId, modelId: j.model.modelId }
+							: undefined,
+					})),
 					llmJudge: j
 						? {
 								...j,

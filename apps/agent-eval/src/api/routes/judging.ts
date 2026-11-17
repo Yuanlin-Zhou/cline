@@ -1,9 +1,8 @@
-import { type RunItem } from "../../contracts/catalog.js";
+import type { RunItem } from "../../contracts/catalog.js";
 import { CatalogError } from "../../modules/catalog/repository.js";
-import { readJsonBody } from "../http/json-body.js";
-
 import type { ApiContext } from "../context.js";
 import { json } from "../http/helpers.js";
+import { readJsonBody } from "../http/json-body.js";
 export function judgingRoutes(context: ApiContext) {
 	const { store, catalog, judgeScores } = context;
 	return async (request: Request, url: URL): Promise<Response | undefined> => {
@@ -30,7 +29,12 @@ export function judgingRoutes(context: ApiContext) {
 					await judgeScores.preview(item, (await readJsonBody(request)).config),
 				);
 			if (scoreId === "official-input" && method === "GET")
-				return json(await judgeScores.officialInput(item));
+				return json(
+					await judgeScores.officialInput(
+						item,
+						url.searchParams.get("bindingId") ?? undefined,
+					),
+				);
 			if (scoreId && !["preview", "official-input"].includes(scoreId)) {
 				const score = judgeScores.get(scoreId, item);
 				if (action === "cancel" && method === "POST") {

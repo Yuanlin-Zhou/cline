@@ -1,9 +1,4 @@
-import { resolveFullTaskRuntime } from "../execution/full-task-runtime.js";
-import { type ItemSummary } from "../../contracts/projections.js";
-import { preflightJudge } from "../../modules/judging/engine.js";
-
 import { randomUUID } from "node:crypto";
-
 import {
 	canRetry,
 	latestAttempts,
@@ -13,9 +8,12 @@ import {
 	type SavedCase,
 } from "../../contracts/catalog.js";
 import type { EvalCase, EvalDefaults } from "../../contracts/evaluation.js";
+import type { ItemSummary } from "../../contracts/projections.js";
 import { parseEvalSuite } from "../../contracts/schema.js";
-
 import { TransferError } from "../../modules/catalog/transfer.js";
+import { judgeBindings } from "../../modules/judging/bindings.js";
+import { preflightJudge } from "../../modules/judging/engine.js";
+import { resolveFullTaskRuntime } from "../execution/full-task-runtime.js";
 
 export type RunInput = {
 	caseIds?: string[];
@@ -256,7 +254,9 @@ export class RunCommands {
 				defaults: source.snapshot.defaults,
 				cases: [definition],
 			}).cases[0];
-			preflightJudge(parsed.llmJudge);
+			judgeBindings(parsed).forEach((b) => {
+				preflightJudge(b.config);
+			});
 			this.repository.validateCase?.(parsed);
 		}
 		const run: Run = {

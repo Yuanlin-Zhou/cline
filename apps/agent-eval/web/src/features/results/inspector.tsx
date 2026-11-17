@@ -1,13 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { Empty } from "antd";
-import { useState } from "react";
+import { Collapse, Empty, Space, Tag } from "antd";
+import { useEffect, useState } from "react";
+import { judgeResults } from "../../../../src/modules/judging/bindings";
+import { JUDGE_STATUS } from "../../../../src/modules/judging/types";
 import { api, useApi } from "../../api/client";
 import {
 	ActionLink,
 	Disclosure,
 	DisclosureTitle,
 } from "../../components/antd-compat";
-import { RemoteJson } from "../../components/remote-json";
 import {
 	Alert,
 	Box,
@@ -20,7 +21,8 @@ import {
 	Status,
 	Tabs,
 } from "../../components/ui";
-import { JudgeTrial } from "../judging/trial";
+import { CriteriaResults } from "../judging/criteria";
+import { MultiJudgeTrial } from "../judging/trial";
 import { useRunItem } from "../runs/use-run";
 import { VerifierTrial } from "../verifiers/trial";
 
@@ -111,16 +113,25 @@ export function ItemContent({ runId, item }: { runId: string; item: any }) {
 					)}
 				</Box>
 			)}
-			{result?.llmJudge && (
-				<Box title={`LLM Judge · ${result.llmJudge.score ?? "无分数"}`}>
-					<p>{result.llmJudge.rationale}</p>
-					<JsonView value={result.llmJudge} />
-					<RemoteJson
-						path={`/api/runs/${runId}/items/${item.id}/judge-scores/official-input`}
-						title="查看正式评分输入"
+			{judgeResults(result).map((score) => (
+				<Box
+					key={score.bindingId}
+					title={`LLM 评分 · ${score.name} · ${score.score ?? "无分数"}`}
+				>
+					<Tag>{JUDGE_STATUS[score.status]}</Tag>
+					<p>{score.rationale}</p>
+					<CriteriaResults result={score} />
+					<Collapse
+						items={[
+							{
+								key: "details",
+								label: "评分详情与证据",
+								children: <JsonView value={score} />,
+							},
+						]}
 					/>
 				</Box>
-			)}
+			))}
 		</>
 	);
 	return (
@@ -311,7 +322,7 @@ export function ItemContent({ runId, item }: { runId: string; item: any }) {
 							tab === "trials" && (
 								<>
 									<VerifierTrial runId={runId} item={item} />
-									<JudgeTrial runId={runId} item={item} />
+									<MultiJudgeTrial runId={runId} item={item} />
 								</>
 							)
 						) : (
@@ -327,6 +338,7 @@ export function ItemContent({ runId, item }: { runId: string; item: any }) {
 }
 function Conversation({ runId, item }: { runId: string; item: any }) {
 	const [offset, setOffset] = useState(0);
+	useEffect(() => setOffset(0), []);
 	const path = `/api/runs/${runId}/items/${item.id}/conversation`;
 	const query = useQuery<any>({
 		queryKey: [path, offset],
@@ -342,16 +354,20 @@ function Conversation({ runId, item }: { runId: string; item: any }) {
 					<ActionLink className="btn" href={`${path}?download=1`}>
 						下载完整会话
 					</ActionLink>
-					{query.data.messages.map((m: any) => (
-						<Box key={m.id} title={`${m.index + 1} · ${m.role}`}>
-							{m.blocks.map((b: any, i: number) => (
-								<div key={i}>
-									{b.toolName && <strong>{b.toolName}</strong>}
-									<JsonView value={b.text} />
+					<div className="Conversation-list">
+						{!query.data.messages.length && (
+							<Empty description="暂无会话记录" />
+						)}
+						{query.data.messages.map((m: any) => (
+							<Box key={m.id} title={`${m.index + 1} · ${m.role}`}>
+								<div className="Conversation-blocks">
+									{m.blocks.map((b: any, i: number) => (
+										<ConversationBlock key={i} block={b} />
+									))}
 								</div>
-							))}
-						</Box>
-					))}
+							</Box>
+						))}
+					</div>
 					<div className="page-actions">
 						<Button
 							disabled={!offset}
@@ -366,8 +382,8 @@ function Conversation({ runId, item }: { runId: string; item: any }) {
 							下一页
 						</Button>
 						<span>
-							{offset + 1}–{Math.min(offset + 50, query.data.total)} /{" "}
-							{query.data.total}
+							{query.data.total ? offset + 1 : 0}–
+							{Math.min(offset + 50, query.data.total)} / {query.data.total}
 						</span>
 					</div>
 				</>
@@ -428,5 +444,71 @@ function Artifacts({ runId, item }: { runId: string; item: any }) {
 				</DataState>
 			)}
 		</>
+	);
+}
+
+function ConversationBlock({ block: b }: { block: any }) {
+	const [expanded, setExpanded] = useState(false);
+	const thinking = ["thinking", "reasoning"].includes(b.type);
+	const tool = b.type.includes("tool") || !!b.toolName;
+	let text = String(b.text ?? "");
+	if (thinking) {
+		try {
+			const v = JSON.parse(text);
+			text = v.thinking ?? v.text ?? text;
+		} catch {}
+	}
+	const wrapped =
+		b.type === "text"
+			? text.match(/^<user_input(?: mode="[^"]*")?>([\s\S]*)<\/user_input>$/)
+			: null;
+	const label = thinking
+		? "思考记录"
+		: tool
+			? b.type.includes("result")
+				? "工具返回"
+				: "工具调用"
+			: "原始内容";
+	const content = (
+		<div>
+			<pre
+				className={`Conversation-content ${tool ? "Conversation-code" : ""}`}
+				style={expanded ? { maxHeight: "none" } : undefined}
+			>
+				{wrapped ? wrapped[1] : text}
+			</pre>
+			{(text.length > 1200 || text.split("\n").length > 12) && (
+				<Button onClick={() => setExpanded(!expanded)}>
+					{expanded ? "收起内容" : "展开全部内容"}
+				</Button>
+			)}
+			{wrapped && (
+				<Collapse
+					items={[
+						{
+							key: "raw",
+							label: "原始内容",
+							children: <JsonView value={text} />,
+						},
+					]}
+				/>
+			)}
+		</div>
+	);
+	if (thinking || (!tool && b.type !== "text"))
+		return <Collapse items={[{ key: "content", label, children: content }]} />;
+	return (
+		<section>
+			{tool && (
+				<div className="Conversation-block-title">
+					<Space>
+						<Tag>{label}</Tag>
+						<strong>{b.toolName ?? b.type}</strong>
+						{b.toolCallId && <span className="form-hint">{b.toolCallId}</span>}
+					</Space>
+				</div>
+			)}
+			{content}
+		</section>
 	);
 }

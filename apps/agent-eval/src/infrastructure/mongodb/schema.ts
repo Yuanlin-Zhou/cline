@@ -97,6 +97,21 @@ export const caseValidator = {
 					},
 					id: string,
 					llmJudge: judgeConfigValidator,
+					llmJudges: {
+						bsonType: "array",
+						items: {
+							bsonType: "object",
+							required: ["bindingId", "name", "config"],
+							additionalProperties: false,
+							properties: {
+								bindingId: string,
+								name: string,
+								scorerId: string,
+								sourceRevision: integer,
+								config: judgeConfigValidator,
+							},
+						},
+					},
 					workspace: workspaceValidator,
 					replayMode: { enum: ["single-turn", "full-task", "function-call"] },
 					prompt: string,
@@ -306,6 +321,32 @@ export function moduleFromDocument(doc: ModuleDocument): Module {
 		createdAt: doc.createdAt.toISOString(),
 	};
 }
+export const scorerValidator = {
+	$jsonSchema: {
+		bsonType: "object",
+		required: [
+			"_id",
+			"id",
+			"name",
+			"revision",
+			"enabled",
+			"config",
+			"createdAt",
+			"updatedAt",
+		],
+		properties: {
+			_id: string,
+			id: string,
+			name: string,
+			description: { bsonType: "string" },
+			revision: integer,
+			enabled: { bsonType: "bool" },
+			config: judgeConfigValidator,
+			createdAt: string,
+			updatedAt: string,
+		},
+	},
+};
 export async function prepareMongoCollections(
 	db: Db,
 	cases: string,
@@ -314,7 +355,25 @@ export async function prepareMongoCollections(
 ) {
 	if (new Set([cases, modules, verifierCollection]).size !== 3)
 		throw new CatalogError("案例、模块与验证脚本集合不能同名");
+	if ([cases, modules, verifierCollection].includes("agent_eval_llm_scorers"))
+		throw new CatalogError("评分器集合不能与其他集合重名");
 	await prepareVerifierCollection(db, verifierCollection);
+
+	const scorerCollection = "agent_eval_llm_scorers";
+
+	if (await db.listCollections({ name: scorerCollection }).hasNext())
+		await db.command({
+			collMod: scorerCollection,
+			validator: scorerValidator,
+			validationLevel: "strict",
+			validationAction: "error",
+		});
+	else
+		await db.createCollection(scorerCollection, {
+			validator: scorerValidator,
+			validationLevel: "strict",
+			validationAction: "error",
+		});
 	for (const [name, validator] of [
 		[cases, caseValidator],
 		[modules, moduleValidator],

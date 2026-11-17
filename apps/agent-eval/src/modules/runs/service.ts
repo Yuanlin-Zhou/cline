@@ -6,9 +6,9 @@ import {
 	type RunItem,
 } from "../../contracts/catalog.js";
 import { parseEvalSuite } from "../../contracts/schema.js";
-import {
+import type {
 	EvalStore,
-	type RunSource,
+	RunSource,
 } from "../../infrastructure/sqlite/store.js";
 import {
 	CatalogError,
@@ -16,11 +16,12 @@ import {
 } from "../../modules/catalog/repository.js";
 import { preflight } from "../../modules/grading/engine.js";
 import { preparePythonUpload } from "../../modules/grading/python-runtime.js";
-import { type VerifierRepository } from "../../modules/grading/uploaded-verifiers.js";
+import type { VerifierRepository } from "../../modules/grading/uploaded-verifiers.js";
 import {
 	resolveVerifiers,
 	uploadedPlaceholder,
 } from "../../modules/grading/verifiers.js";
+import { judgeBindings } from "../../modules/judging/bindings.js";
 import { preflightJudge } from "../../modules/judging/engine.js";
 
 export type RunSubmissionDependencies = {
@@ -151,7 +152,9 @@ export class RunService {
 			resolved.uploaded = await Promise.all(
 				resolved.uploaded.map((v) => preparePythonUpload(v)),
 			);
-			preflightJudge(definition.llmJudge);
+			judgeBindings(definition).forEach((b) => {
+				preflightJudge(b.config);
+			});
 			preflight(definition, [
 				...resolved.configured,
 				...resolved.uploaded.map(uploadedPlaceholder),

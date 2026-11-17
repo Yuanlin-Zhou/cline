@@ -1,3 +1,12 @@
+export type JudgeCriterion = { id: string; name: string; standard: string };
+export type CriterionResult = {
+	criterionId: string;
+	name: string;
+	status: "pass" | "fail" | "insufficient";
+	rationale: string;
+	evidence: Array<{ ref: string; quote?: string }>;
+};
+
 import type { HeaderConfig } from "../../contracts/headers.js";
 export type JudgeModel = HeaderConfig & {
 	providerId: string;
@@ -10,6 +19,7 @@ export type JudgeConfig = {
 	referenceAnswer: string;
 	targets: Array<"result" | "trajectory">;
 	rubric?: string;
+	criteria?: JudgeCriterion[];
 	model?: JudgeModel;
 	affectsOutcome: boolean;
 	passScore: number;
@@ -28,6 +38,7 @@ export type JudgeInput = {
 	task: { prompt: string; history: unknown[]; replayMode: string };
 	referenceAnswer: string;
 	rubric: string;
+	criteria?: JudgeCriterion[];
 	targets: JudgeConfig["targets"];
 	sources: JudgeSource[];
 	limitations: string[];
@@ -44,6 +55,9 @@ export type JudgeResult = {
 	affectsOutcome: boolean;
 	passScore: number;
 	meetsThreshold?: boolean;
+	criteria?: JudgeCriterion[];
+	criteriaResults?: CriterionResult[];
+	criteriaOutcome?: "pass" | "fail" | "insufficient";
 	configHash: string;
 	inputHash?: string;
 	promptVersion: string;
@@ -61,4 +75,15 @@ export const JUDGE_STATUS: Record<JudgeResult["status"], string> = {
 	error: "评分错误",
 	skipped: "已跳过",
 	cancelled: "已取消",
+};
+
+export type Scorer = {
+	id: string;
+	name: string;
+	description: string;
+	revision: number;
+	enabled: boolean;
+	config: JudgeConfig;
+	createdAt: string;
+	updatedAt: string;
 };

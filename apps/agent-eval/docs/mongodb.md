@@ -117,3 +117,7 @@ Run submission copies referenced source and metadata into the SQLite RunItem sna
 ## Native function-call histories
 
 Function-call cases may store normalized Chat Completions messages in `definition.functionCall.history` and bounded provenance in `historySource`. This is separate from the legacy user/assistant text history. Upgrade existing deployments with `bun run mongo:prepare` to accept the new fields. The application validates tool-call/result pairing, argument JSON, and size limits in addition to the collection shape validator. No existing case data migration is required.
+
+## LLM 评分器管理
+
+SPEC-042 增加 `agent_eval_llm_scorers` 集合和案例 `definition.llmJudges` 快照数组。升级时由管理员新建评分器集合、更新 cases 校验器；可使用 mongo:prepare 或 mongodb-admin 中对应 create/collMod 命令，无需删除已有数据。应用账号需新增评分器集合 CRUD 及集合名称查询权限；服务不会自动执行 DDL。旧单评分器案例和历史结果继续兼容。

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { EvalCase } from "../../../../src/contracts/evaluation";
 import type { Rule } from "../../../../src/modules/grading/types";
+import { judgeBindings } from "../../../../src/modules/judging/bindings";
 import { useApi } from "../../api/client";
 import {
 	Badge,
@@ -19,7 +20,6 @@ import {
 	Select,
 	Text,
 } from "../../components/ui";
-import { judgeDefaults } from "../judging/editor";
 import { HistoryTrials } from "../results/history-trials";
 import { Guide, UploadDialog } from "../verifiers/page";
 
@@ -185,16 +185,21 @@ export function RulesEditor({
 					onClick={() => {
 						onChange({
 							...value,
-							llmJudge: {
-								...(value.llmJudge ?? judgeDefaults()),
-								enabled: true,
-							},
+							llmJudge: undefined,
+							llmJudges: judgeBindings(value).map((b) => ({
+								...b,
+								config: { ...b.config, enabled: true },
+							})),
 						});
 						setFocusTarget("judge");
 					}}
 				>
 					LLM 评分
-					<Tag>{value.llmJudge?.enabled ? "已启用" : "未启用"}</Tag>
+					<Tag>
+						{judgeBindings(value).some((b) => b.config.enabled)
+							? "已启用"
+							: "未启用"}
+					</Tag>
 					<span className="form-hint">
 						提供参考答案，自选结果或轨迹，由独立模型评分
 					</span>
@@ -554,16 +559,30 @@ export function RulesEditor({
 					</Box>
 				</div>
 			)}
-			{value.llmJudge && (
+			{(value.llmJudge || value.llmJudges) && (
 				<div ref={judgeRef} className="eval-section">
 					<div className="rule-actions">
-						<Tag color={value.llmJudge.enabled ? "blue" : "default"}>
-							{value.llmJudge.enabled ? "评分已启用" : "评分已停用，配置已保留"}
+						<Tag
+							color={
+								judgeBindings(value).some((b) => b.config.enabled)
+									? "blue"
+									: "default"
+							}
+						>
+							{judgeBindings(value).some((b) => b.config.enabled)
+								? "评分已启用"
+								: "评分已停用，配置已保留"}
 						</Tag>
 						<RemoveAction
 							label="移除评分配置"
 							confirm={true}
-							onRemove={() => onChange({ ...value, llmJudge: undefined })}
+							onRemove={() =>
+								onChange({
+									...value,
+									llmJudge: undefined,
+									llmJudges: undefined,
+								})
+							}
 						/>
 					</div>
 					{judge}

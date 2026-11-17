@@ -7,6 +7,19 @@ export const judgeConfigValidator = {
 		enabled: { bsonType: "bool" },
 		referenceAnswer: { ...text, maxLength: 65536 },
 		rubric: { ...text, maxLength: 16384 },
+		criteria: {
+			bsonType: "array",
+			items: {
+				bsonType: "object",
+				required: ["id", "name", "standard"],
+				additionalProperties: false,
+				properties: {
+					id: { ...text, pattern: "^[a-zA-Z0-9-]{1,100}$" },
+					name: { ...text, minLength: 1, maxLength: 240 },
+					standard: { ...text, minLength: 1, maxLength: 16384 },
+				},
+			},
+		},
 		targets: {
 			bsonType: "array",
 			maxItems: 2,

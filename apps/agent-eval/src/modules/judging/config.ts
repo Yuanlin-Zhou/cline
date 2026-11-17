@@ -1,6 +1,7 @@
 import { parseHeaderConfig } from "../../contracts/headers.js";
 import { safeRelative } from "../grading/schema.js";
 import type { JudgeConfig, JudgeModel } from "./types.js";
+
 const bytes = (value: string) => new TextEncoder().encode(value).length;
 function record(value: unknown, at: string): Record<string, unknown> {
 	if (!value || typeof value !== "object" || Array.isArray(value))
@@ -102,6 +103,7 @@ export function parseJudgeConfig(
 			"referenceAnswer",
 			"targets",
 			"rubric",
+			"criteria",
 			"model",
 			"affectsOutcome",
 			"passScore",
@@ -112,6 +114,7 @@ export function parseJudgeConfig(
 		"llmJudge",
 	);
 	const enabled = flag(config.enabled, true, "启用 LLM 评分");
+	const criteria = parseCriteria(config.criteria);
 	const targets = config.targets ?? ["result"];
 	if (
 		!Array.isArray(targets) ||
@@ -149,6 +152,7 @@ export function parseJudgeConfig(
 		referenceAnswer,
 		targets: targets as JudgeConfig["targets"],
 		rubric: text(config.rubric, "评分标准", 16384),
+		...(criteria?.length ? { criteria } : {}),
 		model,
 		affectsOutcome: flag(config.affectsOutcome, false, "影响通过结果"),
 		passScore: number(config.passScore, 80, 0, 100, "及格分"),
@@ -162,4 +166,33 @@ export function parseJudgeConfig(
 		),
 		resultFiles: resultFiles as string[],
 	};
+}
+
+export function parseCriteria(
+	value: unknown,
+): import("./types.js").JudgeCriterion[] | undefined {
+	if (value === undefined) return;
+	if (!Array.isArray(value)) throw Error("评分条目必须为数组");
+	const ids = new Set<string>();
+	return value.map((entry, i) => {
+		const c = record(entry, `评分条目 ${i + 1}`);
+		fields(c, ["id", "name", "standard"], `评分条目 ${i + 1}`);
+		if (
+			typeof c.id !== "string" ||
+			!/^[a-zA-Z0-9-]{1,100}$/.test(c.id) ||
+			ids.has(c.id)
+		)
+			throw Error(`评分条目 ${i + 1}: ID 无效或重复`);
+		ids.add(c.id);
+		return {
+			id: c.id,
+			name: text(c.name, `评分条目 ${i + 1} 名称`, 240, true)!.trim(),
+			standard: text(
+				c.standard,
+				`评分条目 ${i + 1} 判定标准`,
+				16384,
+				true,
+			)!.trim(),
+		};
+	});
 }

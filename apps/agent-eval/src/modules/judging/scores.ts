@@ -6,6 +6,11 @@ import { TransferError } from "../catalog/transfer.js";
 import { sha256 } from "../evidence/evidence.js";
 import { historicalEvidence } from "../grading/validation-context.js";
 import type { RecordRepository } from "../records.js";
+import {
+	type JudgeBinding,
+	judgeResults,
+	parseJudgeBindings,
+} from "./bindings.js";
 import { parseJudgeConfig } from "./config.js";
 import {
 	judgeSecrets,
@@ -27,6 +32,7 @@ export type JudgeScoreTask = {
 	result?: JudgeResult;
 	error?: string;
 	trial: true;
+	binding?: Omit<JudgeBinding, "config">;
 };
 export class JudgeScores {
 	private controllers = new Map<string, AbortController>();
@@ -81,16 +87,40 @@ export class JudgeScores {
 		const { input, ...rest } = task;
 		return rest;
 	}
-	async create(item: RunItem, body: { requestId: string; config: unknown }) {
+	async create(
+		item: RunItem,
+		body: {
+			requestId: string;
+			config: unknown;
+			binding?: Omit<JudgeBinding, "config">;
+		},
+	) {
 		if (this.closing) throw Error("评分服务正在停止");
 		if (
 			typeof body?.requestId !== "string" ||
 			!/^[a-zA-Z0-9-]{1,100}$/.test(body.requestId)
 		)
 			throw Error("试评分请求标识无效");
+		const binding = body.binding
+			? parseJudgeBindings(
+					[{ ...body.binding, config: body.config }],
+					undefined,
+					item.snapshot.definition.replayMode ?? "single-turn",
+				)?.[0]
+			: undefined;
+		const identity = binding
+			? {
+					bindingId: binding.bindingId,
+					name: binding.name,
+					scorerId: binding.scorerId,
+					sourceRevision: binding.sourceRevision,
+				}
+			: undefined;
 		const config = this.config(item, body.config),
 			key = `${item.id}:${body.requestId}`,
-			fingerprint = sha256(JSON.stringify(config));
+			fingerprint = sha256(
+				JSON.stringify(identity ? { config, identity } : config),
+			);
 		const prior = this.store.get<{ fingerprint: string; id: string }>(
 			"judge-request",
 			key,
@@ -116,6 +146,7 @@ export class JudgeScores {
 				config: structuredClone(config),
 				input: structuredClone(input),
 				trial: true,
+				binding: identity,
 			};
 			const selected = this.store
 				.transaction(() => {
@@ -185,16 +216,16 @@ export class JudgeScores {
 			await new Promise((resolve) => setTimeout(resolve, 10));
 		await Promise.allSettled(this.tasks.values());
 	}
-	async officialInput(item: RunItem) {
-		if (!item.result?.llmJudge) throw Error("本次执行没有正式评分");
+	async officialInput(item: RunItem, bindingId?: string) {
+		const scores = judgeResults(item.result);
+		if (scores.length > 1 && !bindingId) throw Error("请选择评分器 bindingId");
+		const score = bindingId
+			? scores.find((s) => s.bindingId === bindingId)
+			: scores[0];
+		if (!score) throw Error("本次执行没有该评分器的正式评分");
 		return JSON.parse(
 			await readFile(
-				path.join(
-					this.directory(item),
-					"judge",
-					item.result.llmJudge.id,
-					"input.json",
-				),
+				path.join(this.directory(item), "judge", score.id, "input.json"),
 				"utf8",
 			),
 		) as JudgeInput;
